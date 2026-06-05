@@ -98,10 +98,14 @@
             'settings.primary': 'Primary',
             'settings.detected': 'Detected',
             'settings.notDetected': 'Not detected',
+            'settings.customHint': 'Enter your own fixed domain (e.g. reverse proxy or a Cloudflare named-tunnel domain).',
             'settings.enabled': 'Enabled',
             'settings.useDetected': 'Use detected',
             'settings.save': 'Save',
             'settings.saved': 'Settings saved',
+            'settings.cfRotating': 'Generating a fresh Cloudflare share URL…',
+            'settings.cfRotated': 'New Cloudflare URL ready:',
+            'settings.cfRotateTimeout': 'No new Cloudflare URL appeared — is the tunnel container running?',
             'settings.testWebhook': 'Test Webhook',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhook Secret',
@@ -128,6 +132,13 @@
             'stat.totalSize': 'Total Size',
             'stat.protected': 'Protected',
             'shares.sendEmail': 'Send via Email',
+            'shares.taildrop': 'Send to device (Taildrop)',
+            'taildrop.title': 'Send to device',
+            'taildrop.device': 'Target device',
+            'taildrop.send': 'Send',
+            'taildrop.sending': 'Sending…',
+            'taildrop.sent': 'File sent via Taildrop',
+            'taildrop.noDevices': 'No Tailscale devices available',
             'shares.selectAll': 'Select All',
             'shares.bulkDelete': 'Delete Selected',
             'shares.selected': 'selected',
@@ -240,10 +251,14 @@
             'settings.primary': 'Primaer',
             'settings.detected': 'Erkannt',
             'settings.notDetected': 'Nicht erkannt',
+            'settings.customHint': 'Eigene feste Domain eintragen (z. B. Reverse-Proxy oder feste Cloudflare-Tunnel-Domain).',
             'settings.enabled': 'Aktiviert',
             'settings.useDetected': 'Erkannten Wert verwenden',
             'settings.save': 'Speichern',
             'settings.saved': 'Einstellungen gespeichert',
+            'settings.cfRotating': 'Neue Cloudflare-Freigabe-URL wird erzeugt…',
+            'settings.cfRotated': 'Neue Cloudflare-URL bereit:',
+            'settings.cfRotateTimeout': 'Keine neue Cloudflare-URL erschienen — läuft der Tunnel-Container?',
             'settings.testWebhook': 'Webhook testen',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhook Secret',
@@ -270,6 +285,13 @@
             'stat.totalSize': 'Gesamtgroesse',
             'stat.protected': 'Geschuetzt',
             'shares.sendEmail': 'Per E-Mail senden',
+            'shares.taildrop': 'An Gerät senden (Taildrop)',
+            'taildrop.title': 'An Gerät senden',
+            'taildrop.device': 'Zielgerät',
+            'taildrop.send': 'Senden',
+            'taildrop.sending': 'Senden…',
+            'taildrop.sent': 'Datei via Taildrop gesendet',
+            'taildrop.noDevices': 'Keine Tailscale-Geräte verfügbar',
             'shares.selectAll': 'Alle auswählen',
             'shares.bulkDelete': 'Ausgewählte löschen',
             'shares.selected': 'ausgewählt',
@@ -1581,6 +1603,7 @@
     let selectedFiles = [];
     let currentUser = null;
     let currentShares = [];
+    let taildropState = { available: false, devices: [] };
     let networkConfig = null;
 
     // ==========================================
@@ -2068,14 +2091,23 @@
         emptyEl.style.display = 'none';
 
         try {
-            const [sharesRes, statsRes] = await Promise.all([
+            const [sharesRes, statsRes, taildropRes] = await Promise.all([
                 api('/api/shares'),
                 api('/api/stats'),
+                api('/api/taildrop/status').catch(() => null),
             ]);
 
             const shares = sharesRes.ok ? await sharesRes.json() : [];
             currentShares = shares || [];
             const stats = statsRes.ok ? await statsRes.json() : {};
+
+            // Taildrop is admin-only; non-admins simply get no send button.
+            if (taildropRes && taildropRes.ok) {
+                const td = await taildropRes.json();
+                taildropState = { available: !!td.available, devices: td.devices || [] };
+            } else {
+                taildropState = { available: false, devices: [] };
+            }
 
             statsEl.innerHTML = `
                 <div class="stat-item">
@@ -2147,6 +2179,11 @@
                                 <polyline points="22,6 12,13 2,6"/>
                             </svg>
                         </button>
+                        ${(taildropState.available && !share.is_directory) ? `<button class="btn-icon taildrop-share-btn" data-id="${escapeHtml(share.id)}" title="${t('shares.taildrop')}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+                            </svg>
+                        </button>` : ''}
                         <button class="btn-icon danger" title="Delete" data-delete="${escapeHtml(share.id)}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                         </button>
@@ -2199,6 +2236,10 @@
 
             listEl.querySelectorAll('.email-share-btn').forEach(btn => {
                 btn.addEventListener('click', () => showEmailShareModal(btn.dataset.id));
+            });
+
+            listEl.querySelectorAll('.taildrop-share-btn').forEach(btn => {
+                btn.addEventListener('click', () => showTaildropModal(btn.dataset.id));
             });
 
             // Bulk checkbox logic
@@ -2372,6 +2413,56 @@
         };
     }
 
+    function showTaildropModal(shareId) {
+        const share = currentShares.find(s => s.id === shareId);
+        if (!share) return;
+
+        const devices = taildropState.devices || [];
+        const body = devices.length === 0
+            ? `<p style="color:var(--text-secondary)">${t('taildrop.noDevices')}</p>`
+            : `<div class="form-group">
+                   <label>${t('taildrop.device')}</label>
+                   <select id="taildrop-device" style="width:100%;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-family:var(--font)">
+                       ${devices.map(d => `<option value="${escapeHtml(d.dnsName)}">${escapeHtml(d.name || d.dnsName)}${d.online ? '' : ' (offline)'}</option>`).join('')}
+                   </select>
+               </div>`;
+
+        showModal(`
+            <h3>${t('taildrop.title')}</h3>
+            <p style="color:var(--text-secondary);margin-bottom:16px;font-size:var(--text-sm)">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
+            ${body}
+            <div class="modal-actions">
+                <button class="btn btn-ghost" id="taildrop-cancel-btn">${t('receive.cancel')}</button>
+                ${devices.length ? `<button class="btn btn-primary" id="taildrop-send-btn">${t('taildrop.send')}</button>` : ''}
+            </div>
+        `);
+
+        document.getElementById('taildrop-cancel-btn').addEventListener('click', closeModal);
+        const sendBtn = document.getElementById('taildrop-send-btn');
+        if (sendBtn) {
+            sendBtn.addEventListener('click', async () => {
+                const device = document.getElementById('taildrop-device').value;
+                if (!device) { toast(t('taildrop.noDevices'), 'error'); return; }
+                sendBtn.disabled = true;
+                const original = sendBtn.textContent;
+                sendBtn.textContent = t('taildrop.sending');
+                try {
+                    const res = await api('/api/taildrop/send', {
+                        method: 'POST',
+                        body: JSON.stringify({ shareId: shareId, device: device }),
+                    });
+                    if (!res.ok) throw new Error(await res.text());
+                    toast(t('taildrop.sent'), 'success');
+                    closeModal();
+                } catch (e) {
+                    toast(e.message || t('toast.error'), 'error');
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = original;
+                }
+            });
+        }
+    }
+
     // ==========================================
     // Receive Links
     // ==========================================
@@ -2528,7 +2619,9 @@
                 { key: 'cloudflare', label: 'Cloudflare Tunnel', urlPrefix: '', urlSuffix: '' },
                 { key: 'tailscale', label: 'Tailscale Funnel', urlPrefix: '', urlSuffix: '' },
                 { key: 'easytier', label: 'EasyTier', urlPrefix: 'http://', urlSuffix: ':' + port },
-                { key: 'custom', label: 'Custom URL', urlPrefix: '', urlSuffix: '' },
+                // Free-text field for a user's own fixed domain (reverse proxy,
+                // own Cloudflare/tunnel domain, WireGuard, …). Never auto-detected.
+                { key: 'custom', label: 'Custom Domain / URL', urlPrefix: '', urlSuffix: '', ph: 'https://files.example.com', hint: t('settings.customHint') },
             ];
 
             const primary = networkConfig.primaryNetwork || 'local';
@@ -2556,12 +2649,13 @@
                                 </label>
                             </div>
                             <div class="network-card-body">
-                                <input type="text" class="network-url-input" data-key="${n.key}" value="${escapeHtml(url)}" placeholder="${t('settings.notDetected')}" ${!enabled ? 'disabled' : ''}>
+                                <input type="text" class="network-url-input" data-key="${n.key}" value="${escapeHtml(url)}" placeholder="${escapeHtml(n.ph || t('settings.notDetected'))}" ${!enabled ? 'disabled' : ''}>
                                 ${detected ? `
                                 <div class="network-detected-hint">
                                     <span>${t('settings.detected')}: ${escapeHtml(detected)}</span>
                                     ${detected !== url ? `<button type="button" class="btn-use-detected" data-key="${n.key}" data-detected="${escapeHtml(detected)}" ${!enabled ? 'disabled' : ''}>${t('settings.useDetected')}</button>` : ''}
                                 </div>` : ''}
+                                ${n.hint ? `<div class="network-detected-hint"><span>${escapeHtml(n.hint)}</span></div>` : ''}
                             </div>
                         </div>`;
                     }).join('')}
@@ -2658,6 +2752,10 @@
                     });
                     if (saveRes.ok) {
                         toast(t('settings.saved'), 'success');
+                        const saveData = await saveRes.json().catch(() => ({}));
+                        if (saveData.cloudflareRotating) {
+                            await waitForCloudflareRotation();
+                        }
                         loadNetworkConfig();
                     } else {
                         toast(t('toast.error'), 'error');
@@ -2668,6 +2766,32 @@
         } catch {
             container.innerHTML = '<p style="color:var(--text-muted)">Could not load network config</p>';
         }
+    }
+
+    // After selecting Cloudflare as the primary network, the backend asks the
+    // tunnel container to mint a fresh quick-tunnel URL. Poll /api/tunnel until
+    // a new URL appears (the wrapper blanks the old one first, then writes the
+    // new one), so the UI reflects the rotated link rather than a dead one.
+    async function waitForCloudflareRotation() {
+        let startUrl = '';
+        try {
+            const r = await api('/api/tunnel');
+            if (r.ok) startUrl = (await r.json()).url || '';
+        } catch { /* ignore */ }
+        toast(t('settings.cfRotating'), 'info');
+        for (let i = 0; i < 30; i++) { // ~60s budget
+            await new Promise(res => setTimeout(res, 2000));
+            try {
+                const r = await api('/api/tunnel');
+                if (!r.ok) continue;
+                const url = (await r.json()).url || '';
+                if (url && url !== startUrl) {
+                    toast(`${t('settings.cfRotated')} ${url}`, 'success');
+                    return;
+                }
+            } catch { /* keep polling */ }
+        }
+        toast(t('settings.cfRotateTimeout'), 'error');
     }
 
     async function loadFileRestrictionsConfig() {
