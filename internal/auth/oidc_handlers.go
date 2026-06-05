@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"html"
 	"log"
@@ -11,6 +12,11 @@ import (
 	"casadrop/internal/models"
 	"casadrop/internal/utils"
 )
+
+// oidcStateCookie binds the OAuth state to the browser that initiated the login,
+// so a callback can't be completed from a different browser (login-CSRF / forced
+// login). The cookie is short-lived and scoped to the OIDC callback path.
+const oidcStateCookie = "casadrop_oidc_state"
 
 // SessionCreator is an interface for creating authenticated sessions.
 // This allows the OIDC handlers to integrate with the existing AdminAuth.
@@ -64,12 +70,23 @@ func (h *Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate authorization URL
-	authURL, err := h.provider.GenerateAuthURL(returnURL)
+	authURL, state, err := h.provider.GenerateAuthURL(returnURL)
 	if err != nil {
 		log.Printf("OIDC: Failed to generate auth URL: %v", err)
 		http.Error(w, "Failed to initiate OIDC login", http.StatusInternalServerError)
 		return
 	}
+
+	// Bind the state to this browser so the callback can be matched against it.
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookie,
+		Value:    state,
+		Path:     "/auth/oidc",
+		HttpOnly: true,
+		Secure:   utils.IsRequestSecure(r),
+		SameSite: http.SameSiteLaxMode, // Lax so it survives the IdP redirect back
+		MaxAge:   600,                  // 10 minutes — matches the state TTL window
+	})
 
 	// Redirect to identity provider
 	http.Redirect(w, r, authURL, http.StatusFound)
@@ -97,6 +114,20 @@ func (h *Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	if code == "" || state == "" {
 		h.renderError(w, "Missing code or state parameter")
+		return
+	}
+
+	// Verify the state cookie set at login matches the state returned by the IdP,
+	// binding this callback to the browser that started the flow (defeats
+	// login-CSRF / forced-login). Then clear the one-time cookie.
+	stateCookie, cookieErr := r.Cookie(oidcStateCookie)
+	http.SetCookie(w, &http.Cookie{
+		Name: oidcStateCookie, Value: "", Path: "/auth/oidc",
+		HttpOnly: true, Secure: utils.IsRequestSecure(r), SameSite: http.SameSiteLaxMode, MaxAge: -1,
+	})
+	if cookieErr != nil || subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(state)) != 1 {
+		log.Printf("OIDC: state cookie missing or mismatch from %s", getClientIP(r))
+		h.renderError(w, "Invalid or expired login session. Please try again.")
 		return
 	}
 

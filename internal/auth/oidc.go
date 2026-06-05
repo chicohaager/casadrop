@@ -33,10 +33,11 @@ type Config struct {
 
 // OIDCState represents a pending OIDC authentication state.
 type OIDCState struct {
-	State     string    `json:"state"`
-	Nonce     string    `json:"nonce"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	ReturnURL string    `json:"returnUrl"`
+	State        string    `json:"state"`
+	Nonce        string    `json:"nonce"`
+	CodeVerifier string    `json:"codeVerifier"` // PKCE verifier bound to this auth request
+	ExpiresAt    time.Time `json:"expiresAt"`
+	ReturnURL    string    `json:"returnUrl"`
 }
 
 // UserInfo contains information from the OIDC ID token.
@@ -301,40 +302,49 @@ func (p *Provider) GetConfig() Config {
 	return config
 }
 
-// GenerateAuthURL creates an authorization URL for OIDC login.
-func (p *Provider) GenerateAuthURL(returnURL string) (string, error) {
+// GenerateAuthURL creates an authorization URL for OIDC login. It returns the
+// URL and the generated state value so the caller can bind that state to the
+// initiating browser (e.g. via a cookie) and reject callbacks that don't carry
+// it back.
+func (p *Provider) GenerateAuthURL(returnURL string) (authURL, state string, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if !p.config.Enabled || p.oauth2Config == nil {
-		return "", errors.New("OIDC is not enabled")
+		return "", "", errors.New("OIDC is not enabled")
 	}
 
 	// Generate state and nonce
-	state, err := generateRandomString(32)
+	state, err = generateRandomString(32)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate state: %w", err)
+		return "", "", fmt.Errorf("failed to generate state: %w", err)
 	}
 
 	nonce, err := generateRandomString(32)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate nonce: %w", err)
+		return "", "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
+
+	// PKCE: a per-request verifier defeats authorization-code injection/interception
+	// even for a confidential client (defense-in-depth alongside state+nonce).
+	codeVerifier := oauth2.GenerateVerifier()
 
 	// Store state for validation
 	p.states[state] = OIDCState{
-		State:     state,
-		Nonce:     nonce,
-		ExpiresAt: time.Now().Add(StateExpiry),
-		ReturnURL: returnURL,
+		State:        state,
+		Nonce:        nonce,
+		CodeVerifier: codeVerifier,
+		ExpiresAt:    time.Now().Add(StateExpiry),
+		ReturnURL:    returnURL,
 	}
 
-	// Generate auth URL with nonce
-	authURL := p.oauth2Config.AuthCodeURL(state,
+	// Generate auth URL with nonce and PKCE S256 challenge
+	authURL = p.oauth2Config.AuthCodeURL(state,
 		oauth2.SetAuthURLParam("nonce", nonce),
+		oauth2.S256ChallengeOption(codeVerifier),
 	)
 
-	return authURL, nil
+	return authURL, state, nil
 }
 
 // ExchangeCode exchanges an authorization code for tokens and validates the ID token.
@@ -354,8 +364,10 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, state string) (*UserI
 		return nil, "", errors.New("state expired")
 	}
 
-	// Exchange code for token
-	token, err := p.oauth2Config.Exchange(ctx, code)
+	// Exchange code for token, presenting the PKCE verifier bound to this state.
+	token, err := p.oauth2Config.Exchange(ctx, code,
+		oauth2.VerifierOption(storedState.CodeVerifier),
+	)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to exchange code: %w", err)
 	}
