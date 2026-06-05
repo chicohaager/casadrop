@@ -182,7 +182,7 @@ Or build the container image: `docker build -t casadrop:latest .`
 | `TZ` | Europe/Berlin | Timezone |
 | `SHARE_ALLOWED_PATHS` | /DATA,/media,/home | Paths for file browser |
 | `MAX_FOLDER_ZIP_GB` | 10 | Max uncompressed budget per folder-ZIP download |
-| `TRUSTED_PROXY` | - | CIDRs/IPs of trusted proxies; gates `X-Forwarded-For` (anti-spoof) |
+| `TRUSTED_PROXY` | - | CIDRs/IPs of trusted proxies; `X-Forwarded-For`/`-Proto` honored only from them (anti-spoof). Fail-closed: unset ⇒ forwarded headers ignored (socket peer used). **Set to your proxy's IP/CIDR when behind a reverse proxy.** |
 
 ### Webhooks
 
@@ -191,7 +191,7 @@ Or build the container image: `docker build -t casadrop:latest .`
 | `WEBHOOK_URL` | - | Webhook notification URL |
 | `WEBHOOK_SECRET` | - | HMAC-SHA256 signing secret |
 | `STRICT_WEBHOOK_URLS` | true | Reject webhook URLs whose host is a literal private/loopback IP |
-| `WEBHOOK_STRICT_SSRF` | false | Resolve + pin the target IP, reject private addresses (defeats DNS rebinding) |
+| `WEBHOOK_STRICT_SSRF` | true | Resolve + pin the target IP, reject private addresses (defeats DNS rebinding). On by default; set `false` for LAN webhook receivers |
 
 ### OIDC/SSO Settings
 
@@ -297,7 +297,7 @@ See [docs/api.md](docs/api.md) for full API documentation.
 - [x] Multi-user support with RBAC
 - [x] Per-user local authentication (email + password)
 - [x] Email notifications (SMTP)
-- [ ] Tailscale Taildrop ("send to my device")
+- [x] Tailscale Taildrop ("send to my device")
 - [ ] S3 storage backend
 - [ ] Share link customization
 
