@@ -1,0 +1,332 @@
+# Docker Compose for ZimaOS
+# Optimized configuration for ZimaOS with CasaOS integration
+#
+# Usage:
+#   docker compose -f docker-compose.zimaos.yaml up -d
+#
+# With custom port:
+#   WEBUI_PORT=8085 docker compose -f docker-compose.zimaos.yaml up -d
+#
+# With Cloudflare Tunnel:
+#   docker compose -f docker-compose.zimaos.yaml --profile tunnel up -d
+#
+# With Tailscale Funnel:
+#   TS_AUTHKEY=tskey-xxx docker compose -f docker-compose.zimaos.yaml --profile tailscale up -d
+
+name: casadrop
+
+services:
+  casadrop:
+    image: casadrop:latest
+    container_name: casadrop
+    hostname: casadrop
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - casadrop-data:/data
+      # ZimaOS standard directories (read-only for security)
+      - /DATA:/DATA:ro
+      - /media:/media:ro
+      # --- Optional: auto-detect host Tailscale running as a systemd-sysext ---
+      # Uncomment to let entrypoint.sh discover the Funnel/serve URL on its own
+      # (the tailscale binary is statically linked, so it runs inside Alpine).
+      # First enable funnel on the HOST:
+      #   tailscale funnel --bg --https=443 http://127.0.0.1:${WEBUI_PORT:-8080}
+      # - /usr/bin/tailscale:/usr/bin/tailscale:ro
+      # - /run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock
+      # --- Optional: auto-detect host EasyTier (same pattern) ---
+      # - /usr/bin/easytier-cli:/usr/bin/easytier-cli:ro
+    environment:
+      - PORT=8080
+      - EXTERNAL_PORT=${WEBUI_PORT:-8080}
+      - DATA_DIR=/data
+      - TZ=${TZ:-Europe/Berlin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Network configuration (auto-detected or manual)
+      - TUNNEL_URL=${TUNNEL_URL:-}
+      - LOCAL_IP=${LOCAL_IP:-}
+      - TAILSCALE_URL=${TAILSCALE_URL:-}
+      - EASYTIER_IP=${EASYTIER_IP:-}
+      - CUSTOM_URL=${CUSTOM_URL:-}
+      # File browser allowed paths
+      - SHARE_ALLOWED_PATHS=${SHARE_ALLOWED_PATHS:-/DATA,/media}
+      # Set to your reverse proxy's IP/CIDR so the real client IP is recovered
+      # from X-Forwarded-For. Unset = forwarded headers ignored (fail-closed).
+      - TRUSTED_PROXY=${TRUSTED_PROXY:-}
+      # Webhook notifications
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      # Fail-closed by default: refuse webhook deliveries to private/loopback
+      # targets (defeats SSRF + DNS rebinding). Set to false for LAN receivers.
+      - WEBHOOK_STRICT_SSRF=${WEBHOOK_STRICT_SSRF:-true}
+      # OIDC/SSO Configuration
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid,profile,email}
+      - OIDC_DISABLE_LOCAL_AUTH=${OIDC_DISABLE_LOCAL_AUTH:-false}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Root entrypoint chowns the data dir and drops to uid 10001 via su-exec;
+      # keep only the caps that needs, drop the rest (NET_RAW, SYS_*, …).
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      icon: https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/files.svg
+
+  # Cloudflare Tunnel (optional)
+  # Provides public HTTPS access without port forwarding
+  # Start with: docker compose -f docker-compose.zimaos.yaml --profile tunnel up -d
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: casadrop-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_URL=http://casadrop:8080
+    depends_on:
+      casadrop:
+        condition: service_started
+    profiles:
+      - tunnel
+
+  # Tailscale Funnel (optional)
+  # Provides public HTTPS access via Tailscale
+  #
+  # Setup:
+  # 1. Get Auth Key: https://login.tailscale.com/admin/settings/keys
+  # 2. Start: TS_AUTHKEY=tskey-xxx docker compose -f docker-compose.zimaos.yaml --profile tailscale up -d
+  # 3. Enable Funnel: docker exec casadrop-tailscale tailscale funnel 443 on
+  # 4. URL: https://<TS_HOSTNAME>.<tailnet>.ts.net
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: casadrop-tailscale
+    hostname: ${TS_HOSTNAME:-casadrop}
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      # SYS_MODULE omitted (host-root-equivalent). /dev/net/tun is bind-mounted,
+      # so the tun module need not be loaded from inside the container. If the
+      # host lacks tun, `modprobe tun` on the host once instead.
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_HOSTNAME:-casadrop}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    network_mode: service:casadrop
+    depends_on:
+      casadrop:
+        condition: service_started
+    profiles:
+      - tailscale
+    labels:
+      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/tailscale.png
+
+volumes:
+  casadrop-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /DATA/AppData/casadrop/data
+  tailscale-state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /DATA/AppData/casadrop/tailscale
+
+# CasaOS/ZimaOS App Store Metadata
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+    - arm
+  main: casadrop
+  author: holgi
+  category: Utilities
+  description:
+    de_de: |
+      **CasaDrop** - Einfaches und sicheres File-Sharing für dein Homelab.
+
+      **Funktionen:**
+      - Drag & Drop Datei-Upload (bis 100 GB konfigurierbar)
+      - Datei-Browser zum direkten Teilen von Server-Dateien
+      - Ordner-Freigaben mit Browse-UI und ZIP-Download
+      - Empfangs-Links für eingehende Dateien
+      - Optionaler Passwortschutz
+      - Einstellbare Gültigkeitsdauer (1h - 30 Tage)
+      - Download-Limit pro Freigabe
+      - QR-Code Generierung
+      - Medien-Streaming (Video/Audio)
+      - Multi-User mit OIDC/SSO
+      - Statistik-Dashboard
+
+      **Netzwerk-Optionen:**
+      - Lokales Netzwerk
+      - EasyTier VPN
+      - Tailscale Funnel
+      - Cloudflare Tunnel
+      - Custom URL (WireGuard, Reverse Proxy)
+    en_us: |
+      **CasaDrop** - Simple and secure file sharing for your homelab.
+
+      **Features:**
+      - Drag & Drop file upload (up to 100 GB configurable)
+      - File browser to share server files directly
+      - Folder shares with browse UI and ZIP download
+      - Receive links for incoming files
+      - Optional password protection
+      - Configurable expiration (1h - 30 days)
+      - Download limit per share
+      - QR code generation
+      - Media streaming (video/audio)
+      - Multi-user with OIDC/SSO
+      - Statistics dashboard
+
+      **Network Options:**
+      - Local network
+      - EasyTier VPN
+      - Tailscale Funnel
+      - Cloudflare Tunnel
+      - Custom URL (WireGuard, Reverse Proxy)
+  developer: holgi
+  icon: https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/files.svg
+  tagline:
+    de_de: Sicheres File-Sharing mit Multi-Netzwerk-Support
+    en_us: Secure File Sharing with Multi-Network Support
+  thumbnail: ""
+  title:
+    custom: CasaDrop
+    de_de: CasaDrop
+    en_us: CasaDrop
+  index: /
+  # Must track the *published* host port. The container always listens on 8080,
+  # but the host port is ${WEBUI_PORT:-8080} — hardcoding 8080 here points the
+  # App-Store tile at the wrong port when WEBUI_PORT is overridden (e.g. 8085),
+  # so the WebUI "won't open". follow the ZimaOS WEBUI_PORT convention.
+  port_map: ${WEBUI_PORT:-8080}
+  scheme: http
+  store_app_id: casadrop
+  tips:
+    before_install:
+      de_de: |
+        **Schnellstart:**
+        Die App startet automatisch mit lokalem Netzwerk-Zugang.
+
+        **Port ändern:**
+        ```
+        WEBUI_PORT=8085 docker compose up -d
+        ```
+
+        **Öffentlicher Zugang:**
+
+        *Option 1: Cloudflare Tunnel (empfohlen)*
+        ```
+        docker compose --profile tunnel up -d
+        ```
+
+        *Option 2: Tailscale Funnel*
+        ```
+        TS_AUTHKEY=tskey-xxx docker compose --profile tailscale up -d
+        docker exec casadrop-tailscale tailscale funnel 443 on
+        ```
+
+        *Option 3: Bestehender Tailscale-Container*
+        Falls bereits Tailscale auf ZimaOS läuft:
+        ```
+        docker exec <tailscale-container> tailscale funnel --bg --https=443 http://localhost:8085
+        ```
+
+        *Option 4: Tailscale als Sysext (Host)*
+        Läuft Tailscale per systemd-sysext direkt auf dem Host, kann der
+        CasaDrop-Container es NICHT automatisch erkennen (eigenes Netzwerk-
+        Namespace, kein Zugriff auf tailscale0/Socket). Funnel auf dem Host
+        starten und die URL manuell setzen:
+        ```
+        tailscale funnel --bg --https=443 http://localhost:8085
+        # dann in CasaDrop: TAILSCALE_URL=https://<host>.<tailnet>.ts.net
+        ```
+
+        *Option 5: EasyTier*
+        Falls installiert, wird die IP automatisch erkannt.
+
+        **Netzwerk wählen:**
+        In Einstellungen → Netzwerk-Konfiguration
+
+        **Hinweis – Kachel öffnet localhost:** Die App-Kachel verwendet den Host,
+        über den du das ZimaOS-Dashboard öffnest. Öffne das Dashboard per LAN-IP
+        (z.B. http://192.168.x.x) statt localhost, dann zeigt die Kachel korrekt.
+      en_us: |
+        **Quick Start:**
+        The app starts automatically with local network access.
+
+        **Change port:**
+        ```
+        WEBUI_PORT=8085 docker compose up -d
+        ```
+
+        **Public Access:**
+
+        *Option 1: Cloudflare Tunnel (recommended)*
+        ```
+        docker compose --profile tunnel up -d
+        ```
+
+        *Option 2: Tailscale Funnel*
+        ```
+        TS_AUTHKEY=tskey-xxx docker compose --profile tailscale up -d
+        docker exec casadrop-tailscale tailscale funnel 443 on
+        ```
+
+        *Option 3: Existing Tailscale container*
+        If Tailscale is already running on ZimaOS:
+        ```
+        docker exec <tailscale-container> tailscale funnel --bg --https=443 http://localhost:8085
+        ```
+
+        *Option 4: Tailscale as a sysext (host)*
+        If Tailscale runs as a systemd-sysext on the host, the CasaDrop
+        container CANNOT auto-detect it (separate network namespace, no access
+        to tailscale0 / the socket). Start funnel on the host and set the URL
+        manually:
+        ```
+        tailscale funnel --bg --https=443 http://localhost:8085
+        # then in CasaDrop: TAILSCALE_URL=https://<host>.<tailnet>.ts.net
+        ```
+
+        *Option 5: EasyTier*
+        If installed, IP is auto-detected.
+
+        **Choose Network:**
+        In Settings → Network Configuration
+
+        **Note – tile opens localhost:** the app tile uses whatever host you
+        opened the ZimaOS dashboard with. Open the dashboard via its LAN IP
+        (e.g. http://192.168.x.x) instead of localhost so the tile resolves.

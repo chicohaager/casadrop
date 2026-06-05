@@ -1,0 +1,60 @@
+# CasaDrop with Authentik OIDC (planned feature)
+# This configuration will work once OIDC support is implemented
+#
+# Prerequisites:
+#   1. Authentik running and configured
+#   2. OAuth2/OpenID Provider created in Authentik
+#   3. Application created pointing to this provider
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in values
+#   2. docker compose -f docker-compose.authentik.yml up -d
+
+services:
+  casadrop:
+    image: ghcr.io/user/casadrop:latest
+    container_name: casadrop
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - casadrop-data:/data
+    environment:
+      - TZ=Europe/Berlin
+      # OIDC Configuration (planned feature)
+      - OIDC_ENABLED=true
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL}
+      # Optional: Disable local admin login
+      # - OIDC_DISABLE_LOCAL_AUTH=true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/auth/status"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  casadrop-data:
+
+# .env.example:
+#
+# # Authentik OIDC Settings
+# OIDC_ISSUER_URL=https://authentik.example.com/application/o/casadrop/
+# OIDC_CLIENT_ID=casadrop
+# OIDC_CLIENT_SECRET=your-client-secret-from-authentik
+# OIDC_REDIRECT_URL=https://share.example.com/auth/oidc/callback
+#
+# # Authentik Setup Steps:
+# # 1. Go to Authentik Admin -> Applications -> Providers
+# # 2. Create new OAuth2/OpenID Provider:
+# #    - Name: CasaDrop
+# #    - Client type: Confidential
+# #    - Redirect URIs: https://share.example.com/auth/oidc/callback
+# # 3. Create Application:
+# #    - Name: CasaDrop
+# #    - Slug: casadrop
+# #    - Provider: Select the provider from step 2
+# # 4. Copy Client ID and Client Secret to this file

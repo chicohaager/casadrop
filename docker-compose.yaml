@@ -1,0 +1,265 @@
+name: casadrop
+
+services:
+  casadrop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: casadrop:latest
+    container_name: casadrop
+    hostname: casadrop
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - type: volume
+        source: casadrop-data
+        target: /data
+      # Host-Verzeichnisse für File Browser (read-only für Sicherheit)
+      - /DATA:/DATA:ro
+      - /media:/media:ro
+      - /home:/home:ro
+      - /mnt:/mnt:ro
+    environment:
+      - PORT=8080
+      - EXTERNAL_PORT=${WEBUI_PORT:-8080}
+      - DATA_DIR=/data
+      - TZ=${TZ:-Europe/Berlin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - TUNNEL_URL=${TUNNEL_URL:-}
+      - LOCAL_IP=${LOCAL_IP:-}
+      - TAILSCALE_URL=${TAILSCALE_URL:-}
+      - EASYTIER_IP=${EASYTIER_IP:-}
+      - SHARE_ALLOWED_PATHS=${SHARE_ALLOWED_PATHS:-/DATA,/media,/home,/mnt,/storage}
+      - CUSTOM_URL=${CUSTOM_URL:-}
+      # Set to your reverse proxy's IP/CIDR so the real client IP is recovered
+      # from X-Forwarded-For. Unset = forwarded headers ignored (fail-closed).
+      - TRUSTED_PROXY=${TRUSTED_PROXY:-}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      # Fail-closed by default: refuse webhook deliveries to private/loopback
+      # targets (defeats SSRF + DNS rebinding). Set to false for LAN receivers.
+      - WEBHOOK_STRICT_SSRF=${WEBHOOK_STRICT_SSRF:-true}
+      # OIDC/SSO Configuration
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid,profile,email}
+      - OIDC_DISABLE_LOCAL_AUTH=${OIDC_DISABLE_LOCAL_AUTH:-false}
+    # Für Mesh-VPN-Erkennung im Host-Netz (EasyTier — löst ZeroTier auf ZimaOS
+    # ab — oder ZeroTier): network_mode: host aktivieren. Alternativ den
+    # easytier-cli read-only einhängen (siehe docker-compose.zimaos.yaml).
+    # network_mode: host
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # The default image starts as root and drops to uid 10001 via su-exec in
+      # the entrypoint (chown of the data dir, then privilege drop). Keep only
+      # the caps that requires; everything else (NET_RAW, SYS_*, …) is dropped.
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Cloudflare Tunnel für öffentlichen HTTPS-Zugang (optional)
+  # Start with: docker compose --profile tunnel up -d
+  # Quick Tunnel: temporäre URL wird automatisch generiert
+  # Token Tunnel: CLOUDFLARE_TUNNEL_TOKEN=xxx für feste Domain
+  tunnel:
+    build:
+      context: .
+      dockerfile: Dockerfile.tunnel
+    image: casadrop-tunnel:latest
+    container_name: casadrop-tunnel
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+      - TARGET_URL=http://casadrop:8080
+    volumes:
+      - casadrop-data:/data
+    depends_on:
+      casadrop:
+        condition: service_started
+    profiles:
+      - tunnel
+
+  # Tailscale Funnel für öffentlichen HTTPS-Zugang (Alternative zu Cloudflare)
+  # Stabile URL, kein Cloudflare-Account nötig
+  # TAILSCALE_AUTHKEY=tskey-xxx TAILSCALE_HOSTNAME=casadrop docker compose --profile tailscale up -d
+  # Nach dem Start: docker exec casadrop-tailscale tailscale funnel --bg 8080
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: casadrop-tailscale
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      # SYS_MODULE (load kernel modules = host-root-equivalent) is intentionally
+      # omitted: /dev/net/tun is bind-mounted below, so the tun module need not be
+      # loaded from inside the container. If your host lacks tun, run
+      # `modprobe tun` on the host once instead of granting SYS_MODULE.
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY:-}
+      - TS_HOSTNAME=${TAILSCALE_HOSTNAME:-casadrop}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+      - TS_EXTRA_ARGS=--accept-routes=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    # Share network with casadrop so localhost:8080 works
+    network_mode: service:casadrop
+    depends_on:
+      casadrop:
+        condition: service_started
+    profiles:
+      - tailscale
+
+volumes:
+  casadrop-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /DATA/AppData/casadrop/data
+  tailscale-state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /DATA/AppData/casadrop/tailscale
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+    - arm
+  main: casadrop
+  author: holgi
+  category: Utilities
+  description:
+    de_de: Einfaches und sicheres File-Sharing für Homelab. Teilen Sie Dateien per Link mit optionalem Passwortschutz und Ablaufdatum. Inklusive Cloudflare Tunnel für öffentlichen Zugang.
+    en_us: Simple and secure file sharing for Homelab. Share files via link with optional password protection and expiration date. Includes Cloudflare Tunnel for public access.
+  developer: holgi
+  icon: https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/files.svg
+  tagline:
+    de_de: Sicheres File-Sharing
+    en_us: Secure File Sharing
+  thumbnail: ""
+  title:
+    custom: CasaDrop
+    de_de: CasaDrop
+    en_us: CasaDrop
+  index: /
+  # Must track the *published* host port (${WEBUI_PORT:-8080}), not the fixed
+  # container port 8080 — otherwise the App-Store tile opens the wrong port when
+  # WEBUI_PORT is overridden.
+  port_map: ${WEBUI_PORT:-8080}
+  scheme: http
+  store_app_id: casadrop
+  tips:
+    before_install:
+      de_de: |
+        **CasaDrop** ermöglicht das einfache Teilen von Dateien über Links.
+
+        **Funktionen:**
+        - Datei-Upload mit Drag & Drop
+        - Optionaler Passwortschutz für Dateien
+        - Einstellbare Gültigkeitsdauer (1h - 30 Tage)
+        - Download-Limit
+        - Automatische Bereinigung abgelaufener Dateien
+        - **Cloudflare Tunnel** oder **Tailscale Funnel** für öffentlichen HTTPS-Zugang
+
+        **Sicherheit:**
+        - HTTPS durch Cloudflare/Tailscale (automatisch)
+        - Admin-Authentifizierung (setze `ADMIN_PASSWORD`)
+        - Rate-Limiting gegen Brute-Force
+        - Security-Header (CSP, X-Frame-Options, etc.)
+
+        **Tunnel-Optionen:**
+
+        *Quick Tunnel (temporäre URL):*
+        ```
+        docker compose --profile tunnel up -d
+        ```
+
+        *Token Tunnel (feste Domain):*
+        ```
+        CLOUDFLARE_TUNNEL_TOKEN=xxx docker compose --profile tunnel up -d
+        ```
+
+        *Mit Cloudflared-Web App:*
+        Falls "Cloudflared Web" installiert ist, konfiguriere dort einen Tunnel
+        zu `http://[Homelab-IP]:8080` und setze `TUNNEL_URL` in der Umgebung.
+
+        **Tailscale Funnel (Alternative):**
+        ```
+        TAILSCALE_AUTHKEY=tskey-xxx docker compose --profile tailscale up -d
+        ```
+        Stabile URL ohne Cloudflare-Account. Erstelle einen Auth-Key unter
+        https://login.tailscale.com/admin/settings/keys
+
+        Die öffentliche URL wird automatisch in der Web-UI angezeigt.
+      en_us: |
+        **CasaDrop** enables easy file sharing via links.
+
+        **Features:**
+        - Drag & Drop file upload
+        - Optional password protection for files
+        - Configurable expiration time (1h - 30 days)
+        - Download limit
+        - Automatic cleanup of expired files
+        - **Cloudflare Tunnel** or **Tailscale Funnel** for public HTTPS access
+
+        **Security:**
+        - HTTPS via Cloudflare/Tailscale (automatic)
+        - Admin authentication (set `ADMIN_PASSWORD`)
+        - Rate limiting against brute force
+        - Security headers (CSP, X-Frame-Options, etc.)
+
+        **Tunnel Options:**
+
+        *Quick Tunnel (temporary URL):*
+        ```
+        docker compose --profile tunnel up -d
+        ```
+
+        *Token Tunnel (fixed domain):*
+        ```
+        CLOUDFLARE_TUNNEL_TOKEN=xxx docker compose --profile tunnel up -d
+        ```
+
+        *With Cloudflared-Web App:*
+        If "Cloudflared Web" is installed, configure a tunnel there
+        pointing to `http://[Homelab-IP]:8080` and set `TUNNEL_URL` in environment.
+
+        **Tailscale Funnel (Alternative):**
+        ```
+        TAILSCALE_AUTHKEY=tskey-xxx docker compose --profile tailscale up -d
+        ```
+        Stable URL without Cloudflare account. Create an auth key at
+        https://login.tailscale.com/admin/settings/keys
+
+        The public URL is automatically displayed in the web UI.

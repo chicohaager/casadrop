@@ -1,0 +1,86 @@
+# syntax=docker/dockerfile:1.7
+#
+# Minimal scratch-based CasaDrop image (~3 MB, down from ~25 MB alpine).
+#
+# Trade-offs vs. the default Dockerfile:
+#   - No shell, no package manager, no /sbin/ip, no su-exec.
+#   - entrypoint.sh does not run → LAN/Tailscale/EasyTier auto-detection
+#     is disabled. You must provide URLs explicitly via env:
+#         LOCAL_IP, TAILSCALE_URL, TUNNEL_URL, CUSTOM_URL, …
+#   - No HEALTHCHECK shell command — wire one through your orchestrator
+#     (Kubernetes livenessProbe, docker-compose healthcheck using a TCP
+#     probe, …).
+#   - Runs as uid/gid 10001 via pre-baked /etc/passwd.
+#
+# Why bother? Attack surface. If the app is compromised, there is no
+# shell to drop into and no tooling to pivot with. Pull time on a fresh
+# node is sub-second.
+
+########################################
+# STAGE 1 — Builder                    #
+########################################
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache ca-certificates tzdata
+
+# Pre-create a low-privilege user in the builder. /etc/passwd and /etc/group
+# will be copied verbatim into the scratch image (scratch has no adduser).
+RUN addgroup -g 10001 -S casadrop \
+ && adduser  -u 10001 -S casadrop -G casadrop \
+        -h /data \
+        -s /sbin/nologin \
+ && mkdir -p /data \
+ && chown -R 10001:10001 /data
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd/ cmd/
+COPY internal/ internal/
+
+RUN CGO_ENABLED=0 GOOS=linux \
+    go build \
+        -ldflags="-w -s" \
+        -trimpath \
+        -o /out/casadrop ./cmd/server
+
+########################################
+# STAGE 2 — scratch                    #
+########################################
+FROM scratch
+
+# Bring along the three things a static Go binary still needs to talk
+# to the outside world:
+#   1. CA bundle for HTTPS
+#   2. timezone database
+#   3. /etc/passwd + /etc/group so USER maps to a name, not a bare UID
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group  /etc/group
+
+# Pre-baked /data owned by uid 10001. Without this, the unprivileged
+# user cannot mkdir /data at startup (scratch has no shell to fix it),
+# so the binary aborts with "permission denied" unless the caller
+# remembers to mount a volume/tmpfs with the right ownership.
+COPY --from=builder --chown=10001:10001 /data /data
+
+# Application: the binary + the web assets (templates + static).
+# Explicit --chmod=0644 on assets so a restrictive umask on the build host
+# (seen in the wild: logo.png ended up as 0600 and Go's http.FileServer
+# returned 403 because uid 10001 couldn't open it).
+COPY --from=builder /out/casadrop /app/casadrop
+COPY --chmod=0755 web/     /app/web/
+COPY --chmod=0644 logo.png /app/web/static/logo.png
+
+USER casadrop:casadrop
+
+ENV PORT=8080 \
+    DATA_DIR=/data \
+    TEMPLATES_DIR=/app/web/templates \
+    STATIC_DIR=/app/web/static
+
+EXPOSE 8080
+
+ENTRYPOINT ["/app/casadrop"]

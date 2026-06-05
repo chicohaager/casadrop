@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CasaDrop - {{.Name}}</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-body: #F5F6F8;
+            --bg-card: #FFFFFF;
+            --bg-secondary: #FFFFFF;
+            --accent: #2D6A4F;
+            --accent-gradient: linear-gradient(135deg, #2D6A4F, #40916C, #52B788);
+            --text-primary: #1A1A2E;
+            --text-secondary: #4A5568;
+            --text-muted: #A0AEC0;
+            --border: #E8ECF0;
+            --success: #38A169;
+            --danger: #E53E3E;
+            --warning: #DD6B20;
+            --radius: 10px;
+            --radius-card: 16px;
+            --radius-lg: 20px;
+            --shadow: 0 10px 32px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg-body);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .card {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 520px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 32px 32px 0;
+            text-align: center;
+        }
+
+        .brand-icon {
+            width: 40px;
+            height: 40px;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        .brand-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .card-body {
+            padding: 24px 32px 32px;
+        }
+
+        .link-title {
+            font-size: 20px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .link-subtitle {
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        /* Constraints */
+        .constraints {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .constraint-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            background: var(--bg-body);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .constraint-tag svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        /* Upload counter */
+        .upload-counter {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .counter-bar {
+            height: 4px;
+            background: var(--bg-body);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .counter-fill {
+            height: 100%;
+            background: var(--accent-gradient);
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+
+        .counter-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .counter-text strong {
+            color: var(--text-primary);
+        }
+
+        /* Password field */
+        .password-field {
+            margin-bottom: 16px;
+        }
+
+        .password-field label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .password-field input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            font-family: var(--font);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .password-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45,106,79,0.08); }
+        .password-field input::placeholder { color: var(--text-muted); }
+
+        /* Drop zone */
+        .drop-zone {
+            position: relative;
+            border: 2px dashed #D1D5DB;
+            border-radius: var(--radius-card);
+            padding: 40px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s, background 0.3s;
+            margin-bottom: 16px;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(45,106,79,0.03);
+        }
+
+        .drop-zone.dragover {
+            animation: dropPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes dropPulse {
+            0%, 100% { border-color: rgba(45,106,79,0.40); }
+            50%      { border-color: rgba(45,106,79,0.80); }
+        }
+
+        .drop-icon {
+            width: 48px;
+            height: 48px;
+            color: var(--text-muted);
+            margin: 0 auto 12px;
+            transition: color 0.3s;
+        }
+
+        .drop-zone:hover .drop-icon { color: var(--accent); }
+
+        .drop-text {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .drop-hint {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .drop-zone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* Selected file */
+        .selected-file {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-body);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+        }
+
+        .selected-file.visible { display: flex; }
+
+        .selected-file-icon {
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: rgba(45,106,79,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .selected-file-icon svg {
+            width: 18px;
+            height: 18px;
+            color: var(--accent);
+        }
+
+        .selected-file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .selected-file-name {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .selected-file-size {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .selected-file-remove {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .selected-file-remove:hover {
+            background: rgba(229,62,62,0.08);
+            color: var(--danger);
+        }
+
+        .selected-file-remove svg { width: 16px; height: 16px; }
+
+        /* Upload button */
+        .btn-upload {
+            display: none;
+            width: 100%;
+            padding: 14px;
+            background: var(--accent-gradient);
+            color: #fff;
+            font-family: var(--font);
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: box-shadow 0.2s, transform 0.1s;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-upload.visible { display: flex; }
+        .btn-upload:hover { box-shadow: 0 4px 16px rgba(45,106,79,0.18); transform: translateY(-1px); }
+        .btn-upload:active { transform: scale(0.98); }
+        .btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-upload svg { width: 18px; height: 18px; }
+
+        /* Progress */
+        .progress-area {
+            display: none;
+            margin-bottom: 16px;
+        }
+
+        .progress-area.visible { display: block; }
+
+        .progress-bar-track {
+            height: 6px;
+            background: var(--bg-body);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent-gradient);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.2s;
+        }
+
+        .progress-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Status messages */
+        .status-message {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            border-radius: var(--radius);
+            margin-top: 16px;
+        }
+
+        .status-message.visible { display: block; }
+
+        .status-message.success {
+            background: rgba(56,161,105,0.06);
+            border: 1px solid rgba(56,161,105,0.20);
+        }
+
+        .status-message.error {
+            background: rgba(229,62,62,0.06);
+            border: 1px solid rgba(229,62,62,0.20);
+        }
+
+        .status-icon {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto 10px;
+        }
+
+        .status-icon.success { color: var(--success); }
+        .status-icon.error { color: var(--danger); }
+
+        .status-message h4 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .status-message.success h4 { color: var(--success); }
+        .status-message.error h4 { color: var(--danger); }
+
+        .status-message p {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Limit reached */
+        .limit-reached {
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        .limit-reached-icon {
+            width: 56px;
+            height: 56px;
+            color: var(--text-muted);
+            margin: 0 auto 16px;
+        }
+
+        .limit-reached h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .limit-reached p {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Checkmark animation */
+        @keyframes checkDraw {
+            to { stroke-dashoffset: 0; }
+        }
+
+        .check-animated {
+            stroke-dasharray: 30;
+            stroke-dashoffset: 30;
+            animation: checkDraw 0.4s ease-out 0.2s forwards;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .card-header { padding: 24px 20px 0; }
+            .card-body { padding: 20px; }
+            .drop-zone { padding: 28px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="card" id="receive-root" data-link-id="{{.ID}}" data-max-file-size="{{.MaxFileSize}}" data-max-uploads="{{.MaxUploads}}" data-current-uploads="{{.CurrentUploads}}">
+        <div class="card-header">
+            <img src="/static/logo.png" alt="CasaDrop" style="height:160px;width:auto;">
+        </div>
+        <div class="card-body">
+            <div class="link-title">{{.Name}}</div>
+            <div class="link-subtitle">Upload files to this receive link</div>
+
+            {{if .LimitReached}}
+            <div class="limit-reached">
+                <svg class="limit-reached-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <h3>Upload Limit Reached</h3>
+                <p>This receive link has reached its maximum number of uploads.</p>
+            </div>
+            {{else}}
+
+            <div class="constraints">
+                {{if .MaxUploads}}
+                <span class="constraint-tag">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/></svg>
+                    Max {{.MaxUploads}} uploads
+                </span>
+                {{end}}
+                {{if .MaxFileSize}}
+                <span class="constraint-tag" id="max-size-tag">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span id="max-size-text"></span>
+                </span>
+                {{end}}
+                {{if .AllowedExtensions}}
+                <span class="constraint-tag">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    {{.AllowedExtensions}}
+                </span>
+                {{end}}
+            </div>
+
+            {{if .MaxUploads}}
+            <div class="upload-counter">
+                <span class="counter-text"><strong>{{.CurrentUploads}}</strong> / {{.MaxUploads}} uploads used</span>
+                <div class="counter-bar">
+                    <div class="counter-fill" id="counter-fill"></div>
+                </div>
+            </div>
+            {{end}}
+
+            {{if .HasPassword}}
+            <div class="password-field">
+                <label>Password</label>
+                <input type="password" id="receive-password" placeholder="Enter link password" autocomplete="off">
+            </div>
+            {{end}}
+
+            <div class="drop-zone" id="drop-zone">
+                <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <div class="drop-text">Drag & drop a file here</div>
+                <div class="drop-hint">or click to browse</div>
+                <input type="file" id="file-input">
+            </div>
+
+            <div class="selected-file" id="selected-file">
+                <div class="selected-file-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                </div>
+                <div class="selected-file-info">
+                    <div class="selected-file-name" id="selected-name"></div>
+                    <div class="selected-file-size" id="selected-size"></div>
+                </div>
+                <button class="selected-file-remove" id="selected-file-remove" title="Remove">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <button class="btn-upload" id="btn-upload">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Upload File
+            </button>
+
+            <div class="progress-area" id="progress-area">
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="progress-fill"></div>
+                </div>
+                <div class="progress-text" id="progress-text">Uploading... 0%</div>
+            </div>
+
+            <div class="status-message success" id="status-success">
+                <svg class="status-icon success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="9 12 11.5 14.5 16 9.5" class="check-animated"/>
+                </svg>
+                <h4>File Uploaded Successfully</h4>
+                <p id="success-detail"></p>
+            </div>
+
+            <div class="status-message error" id="status-error">
+                <svg class="status-icon error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <h4>Upload Failed</h4>
+                <p id="error-detail"></p>
+            </div>
+
+            {{end}}
+        </div>
+    </div>
+
+    <script src="/static/js/receive.js"></script>
+</body>
+</html>
