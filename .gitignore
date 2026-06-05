@@ -40,6 +40,7 @@ tunnel_url.txt
 *.tgz
 
 # Internal pre-release review / design notes (do not publish)
+CLAUDE.md
 TEST_REPORT.md
 SECURITY_REPORT.md
 SECURITY_REPORT.html
