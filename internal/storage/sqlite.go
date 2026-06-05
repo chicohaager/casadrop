@@ -571,11 +571,15 @@ func (s *SQLiteStorage) Search(query string) ([]*models.Share, error) {
 			   COALESCE(user_id, ''), COALESCE(user_email, '')
 		FROM shares
 		WHERE datetime(substr(expires_at, 1, 19)) > datetime('now')
-		  AND (original_name LIKE ? OR file_name LIKE ?)
+		  AND (original_name LIKE ? ESCAPE '\' OR file_name LIKE ? ESCAPE '\')
 		ORDER BY created_at DESC
 	`
 
-	searchPattern := "%" + query + "%"
+	// Escape LIKE metacharacters in the user's query so a literal % or _ doesn't
+	// turn into a wildcard (e.g. "_" matching everything). Backslash is the
+	// escape char declared via ESCAPE above.
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query)
+	searchPattern := "%" + escaped + "%"
 	rows, err := s.db.Query(searchQuery, searchPattern, searchPattern)
 	if err != nil {
 		return nil, err
