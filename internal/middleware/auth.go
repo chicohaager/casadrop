@@ -74,11 +74,12 @@ type AdminAuth struct {
 	mu                sync.RWMutex
 	rateLimiter       *RateLimiter
 	config            *AdminConfig
-	oidcEnabled       bool            // Whether OIDC is enabled
-	oidcLocalDisabled bool            // Whether local auth is disabled when OIDC is enabled
-	apiKeyValidator   APIKeyValidator // Optional API key validator
-	userStore         LocalUserStore  // Optional per-user local credential store
-	stop              chan struct{}   // Shutdown signal for background cleanup goroutine
+	oidcEnabled       bool                                 // Whether OIDC is enabled (startup-cached fallback)
+	oidcLocalDisabled bool                                 // Whether local auth is disabled when OIDC is enabled (fallback)
+	oidcStatusFn      func() (enabled, localDisabled bool) // Live OIDC status (single source of truth)
+	apiKeyValidator   APIKeyValidator                      // Optional API key validator
+	userStore         LocalUserStore                       // Optional per-user local credential store
+	stop              chan struct{}                        // Shutdown signal for background cleanup goroutine
 	stopOnce          sync.Once
 }
 
@@ -113,6 +114,10 @@ type AdminConfig struct {
 	// Optional TOTP second factor for the local admin password login.
 	TOTPSecret  string `json:"totpSecret,omitempty"`
 	TOTPEnabled bool   `json:"totpEnabled,omitempty"`
+	// LastTOTPCounter is the most recently consumed 30s step counter. A code is
+	// accepted only if its counter is strictly greater, making each code
+	// single-use (anti-replay) within the acceptance window.
+	LastTOTPCounter uint64 `json:"lastTotpCounter,omitempty"`
 }
 
 // Constants for security settings
@@ -465,13 +470,27 @@ func (aa *AdminAuth) IsTOTPEnabled() bool {
 	return aa.config != nil && aa.config.TOTPEnabled && aa.config.TOTPSecret != ""
 }
 
-// verifyTOTP validates a 6-digit code against the configured admin secret.
-// Returns true when 2FA is not enabled (nothing to verify).
+// verifyTOTP validates a 6-digit code against the configured admin secret and
+// enforces single-use (anti-replay): a code is rejected if its 30s step counter
+// is at or below the last consumed counter. Returns true when 2FA is not
+// enabled (nothing to verify). Takes aa.mu because it persists the counter.
 func (aa *AdminAuth) verifyTOTP(code string) bool {
-	if !aa.IsTOTPEnabled() {
+	aa.mu.Lock()
+	defer aa.mu.Unlock()
+	if aa.config == nil || !aa.config.TOTPEnabled || aa.config.TOTPSecret == "" {
 		return true
 	}
-	return totp.Validate(aa.config.TOTPSecret, code)
+	counter, ok := totp.ValidateWithCounter(aa.config.TOTPSecret, code)
+	if !ok {
+		return false
+	}
+	// Reject reuse of an already-consumed (or older) code within the window.
+	if aa.config.LastTOTPCounter != 0 && counter <= aa.config.LastTOTPCounter {
+		return false
+	}
+	aa.config.LastTOTPCounter = counter
+	_ = aa.saveConfig()
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -514,7 +533,8 @@ func (aa *AdminAuth) TOTPEnableHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	if req.Secret == "" || !totp.Validate(req.Secret, req.Code) {
+	enrollCounter, ok := totp.ValidateWithCounter(req.Secret, req.Code)
+	if req.Secret == "" || !ok {
 		http.Error(w, "Invalid or expired code", http.StatusBadRequest)
 		return
 	}
@@ -524,6 +544,8 @@ func (aa *AdminAuth) TOTPEnableHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	aa.config.TOTPSecret = req.Secret
 	aa.config.TOTPEnabled = true
+	// Consume the enrollment code so it can't immediately be replayed to log in.
+	aa.config.LastTOTPCounter = enrollCounter
 	err := aa.saveConfig()
 	aa.mu.Unlock()
 	if err != nil {
@@ -685,6 +707,13 @@ func GetUserFromContext(ctx context.Context) *SessionUser {
 	return user
 }
 
+// ContextWithUser returns a copy of ctx carrying the given user, using the same
+// key the auth middleware uses. Exposed so route wiring and tests can inject an
+// authenticated identity without going through a full login.
+func ContextWithUser(ctx context.Context, user *SessionUser) context.Context {
+	return context.WithValue(ctx, userContextKey, user)
+}
+
 // RequireRole middleware checks if user has one of the allowed roles
 func (aa *AdminAuth) RequireRole(roles ...models.Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -797,12 +826,12 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	clientIP := utils.GetClientIP(r)
 	userAgent := r.Header.Get("User-Agent")
 
-	// Check lockout first
-	if aa.IsLockedOut(clientIP) {
-		LogAuditEvent(AuditLoginLocked, clientIP, userAgent, "Login blocked - account locked")
-		aa.renderLoginPage(w, "Account locked due to too many failed attempts. Please try again later.", false)
-		return
-	}
+	// NOTE: lockout is intentionally NOT a hard pre-credential gate. Hard-blocking
+	// a locked IP before checking credentials lets an attacker lock the (typically
+	// single) admin out of their own or a shared-NAT egress IP — a trivial remote
+	// DoS. Instead, correct credentials always pass (below); only wrong credentials
+	// are counted and throttled (see the !ok branch, which escalates the delay and
+	// shows the locked message). The 5/min rate limiter remains the first throttle.
 
 	if r.Method == "GET" {
 		// Generate CSRF token for form
@@ -816,6 +845,14 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// POST - Login attempt
+
+	// Local password auth may be disabled (OIDC-only). Enforce on the endpoint,
+	// not just by hiding the form, so a direct POST can't use the password path.
+	if !aa.IsLocalAuthAllowed() {
+		LogAuditEvent(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
+		aa.renderLoginPage(w, "Local login is disabled. Please sign in with SSO.", false)
+		return
+	}
 
 	// Validate CSRF token
 	csrfToken := r.FormValue("csrf_token")
@@ -848,7 +885,13 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	userID, userEmail, role, ok := aa.resolveLogin(email, password)
 	if !ok {
 		attempts := aa.RecordFailedAttempt(clientIP)
-		time.Sleep(500 * time.Millisecond) // Delay to prevent brute force
+		// Escalate the throttle once over the lockout threshold so wrong-credential
+		// guessing is slowed hard, without ever blocking the correct password.
+		if attempts >= MaxFailedAttempts {
+			time.Sleep(2 * time.Second)
+		} else {
+			time.Sleep(500 * time.Millisecond)
+		}
 
 		msg := "Invalid credentials"
 		if attempts >= MaxFailedAttempts-3 {
@@ -903,7 +946,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   utils.IsRequestSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400, // 24 hours
 	})
@@ -929,14 +972,18 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 	clientIP := utils.GetClientIP(r)
 	userAgent := r.Header.Get("User-Agent")
 
-	// Check lockout first
-	if aa.IsLockedOut(clientIP) {
-		LogAuditEvent(AuditLoginLocked, clientIP, userAgent, "JSON login blocked - account locked")
+	// Local password auth may be disabled (OIDC-only); enforce on the endpoint.
+	if !aa.IsLocalAuthAllowed() {
+		LogAuditEvent(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusTooManyRequests)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Account locked due to too many failed attempts. Please try again later."})
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Local login is disabled"})
 		return
 	}
+
+	// Lockout is not a hard pre-credential gate here either — correct credentials
+	// must always be able to log in, otherwise an attacker can DoS-lock the admin
+	// from a shared IP. Wrong credentials are counted/throttled in the !ok branch.
 
 	if !aa.rateLimiter.Allow(clientIP) {
 		w.Header().Set("Content-Type", "application/json")
@@ -948,7 +995,11 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 	userID, userEmail, role, ok := aa.resolveLogin(req.Email, req.Password)
 	if !ok {
 		attempts := aa.RecordFailedAttempt(clientIP)
-		time.Sleep(500 * time.Millisecond)
+		if attempts >= MaxFailedAttempts {
+			time.Sleep(2 * time.Second)
+		} else {
+			time.Sleep(500 * time.Millisecond)
+		}
 
 		msg := "Invalid credentials"
 		if attempts >= MaxFailedAttempts {
@@ -994,7 +1045,7 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   utils.IsRequestSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400,
 	})
@@ -1021,7 +1072,7 @@ func (aa *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   utils.IsRequestSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})
@@ -1123,7 +1174,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   utils.IsRequestSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   86400,
 	})
@@ -1144,12 +1195,13 @@ func (aa *AdminAuth) AuthStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cookie, err := r.Cookie("casadrop_session"); err == nil {
-		aa.mu.RLock()
-		if session, exists := aa.sessions[cookie.Value]; exists && time.Now().Before(session.ExpiresAt) {
+		// Route through getSession so this honors BOTH the idle expiry and the
+		// absolute-lifetime cap — otherwise a session past its absolute TTL would
+		// be reported authenticated here while the real middleware rejects it.
+		if session := aa.getSession(cookie.Value); session != nil {
 			status.Authenticated = true
 			status.SessionExpiry = session.ExpiresAt.Format(time.RFC3339)
 		}
-		aa.mu.RUnlock()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1173,7 +1225,8 @@ func (aa *AdminAuth) GetSessions() []Session {
 	return sessions
 }
 
-// SetOIDCStatus updates the OIDC configuration status
+// SetOIDCStatus updates the OIDC configuration status (startup-cached fallback).
+// Prefer SetOIDCStatusProvider for a live, runtime-accurate source.
 func (aa *AdminAuth) SetOIDCStatus(enabled, localDisabled bool) {
 	aa.mu.Lock()
 	defer aa.mu.Unlock()
@@ -1181,21 +1234,44 @@ func (aa *AdminAuth) SetOIDCStatus(enabled, localDisabled bool) {
 	aa.oidcLocalDisabled = localDisabled
 }
 
+// SetOIDCStatusProvider registers a live status source (the OIDC provider) so
+// local-auth decisions always reflect the current runtime config rather than a
+// value cached once at startup. Without this, enabling OIDC + disable_local_auth
+// at runtime via the admin API would leave the local password login path open
+// until the next restart (the UI hides the form but the backend still accepts it).
+func (aa *AdminAuth) SetOIDCStatusProvider(fn func() (enabled, localDisabled bool)) {
+	aa.mu.Lock()
+	aa.oidcStatusFn = fn
+	aa.mu.Unlock()
+}
+
+// oidcStatus returns the current OIDC status, preferring the live provider.
+// The status function is invoked without holding aa.mu to avoid lock-order
+// inversions with the provider's own lock.
+func (aa *AdminAuth) oidcStatus() (enabled, localDisabled bool) {
+	aa.mu.RLock()
+	fn := aa.oidcStatusFn
+	cachedEnabled := aa.oidcEnabled
+	cachedDisabled := aa.oidcLocalDisabled
+	aa.mu.RUnlock()
+	if fn != nil {
+		return fn()
+	}
+	return cachedEnabled, cachedDisabled
+}
+
 // IsOIDCEnabled returns whether OIDC authentication is enabled
 func (aa *AdminAuth) IsOIDCEnabled() bool {
-	aa.mu.RLock()
-	defer aa.mu.RUnlock()
-	return aa.oidcEnabled
+	enabled, _ := aa.oidcStatus()
+	return enabled
 }
 
 // IsLocalAuthAllowed returns whether local password authentication is allowed
 func (aa *AdminAuth) IsLocalAuthAllowed() bool {
-	aa.mu.RLock()
-	defer aa.mu.RUnlock()
-	// Local auth is allowed if:
-	// 1. OIDC is not enabled, OR
-	// 2. OIDC is enabled but local auth is not disabled
-	return !aa.oidcEnabled || !aa.oidcLocalDisabled
+	// Local auth is allowed if OIDC is disabled, or OIDC is enabled but local
+	// auth is not explicitly disabled.
+	enabled, localDisabled := aa.oidcStatus()
+	return !enabled || !localDisabled
 }
 
 func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, errorMsg string, isSetup bool, csrfToken ...string) {

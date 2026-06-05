@@ -46,6 +46,30 @@ func SecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// CrossSiteGuard is a defense-in-depth CSRF mitigation for cookie-authenticated,
+// state-changing requests. Modern browsers send the Sec-Fetch-Site fetch-metadata
+// header; when it explicitly reports a cross-site context we refuse the request.
+// This complements (does not replace) the SameSite=Strict session cookie and the
+// CSRF token on the login form. Non-browser API clients (which authenticate with
+// an Authorization bearer/API key and send no session cookie, and no Sec-Fetch-Site
+// header) are unaffected.
+func CrossSiteGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+				// Only cookie-borne auth is subject to browser CSRF; an attacker
+				// cannot set the Authorization header cross-site.
+				if _, err := r.Cookie("casadrop_session"); err == nil && r.Header.Get("Authorization") == "" {
+					http.Error(w, "Cross-site request blocked", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // MaxBodySize returns middleware that limits the size of request bodies.
 // Requests with Content-Length exceeding maxBytes are rejected immediately.
 // All request bodies are wrapped with http.MaxBytesReader as a safety net.
