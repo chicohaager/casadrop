@@ -39,7 +39,7 @@ mkdir casadrop && cd casadrop
 cat > docker-compose.yml << 'EOF'
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     ports:
       - "3000:8080"  # Same port as Pingvin
@@ -133,8 +133,8 @@ Custom branding is not yet supported but planned.
 
 ## Getting Help
 
-- GitHub Issues: [github.com/user/casadrop/issues](https://github.com/user/casadrop/issues)
-- Discussions: [github.com/user/casadrop/discussions](https://github.com/user/casadrop/discussions)
+- GitHub Issues: [github.com/chicohaager/casadrop/issues](https://github.com/chicohaager/casadrop/issues)
+- Discussions: [github.com/chicohaager/casadrop/discussions](https://github.com/chicohaager/casadrop/discussions)
 
 ## Why CasaDrop?
 

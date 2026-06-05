@@ -283,6 +283,6 @@ review and their resolution status.
 - Cloudflare Tunnel integration
 - ZimaOS/CasaOS support
 
-[Unreleased]: https://github.com/user/casadrop/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/user/casadrop/compare/v1.0.0...v2.0.0
-[1.0.0]: https://github.com/user/casadrop/releases/tag/v1.0.0
+[Unreleased]: https://github.com/chicohaager/casadrop/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/chicohaager/casadrop/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/chicohaager/casadrop/releases/tag/v1.0.0

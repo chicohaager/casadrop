@@ -51,7 +51,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: casadrop
-          image: ghcr.io/user/casadrop:latest
+          image: chicohaager/casadrop:latest
           imagePullPolicy: Always
           ports:
             - name: http

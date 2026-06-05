@@ -7,7 +7,7 @@
 mkdir casadrop && cd casadrop
 
 # Download docker-compose.yml
-curl -O https://raw.githubusercontent.com/user/casadrop/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/chicohaager/casadrop/main/docker-compose.yml
 
 # Start
 docker compose up -d
@@ -21,7 +21,7 @@ docker compose up -d
 # docker-compose.yml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     ports:
       - "8080:8080"
@@ -41,7 +41,7 @@ services:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     ports:
       - "8080:8080"
@@ -60,7 +60,7 @@ volumes:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     ports:
       - "8080:8080"
@@ -81,7 +81,7 @@ For public HTTPS access without port forwarding:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     volumes:
       - casadrop-data:/data
@@ -115,7 +115,7 @@ Alternative to Cloudflare with stable URLs:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     volumes:
       - casadrop-data:/data
@@ -163,7 +163,7 @@ healthcheck:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     deploy:
       resources:
         limits:

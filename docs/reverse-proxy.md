@@ -9,7 +9,7 @@ CasaDrop works behind any reverse proxy. Here are configurations for popular opt
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.casadrop.rule=Host(`share.example.com`)"
