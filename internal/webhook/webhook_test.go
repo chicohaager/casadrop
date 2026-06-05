@@ -23,6 +23,9 @@ func setupTestService(t *testing.T) (*Service, func()) {
 	// Clear any env vars
 	os.Unsetenv("WEBHOOK_URL")
 	os.Unsetenv("WEBHOOK_SECRET")
+	// Tests deliver to loopback httptest servers; strict SSRF (now on by default)
+	// would refuse 127.0.0.1. Opt out, mirroring a homelab LAN webhook receiver.
+	t.Setenv("WEBHOOK_STRICT_SSRF", "false")
 
 	service := New(tmpDir)
 

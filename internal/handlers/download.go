@@ -53,6 +53,38 @@ func isPreviewable(mimeType string) bool {
 	return mediaType != MediaTypeUnknown
 }
 
+// inlineContentType decides how a stored file may be served to the browser.
+// Only a strict allow-list of media types is served inline with its real type;
+// everything else — notably text/html, image/svg+xml and xml, which can execute
+// script or render phishing UI in the app's own origin — is forced to an
+// attachment download with a neutral content type. This prevents stored-XSS and
+// same-origin phishing via uploaded files served from /stream.
+func inlineContentType(mimeType string) (contentType string, inline bool) {
+	switch {
+	case strings.HasPrefix(mimeType, "video/"),
+		strings.HasPrefix(mimeType, "audio/"),
+		mimeType == "application/pdf":
+		return mimeType, true
+	case strings.HasPrefix(mimeType, "image/") && mimeType != "image/svg+xml":
+		return mimeType, true
+	default:
+		return "application/octet-stream", false
+	}
+}
+
+// sanitizeFilename produces a safe value for the quoted filename in a
+// Content-Disposition header: it strips CR/LF and other control characters
+// (response-header-injection defence) and escapes backslash and double-quote.
+func sanitizeFilename(name string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(cleaned)
+}
+
 // DownloadFile handles file download requests
 func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -137,7 +169,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set headers for download
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.NewReplacer(`"`, `\"`, `\`, `\\`).Replace(share.OriginalName)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(share.OriginalName)))
 	w.Header().Set("Content-Type", share.MimeType)
 	w.Header().Set("Content-Length", strconv.FormatInt(share.FileSize, 10))
 
@@ -239,9 +271,17 @@ func (h *Handler) StreamFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Set headers for inline viewing
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, strings.NewReplacer(`"`, `\"`, `\`, `\\`).Replace(share.OriginalName)))
-	w.Header().Set("Content-Type", share.MimeType)
+	// Set headers for viewing. Only whitelisted media types are served inline;
+	// anything that could execute in our origin (html/svg/xml/text/unknown) is
+	// forced to an attachment download with a neutral content type.
+	ctype, inline := inlineContentType(share.MimeType)
+	disposition := "attachment"
+	if inline {
+		disposition = "inline"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, sanitizeFilename(share.OriginalName)))
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	// CORS: only allow same-origin requests (no wildcard)

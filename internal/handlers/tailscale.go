@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -51,8 +52,11 @@ func updateTailscaleStatus() {
 	tailscaleConfigLock.Lock()
 	defer tailscaleConfigLock.Unlock()
 
-	// Check if tailscaled is running
-	cmd := exec.Command("tailscale", "status", "--json")
+	// Check if tailscaled is running. Bound the exec so a wedged tailscaled
+	// can't block indefinitely while this holds tailscaleConfigLock.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "tailscale", "status", "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		tailscaleConfig.Status = "disconnected"
@@ -85,8 +89,10 @@ func updateTailscaleStatus() {
 		tailscaleConfig.Status = "disconnected"
 	}
 
-	// Check funnel status
-	funnelCmd := exec.Command("tailscale", "funnel", "status")
+	// Check funnel status (bounded for the same reason as above)
+	fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer fcancel()
+	funnelCmd := exec.CommandContext(fctx, "tailscale", "funnel", "status")
 	if funnelOutput, err := funnelCmd.Output(); err == nil {
 		if strings.Contains(string(funnelOutput), "https://") {
 			// Extract funnel URL

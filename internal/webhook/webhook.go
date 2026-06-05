@@ -2,15 +2,12 @@ package webhook
 
 import (
 	"bytes"
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,43 +34,6 @@ type Service struct {
 	stopped    atomic.Bool
 }
 
-// strictSSRFTransport resolves each target host and refuses to dial any
-// private/loopback/link-local IP, then pins the connection to a validated IP so
-// DNS rebinding between validation and dial can't redirect the request to an
-// internal service. Enabled via WEBHOOK_STRICT_SSRF=true (off by default to keep
-// LAN webhook receivers working in homelab setups).
-func strictSSRFTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	return &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			var lastErr error = fmt.Errorf("webhook: no dialable address for %s", host)
-			for _, ipa := range ips {
-				if utils.IsBlockedIP(ipa.IP) {
-					return nil, fmt.Errorf("webhook: refusing to connect to blocked address %s", ipa.IP)
-				}
-			}
-			for _, ipa := range ips {
-				conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
-				if derr == nil {
-					return conn, nil
-				}
-				lastErr = derr
-			}
-			return nil, lastErr
-		},
-		MaxIdleConns:    10,
-		IdleConnTimeout: 30 * time.Second,
-	}
-}
-
 // New creates a new webhook service
 func New(dataDir string) *Service {
 	s := &Service{
@@ -89,8 +49,8 @@ func New(dataDir string) *Service {
 		},
 		sem: make(chan struct{}, maxConcurrentWebhooks),
 	}
-	if os.Getenv("WEBHOOK_STRICT_SSRF") == "true" {
-		s.client.Transport = strictSSRFTransport()
+	if utils.WebhookStrictSSRFEnabled() {
+		s.client.Transport = utils.StrictSSRFTransport()
 	}
 	s.loadConfig()
 

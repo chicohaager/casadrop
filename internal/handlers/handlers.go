@@ -295,8 +295,10 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if file exists and get info
-	fileInfo, err := os.Stat(cleanPath)
+	// Check if file exists and get info. Operate on resolvedPath (the
+	// symlink-resolved path we validated) rather than cleanPath, so a symlink
+	// swapped after validation can't redirect us outside the allowed roots.
+	fileInfo, err := os.Stat(resolvedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "File not found", http.StatusNotFound)
@@ -327,14 +329,15 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 
 	// Create symlink or copy file
 	if req.UseSymlink {
-		// Create symlink (faster, but file must remain accessible)
-		if err := os.Symlink(cleanPath, destPath); err != nil {
+		// Create symlink (faster, but file must remain accessible). Point at the
+		// validated resolved path, not the (possibly swappable) cleanPath.
+		if err := os.Symlink(resolvedPath, destPath); err != nil {
 			http.Error(w, "Failed to create symlink", http.StatusInternalServerError)
 			return
 		}
 	} else {
 		// Copy file (safer, independent of source)
-		srcFile, err := os.Open(cleanPath)
+		srcFile, err := os.Open(resolvedPath)
 		if err != nil {
 			http.Error(w, "Failed to open source file", http.StatusInternalServerError)
 			return
@@ -641,7 +644,7 @@ func (h *Handler) DeleteShare(w http.ResponseWriter, r *http.Request) {
 
 	// Check permission: admin can delete any share, others only their own
 	if user != nil && user.Role != models.RoleAdmin {
-		if share.UserID != "" && share.UserID != user.ID {
+		if share.UserID != user.ID {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "You can only delete your own shares"})
@@ -670,7 +673,7 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 	// Check ownership: non-admin users can only view their own shares
 	user := middleware.GetUserFromContext(r.Context())
 	if user != nil && user.Role != models.RoleAdmin {
-		if share.UserID != "" && share.UserID != user.ID {
+		if share.UserID != user.ID {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -697,7 +700,7 @@ func (h *Handler) UpdateShare(w http.ResponseWriter, r *http.Request) {
 	// Check ownership (same pattern as DeleteShare)
 	user := middleware.GetUserFromContext(r.Context())
 	if user != nil && user.Role != models.RoleAdmin {
-		if share.UserID != "" && share.UserID != user.ID {
+		if share.UserID != user.ID {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "You can only edit your own shares"})

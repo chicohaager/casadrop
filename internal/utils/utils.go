@@ -2,6 +2,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,12 +10,16 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // trustedProxies holds the parsed TRUSTED_PROXY allow-list. When non-empty,
-// X-Forwarded-For / X-Real-IP are only honored if the direct peer (RemoteAddr)
-// is one of these networks. When empty (the default), forwarded headers are
-// trusted — correct for the documented "always behind a reverse proxy" setup.
+// X-Forwarded-For / X-Real-IP / X-Forwarded-Proto are only honored if the direct
+// peer (RemoteAddr) is one of these networks. When empty (the default), the
+// implementation FAILS CLOSED: forwarded headers are ignored and the socket peer
+// is used, so a client can't spoof its IP to evade rate-limit/lockout. Set
+// TRUSTED_PROXY to your reverse proxy's IP/CIDR so the real client IP is
+// recovered — otherwise every request appears to come from the proxy.
 var (
 	trustedProxies     []*net.IPNet
 	trustedProxiesOnce sync.Once
@@ -72,15 +77,16 @@ func peerIsTrustedProxy(r *http.Request) bool {
 
 // GetClientIP extracts the client IP address from an HTTP request.
 //
-// If TRUSTED_PROXY is configured, X-Forwarded-For / X-Real-IP are honored only
-// when the request actually arrives from one of those proxies — otherwise a
-// client could spoof its IP and defeat per-IP rate limiting / lockout. If
-// TRUSTED_PROXY is unset, forwarded headers are trusted (default for the
-// always-proxied deployment model). Only the leftmost XFF entry is used.
+// Fail-closed: X-Forwarded-For / X-Real-IP are honored ONLY when the request
+// arrives from a peer listed in TRUSTED_PROXY. If TRUSTED_PROXY is unset, the
+// forwarded headers are ignored and the real socket peer is used, so a directly
+// reachable client cannot spoof its IP to defeat per-IP rate limiting / lockout.
+// Behind a reverse proxy, set TRUSTED_PROXY to the proxy's IP/CIDR so the real
+// client IP is recovered. Only the leftmost XFF entry is used.
 func GetClientIP(r *http.Request) string {
 	trustedProxiesOnce.Do(loadTrustedProxies)
 
-	honorForwarded := len(trustedProxies) == 0 || peerIsTrustedProxy(r)
+	honorForwarded := peerIsTrustedProxy(r)
 	if honorForwarded {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			if idx := strings.Index(xff, ","); idx != -1 {
@@ -242,6 +248,68 @@ func PreferredPublicBaseURL(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSuffix(base, "/")
+}
+
+// IsRequestSecure reports whether the request reached the server over HTTPS.
+// Fail-closed to match GetClientIP: X-Forwarded-Proto is honored only when the
+// direct peer is a configured trusted proxy, so an untrusted direct client
+// can't forge it to influence the Secure cookie attribute. Behind a
+// TLS-terminating proxy, set TRUSTED_PROXY for the header to be trusted.
+func IsRequestSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	trustedProxiesOnce.Do(loadTrustedProxies)
+	if peerIsTrustedProxy(r) {
+		return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	}
+	return false
+}
+
+// WebhookStrictSSRFEnabled reports whether strict SSRF protection for outbound
+// webhooks is active. It is ON by default (fail-closed: CasaDrop is meant to be
+// internet-exposed, and webhook URLs are attacker-influenceable via receive
+// links) and only disabled when WEBHOOK_STRICT_SSRF is explicitly "false" — the
+// homelab opt-out for LAN webhook receivers.
+func WebhookStrictSSRFEnabled() bool {
+	return os.Getenv("WEBHOOK_STRICT_SSRF") != "false"
+}
+
+// StrictSSRFTransport resolves each target host and refuses to dial any
+// private/loopback/link-local IP, then pins the connection to a validated IP so
+// DNS rebinding between validation and dial can't redirect the request to an
+// internal service. Shared by all outbound webhook clients; enabled by default
+// (see WebhookStrictSSRFEnabled).
+func StrictSSRFTransport() *http.Transport {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ipa := range ips {
+				if IsBlockedIP(ipa.IP) {
+					return nil, fmt.Errorf("ssrf: refusing to connect to blocked address %s", ipa.IP)
+				}
+			}
+			var lastErr error = fmt.Errorf("ssrf: no dialable address for %s", host)
+			for _, ipa := range ips {
+				conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
+				if derr == nil {
+					return conn, nil
+				}
+				lastErr = derr
+			}
+			return nil, lastErr
+		},
+		MaxIdleConns:    10,
+		IdleConnTimeout: 30 * time.Second,
+	}
 }
 
 // SanitizeFilename removes or replaces characters that could be problematic in filenames

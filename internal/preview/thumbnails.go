@@ -1,9 +1,11 @@
 package preview
 
 import (
+	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +68,20 @@ func (s *ThumbnailService) generateThumbnail(srcPath, dstPath string) (string, e
 		return "", err
 	}
 	defer file.Close()
+
+	// Guard against decompression bombs: read just the header to get the pixel
+	// dimensions and refuse images that would blow up memory on a full decode
+	// (a small file can declare a huge canvas). Best-effort — if the header
+	// can't be parsed we fall through to the normal decode, which will error.
+	const maxPixels = 50 * 1000 * 1000 // 50 megapixels
+	if cfg, _, cfgErr := image.DecodeConfig(file); cfgErr == nil {
+		if int64(cfg.Width)*int64(cfg.Height) > maxPixels {
+			return "", fmt.Errorf("image too large to thumbnail: %dx%d", cfg.Width, cfg.Height)
+		}
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
 
 	// Decode image
 	var img image.Image

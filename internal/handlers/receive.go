@@ -219,7 +219,7 @@ func (h *Handler) DeleteReceiveLink(w http.ResponseWriter, r *http.Request) {
 	link, ok := h.storage.GetReceiveLink(id)
 	if ok {
 		if user != nil && user.Role != models.RoleAdmin {
-			if link.UserID != "" && link.UserID != user.ID {
+			if link.UserID != user.ID {
 				http.Error(w, "You can only delete your own receive links", http.StatusForbidden)
 				return
 			}
@@ -308,16 +308,29 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check password if required
+	// Check password if required. Rate-limit per (link, IP) exactly like the
+	// share-download password path, otherwise this public endpoint allows
+	// unlimited brute-forcing of the receive-link password.
 	if link.HasPassword {
+		clientIP := utils.GetClientIP(r)
+		if h.sharePassLimiter.isBlocked(id, clientIP) {
+			http.Error(w, "Too many password attempts. Please try again later.", http.StatusTooManyRequests)
+			return
+		}
 		password := r.FormValue("password")
 		if password == "" {
 			password = r.Header.Get("X-Password")
 		}
 		if !auth.CheckPassword(password, link.Password) {
-			http.Error(w, "Invalid password", http.StatusUnauthorized)
+			attempts := h.sharePassLimiter.recordFailure(id, clientIP)
+			if attempts >= sharePasswordMaxAttempts {
+				http.Error(w, "Too many password attempts. Please try again later.", http.StatusTooManyRequests)
+			} else {
+				http.Error(w, "Invalid password", http.StatusUnauthorized)
+			}
 			return
 		}
+		h.sharePassLimiter.resetAttempts(id, clientIP)
 	}
 
 	// Set max file size
@@ -442,6 +455,10 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 						MimeType:     mimeType,
 						ExpiresAt:    time.Now().Add(24 * time.Hour),
 						CreatedAt:    time.Now(),
+						// Inherit ownership from the parent receive link so the
+						// auto-created share is not left ownerless (ownerless items
+						// are admin-only after the IDOR fix). Empty UserID => admin.
+						UserID: link.UserID,
 					}
 
 					if err := h.storage.Save(share); err == nil {
@@ -553,6 +570,12 @@ func (h *Handler) sendReceiveWebhook(link *models.ReceiveLink, file *models.Rece
 		// SSRF guard applied at link-creation time (mirrors webhook.Service).
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+	// When strict SSRF is enabled, pin the dial to a validated public IP so a
+	// per-link webhook host can't DNS-rebind to an internal target after the
+	// literal-IP check at creation time (matches webhook.Service).
+	if utils.WebhookStrictSSRFEnabled() {
+		client.Transport = utils.StrictSSRFTransport()
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Failed to send receive webhook: %v", err)
@@ -614,8 +637,9 @@ func (h *Handler) DownloadReceivedFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.NewReplacer(`"`, `\"`, `\`, `\\`).Replace(targetFile.OriginalName)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(targetFile.OriginalName)))
 	w.Header().Set("Content-Type", targetFile.MimeType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", strconv.FormatInt(targetFile.FileSize, 10))
 
 	if _, err := io.Copy(w, file); err != nil {

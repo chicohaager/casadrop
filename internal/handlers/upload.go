@@ -18,6 +18,7 @@ import (
 	"casadrop/internal/auth"
 	"casadrop/internal/middleware"
 	"casadrop/internal/models"
+	"casadrop/internal/utils"
 )
 
 // neverExpires is the sentinel stored in Share.ExpiresAt for shares
@@ -33,7 +34,9 @@ func expiresAtFromHours(hours int) time.Time {
 	if hours <= 0 {
 		return neverExpires
 	}
-	return time.Now().Add(time.Duration(hours) * time.Hour)
+	// Clamp to a sane maximum so a huge value can't overflow the int64
+	// nanosecond duration and wrap to a past timestamp (born-expired share).
+	return time.Now().Add(time.Duration(utils.ClampExpiryHours(hours)) * time.Hour)
 }
 
 // ChunkUpload represents an ongoing chunked upload

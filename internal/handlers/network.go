@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -137,37 +138,59 @@ func (h *Handler) saveTunnelURL(w http.ResponseWriter, r *http.Request) {
 		config.MaxFileSizeGB = 100 // Cap at 100 GB
 	}
 
+	// Detect a transition of the primary network TO Cloudflare. When the user
+	// switches to Cloudflare while running the free quick-tunnel, mint a FRESH
+	// throwaway trycloudflare.com URL — "select Cloudflare → new link" for
+	// quick one-off shares. Only on the transition (not on every settings save
+	// while Cloudflare is already primary), so unrelated saves never kill a
+	// link that's currently being shared.
+	oldConfig, _ := h.loadTunnelConfig()
+	rotatingCloudflare := false
+	if strings.EqualFold(config.PrimaryNetwork, "cloudflare") &&
+		!strings.EqualFold(oldConfig.PrimaryNetwork, "cloudflare") {
+		rotatingCloudflare = h.requestCloudflareRotate()
+	}
+
 	if err := h.saveTunnelConfig(&config); err != nil {
 		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
 	}
 
+	resp := map[string]interface{}{"status": "ok"}
+	if rotatingCloudflare {
+		// Tell the frontend to poll for the freshly minted URL.
+		resp["cloudflareRotating"] = true
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	json.NewEncoder(w).Encode(resp)
 }
 
-// detectTailscaleIP attempts to detect the Tailscale IPv4 address
-func detectTailscaleIP() string {
-	out, err := exec.Command("tailscale", "ip", "-4").Output()
-	if err == nil {
-		ip := strings.TrimSpace(string(out))
-		if ip != "" {
-			return ip
+// requestCloudflareRotate asks the tunnel container to mint a fresh Cloudflare
+// quick-tunnel URL by dropping a sentinel file into the shared data dir, which
+// scripts/tunnel-wrapper.sh watches for and acts on (kills + restarts
+// cloudflared). Returns true when a rotation was requested.
+//
+// The app only WRITES the request sentinel (the data dir is owned by the app
+// user); it deliberately does NOT touch tunnel_url.txt — that file is written
+// by the root-owned tunnel container and the wrapper clears it itself when a
+// rotation starts. No-op (returns false) for a token-based tunnel, whose
+// hostname is fixed in the Cloudflare dashboard and has nothing to rotate.
+func (h *Handler) requestCloudflareRotate() bool {
+	dataDir := h.getDataDir()
+
+	if data, err := os.ReadFile(filepath.Join(dataDir, "tunnel_url.txt")); err == nil {
+		if strings.TrimSpace(string(data)) == "token" {
+			return false
 		}
 	}
-	// Fallback: scan interfaces
-	ifaces, _ := net.Interfaces()
-	for _, iface := range ifaces {
-		if strings.HasPrefix(iface.Name, "tailscale") {
-			addrs, _ := iface.Addrs()
-			for _, addr := range addrs {
-				if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
-					return ipnet.IP.String()
-				}
-			}
-		}
+
+	reqFile := filepath.Join(dataDir, "tunnel_rotate.request")
+	if err := os.WriteFile(reqFile, []byte("rotate\n"), 0o644); err != nil {
+		log.Printf("cloudflare rotate: could not write request file %s: %v", reqFile, err)
+		return false
 	}
-	return ""
+	log.Printf("cloudflare rotate: requested a fresh quick-tunnel URL")
+	return true
 }
 
 // detectTailscaleFunnelURL attempts to detect the Tailscale Funnel HTTPS URL

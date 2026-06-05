@@ -44,9 +44,17 @@ func main() {
 	if err != nil {
 		log.Printf("OIDC: Failed to initialize provider: %v", err)
 		oidcProvider = nil
-	} else if oidcProvider != nil && oidcProvider.IsEnabled() {
-		adminAuth.SetOIDCStatus(true, oidcProvider.IsLocalAuthDisabled())
-		log.Printf("OIDC: Provider enabled")
+	}
+	if oidcProvider != nil {
+		// Register the provider as the live source of OIDC status so that
+		// enabling OIDC / disable_local_auth at runtime (via the admin API)
+		// takes effect immediately instead of staying cached until restart.
+		adminAuth.SetOIDCStatusProvider(func() (bool, bool) {
+			return oidcProvider.IsEnabled(), oidcProvider.IsLocalAuthDisabled()
+		})
+		if oidcProvider.IsEnabled() {
+			log.Printf("OIDC: Provider enabled")
+		}
 	}
 
 	oidcHandlers := auth.NewHandlers(oidcProvider, adminAuth)
