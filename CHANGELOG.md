@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security (pre-public-release hardening review)
+- **Setup-wizard takeover guard.** When no `ADMIN_PASSWORD` is set, the
+  unauthenticated `/setup` wizard now requires a one-time **setup token** that is
+  printed only to the server logs (`docker logs casadrop`). This closes the race
+  where an internet-exposed, not-yet-configured instance (a tunnel can publish
+  the URL before setup finishes) is claimed by whoever reaches `/setup` first.
+  Setting `ADMIN_PASSWORD` skips the wizard entirely.
 - **IDOR fix — ownerless items are now admin-only.** Shares/receive links with
   an empty `UserID` (created under the shared-admin login or via receive-link
   auto-share) were accessible to *every* authenticated user. The ownership guard

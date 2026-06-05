@@ -79,6 +79,7 @@ type AdminAuth struct {
 	oidcStatusFn      func() (enabled, localDisabled bool) // Live OIDC status (single source of truth)
 	apiKeyValidator   APIKeyValidator                      // Optional API key validator
 	userStore         LocalUserStore                       // Optional per-user local credential store
+	setupToken        string                               // One-time token gating the unauthenticated setup wizard
 	stop              chan struct{}                        // Shutdown signal for background cleanup goroutine
 	stopOnce          sync.Once
 }
@@ -145,6 +146,24 @@ func NewAdminAuth(envPassword string, dataDir string) *AdminAuth {
 
 	aa.loadConfig()
 	aa.loadSessions()
+
+	// Setup-wizard takeover guard: when there is no ADMIN_PASSWORD and setup is
+	// not yet done, /setup is reachable unauthenticated. Stop a race where an
+	// internet-exposed instance is claimed by whoever hits /setup first (tunnels
+	// can publish the public URL before the operator finishes) by requiring a
+	// one-time setup token that is printed ONLY to the server logs.
+	if aa.envPassword == "" && (aa.config == nil || !aa.config.SetupDone) {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			log.Printf("FATAL: failed to generate setup token: %v", err)
+		} else {
+			aa.setupToken = hex.EncodeToString(b)
+			log.Printf("=== CasaDrop SETUP TOKEN: %s ===", aa.setupToken)
+			log.Printf("Open /setup and enter this token to create the admin account. " +
+				"It is shown only here in the logs (e.g. `docker logs casadrop`). " +
+				"Set ADMIN_PASSWORD to skip the wizard entirely.")
+		}
+	}
 
 	// Session and token cleanup. Exits on Stop() so the goroutine doesn't
 	// leak on graceful shutdown.
@@ -1125,6 +1144,23 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate the one-time setup token (printed to the server logs) so an
+	// internet-exposed, not-yet-configured instance can't be claimed by an
+	// anonymous visitor who reaches /setup first.
+	if aa.setupToken == "" ||
+		subtle.ConstantTimeCompare([]byte(r.FormValue("setup_token")), []byte(aa.setupToken)) != 1 {
+		clientIP := utils.GetClientIP(r)
+		LogAuditEvent(AuditLoginFailed, clientIP, r.Header.Get("User-Agent"), "Setup rejected: invalid setup token")
+		time.Sleep(500 * time.Millisecond)
+		newToken, err := aa.GenerateCSRFToken()
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		aa.renderSetupPage(w, "Invalid setup token. Find it in the server logs (e.g. `docker logs casadrop`).", newToken)
+		return
+	}
+
 	password := r.FormValue("password")
 	confirmPassword := r.FormValue("confirm_password")
 
@@ -1157,6 +1193,9 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		aa.renderSetupPage(w, "Failed to save password", newToken)
 		return
 	}
+
+	// Burn the one-time setup token now that the admin account exists.
+	aa.setupToken = ""
 
 	// Auto-login after setup
 	clientIP := utils.GetClientIP(r)
@@ -1427,9 +1466,14 @@ func (aa *AdminAuth) renderSetupPage(w http.ResponseWriter, errorMsg string, csr
         <h1>Welcome to CasaDrop</h1>
         <p class="subtitle">Initial Setup</p>
         <p class="hint">Create an admin password to secure your file sharing.</p>
+        <p class="hint">Enter the <strong>setup token</strong> printed in the server logs (e.g. <code>docker logs casadrop</code>).</p>
         ` + errorHTML + `
         <form method="POST" action="/setup">
             <input type="hidden" name="csrf_token" value="` + csrf + `">
+            <div class="form-group">
+                <label for="setup_token">Setup token</label>
+                <input type="text" id="setup_token" name="setup_token" placeholder="From the server logs" required autocomplete="off">
+            </div>
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" placeholder="Min. 8 characters" required minlength="8">
