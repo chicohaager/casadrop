@@ -44,6 +44,12 @@ func ProvisioningURI(secret, account, issuer string) string {
 	return "otpauth://totp/" + label + "?" + q.Encode()
 }
 
+// GenerateCode returns the TOTP code for the current 30s step. Useful for
+// tooling and tests; the login path uses Validate / ValidateWithCounter.
+func GenerateCode(secret string) (string, error) {
+	return codeAt(secret, uint64(time.Now().Unix())/period)
+}
+
 func codeAt(secret string, counter uint64) (string, error) {
 	key, err := b32.DecodeString(strings.ToUpper(strings.TrimSpace(secret)))
 	if err != nil {
@@ -66,19 +72,30 @@ func codeAt(secret string, counter uint64) (string, error) {
 // current 30s step plus one step of clock skew on either side. The comparison
 // is constant-time.
 func Validate(secret, code string) bool {
+	_, ok := ValidateWithCounter(secret, code)
+	return ok
+}
+
+// ValidateWithCounter is like Validate but also returns the step counter that
+// matched. Callers can persist the last consumed counter and reject any code
+// whose counter is <= the stored value, giving single-use (anti-replay)
+// semantics within the 90s acceptance window (RFC 6238 §5.2).
+func ValidateWithCounter(secret, code string) (uint64, bool) {
 	code = strings.TrimSpace(code)
 	if len(code) != digits {
-		return false
+		return 0, false
 	}
 	counter := uint64(time.Now().Unix()) / period
+	// Try the current step first so a correct "now" code is preferred over an
+	// adjacent step, minimising spurious replay rejections of the next code.
 	for _, c := range []uint64{counter, counter - 1, counter + 1} {
 		want, err := codeAt(secret, c)
 		if err != nil {
-			return false
+			return 0, false
 		}
 		if subtle.ConstantTimeCompare([]byte(want), []byte(code)) == 1 {
-			return true
+			return c, true
 		}
 	}
-	return false
+	return 0, false
 }

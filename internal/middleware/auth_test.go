@@ -486,7 +486,10 @@ func TestRateLimiter(t *testing.T) {
 }
 
 func TestGetClientIPViaUtils(t *testing.T) {
-	// GetClientIP is now unified in utils package
+	// Fail-closed contract: with no TRUSTED_PROXY configured (the test default),
+	// forwarded headers are NOT trusted and the real socket peer is used, so a
+	// direct client can't spoof its IP to evade rate-limit/lockout. Honoring of
+	// X-Forwarded-* from configured proxies is covered in utils' own tests.
 	tests := []struct {
 		name       string
 		headers    map[string]string
@@ -499,22 +502,22 @@ func TestGetClientIPViaUtils(t *testing.T) {
 			expected:   "192.168.1.1",
 		},
 		{
-			name:       "X-Forwarded-For single",
+			name:       "X-Forwarded-For ignored from untrusted peer",
 			headers:    map[string]string{"X-Forwarded-For": "10.0.0.1"},
 			remoteAddr: "192.168.1.1:12345",
-			expected:   "10.0.0.1",
+			expected:   "192.168.1.1",
 		},
 		{
-			name:       "X-Forwarded-For chain returns first IP only",
+			name:       "X-Forwarded-For chain ignored from untrusted peer",
 			headers:    map[string]string{"X-Forwarded-For": "10.0.0.1, 10.0.0.2, 10.0.0.3"},
 			remoteAddr: "192.168.1.1:12345",
-			expected:   "10.0.0.1",
+			expected:   "192.168.1.1",
 		},
 		{
-			name:       "X-Real-IP",
+			name:       "X-Real-IP ignored from untrusted peer",
 			headers:    map[string]string{"X-Real-IP": "172.16.0.1"},
 			remoteAddr: "192.168.1.1:12345",
-			expected:   "172.16.0.1",
+			expected:   "192.168.1.1",
 		},
 	}
 

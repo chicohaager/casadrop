@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -47,7 +48,16 @@ func NewUserService(storage storage.StorageBackend) *UserService {
 	defaultRole := models.RoleViewer
 	if role := os.Getenv(EnvOIDCDefaultRole); role != "" {
 		switch models.Role(role) {
-		case models.RoleAdmin, models.RoleUser, models.RoleViewer:
+		case models.RoleAdmin:
+			// Refuse admin as an auto-provision default: with a multi-tenant IdP
+			// (Google/Azure/Okta) every account that can authenticate would be
+			// auto-promoted to admin. Admins must be promoted explicitly by an
+			// existing admin. Downgrade to 'user' and warn loudly.
+			log.Printf("OIDC: SECURITY: OIDC_DEFAULT_ROLE=admin is refused for auto-provisioning " +
+				"(would grant admin to every IdP account). Falling back to 'user'. " +
+				"Promote admins explicitly via user management.")
+			defaultRole = models.RoleUser
+		case models.RoleUser, models.RoleViewer:
 			defaultRole = models.Role(role)
 		}
 	}
@@ -101,15 +111,17 @@ func (s *UserService) FindOrCreateOIDCUser(userInfo *UserInfo) (*models.User, er
 		// Update last login time
 		now := time.Now().UTC()
 		user.LastLoginAt = &now
-		// Update email/name if changed
-		if userInfo.Email != "" && userInfo.Email != user.Email {
+		// Update the stored email only when the IdP asserts it's verified —
+		// the subject is the trust anchor, but an unverified email must not be
+		// allowed to overwrite the key used by email-linking / local login.
+		if userInfo.Email != "" && userInfo.Email != user.Email && userInfo.EmailVerified {
 			user.Email = userInfo.Email
 		}
 		if userInfo.Name != "" && userInfo.Name != user.Name {
 			user.Name = userInfo.Name
 		}
 		if err := s.storage.UpdateUser(user); err != nil {
-			// Non-fatal, just log
+			log.Printf("OIDC: failed to update user %s on login: %v", user.ID, err)
 		}
 		return user, nil
 	}

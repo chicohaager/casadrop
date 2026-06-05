@@ -164,7 +164,7 @@ func (h *Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   utils.IsRequestSecure(r),
 		SameSite: http.SameSiteLaxMode, // Lax for OIDC redirect flow
 		MaxAge:   86400,                // 24 hours
 	})
@@ -179,7 +179,7 @@ func (h *Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 // LogoutHandler handles OIDC logout.
 // GET /auth/oidc/logout
 func (h *Handlers) LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	isHTTPS := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	isHTTPS := utils.IsRequestSecure(r)
 
 	// Clear session cookie first (match creation flags so browsers honour it)
 	http.SetCookie(w, &http.Cookie{
