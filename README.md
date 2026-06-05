@@ -1,16 +1,24 @@
+<p align="center">
+  <img src="assets/logo.png" alt="CasaDrop logo" width="180">
+</p>
+
 # CasaDrop
 
 Self-hosted file sharing for your homelab — share files and entire folders via link or QR, receive uploads from others, with password protection, expiry, and download limits. Multi-user with OIDC/SSO, media streaming, and one-step public access over Tailscale, Cloudflare Tunnel, or any reverse proxy — all in a single lightweight static Go binary.
 
-[![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fuser%2Fcasadrop-blue)](https://ghcr.io/user/casadrop)
+[![Docker Image](https://img.shields.io/badge/docker-chicohaager%2Fcasadrop-blue)](https://hub.docker.com/r/chicohaager/casadrop)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+<p align="center">
+  <img src="assets/desktop.png" alt="CasaDrop screenshot" width="820">
+</p>
 
 ---
 
 ## Quick Start
 
 ```bash
-docker run -d -p 8080:8080 -v casadrop_data:/data ghcr.io/user/casadrop:latest
+docker run -d -p 8080:8080 -v casadrop_data:/data chicohaager/casadrop:latest
 ```
 
 Open http://localhost:8080 and start sharing!
@@ -92,7 +100,7 @@ Open http://localhost:8080 and start sharing!
 # docker-compose.yml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     ports:
       - "8080:8080"
@@ -114,7 +122,7 @@ docker compose up -d
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     ports:
       - "8080:8080"
@@ -136,7 +144,7 @@ services:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.casadrop.rule=Host(`share.example.com`)"
