@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Defense-in-depth CSRF** — mutating `/api/*` requests are rejected when a
   browser reports `Sec-Fetch-Site: cross-site` and authenticates by cookie
   (complements the SameSite=Strict session cookie).
+- **Session tokens hashed at rest** — `sessions.json` and the in-memory session
+  map now store only the SHA-256 of the bearer token (the raw token lives only in
+  the client cookie), so a data-dir read / backup leak can't yield live
+  session-hijack tokens. Existing sessions are invalidated on upgrade (re-login).
+- **OIDC PKCE + state→browser binding** — the authorization-code flow now uses
+  PKCE (S256), and the OAuth `state` is bound to the initiating browser via a
+  short-lived HttpOnly cookie verified on callback (defeats authorization-code
+  injection and login-CSRF / forced-login).
 - **Hardening fixes**: share-expiry integer-overflow clamp on the main upload
   path; `Content-Disposition` filenames strip CR/LF (header-injection) across all
   download paths; `AuthStatusHandler` honors the absolute session-lifetime cap;
