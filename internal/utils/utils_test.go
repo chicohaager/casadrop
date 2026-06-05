@@ -1,11 +1,20 @@
 package utils
 
 import (
+	"net"
 	"net/http/httptest"
 	"testing"
 )
 
 func TestGetClientIP(t *testing.T) {
+	// Trust the loopback peer so the X-Forwarded-* cases (whose RemoteAddr is
+	// 127.0.0.1) exercise the honored path. Fail-closed cases use a different,
+	// untrusted RemoteAddr. We set the package var directly and consume the
+	// sync.Once so GetClientIP doesn't reload from the environment.
+	_, loop, _ := net.ParseCIDR("127.0.0.0/8")
+	trustedProxies = []*net.IPNet{loop}
+	trustedProxiesOnce.Do(func() {})
+
 	tests := []struct {
 		name       string
 		headers    map[string]string
@@ -41,6 +50,12 @@ func TestGetClientIP(t *testing.T) {
 			headers:    map[string]string{"X-Forwarded-For": "1.1.1.1", "X-Real-IP": "2.2.2.2"},
 			remoteAddr: "127.0.0.1:12345",
 			expected:   "1.1.1.1",
+		},
+		{
+			name:       "fail-closed: XFF ignored from untrusted (non-proxy) peer",
+			headers:    map[string]string{"X-Forwarded-For": "1.2.3.4"},
+			remoteAddr: "203.0.113.9:4444",
+			expected:   "203.0.113.9",
 		},
 	}
 

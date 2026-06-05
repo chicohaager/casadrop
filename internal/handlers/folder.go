@@ -79,6 +79,11 @@ func (h *Handler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use the validated, symlink-resolved path for all subsequent filesystem
+	// operations (Stat, Walk, stored SourcePath) so a symlink swapped after
+	// validation can't redirect enumeration outside the allowed roots.
+	cleanPath = resolvedPath
+
 	// Check if path exists and is a directory
 	fileInfo, err := os.Stat(cleanPath)
 	if err != nil {
@@ -386,7 +391,7 @@ func (h *Handler) DownloadFolderFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set headers
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.NewReplacer(`"`, `\"`, `\`, `\\`).Replace(fileInfo.Name())))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(fileInfo.Name())))
 	// Detect MIME from the validated, symlink-resolved path — not the raw
 	// input path, which could be swapped to escape the share dir (TOCTOU).
 	w.Header().Set("Content-Type", detectMimeType(fullPathAbs))
@@ -464,7 +469,7 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 
 	// Set headers for ZIP download
 	zipName := share.OriginalName + ".zip"
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, strings.NewReplacer(`"`, `\"`, `\`, `\\`).Replace(zipName)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(zipName)))
 	w.Header().Set("Content-Type", "application/zip")
 
 	// Create buffered writer for better TCP performance

@@ -80,7 +80,15 @@ func registerPublic(r *mux.Router, d Deps) {
 	r.HandleFunc("/r/{id}", h.ReceivePage).Methods("GET")
 	r.HandleFunc("/r/{id}/upload", h.ReceiveUpload).Methods("POST")
 
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(d.StaticDir))))
+	// Force the browser to revalidate cached assets on every load. FileServer
+	// already answers If-Modified-Since with cheap 304s via file mtime, so this
+	// costs almost nothing while guaranteeing an updated app.js/style.css is
+	// picked up immediately after a redeploy (instead of serving a stale copy).
+	static := http.StripPrefix("/static/", http.FileServer(http.Dir(d.StaticDir)))
+	r.PathPrefix("/static/").Handler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		static.ServeHTTP(w, req)
+	}))
 }
 
 func registerProtected(r *mux.Router, d Deps) {
@@ -95,6 +103,8 @@ func registerProtected(r *mux.Router, d Deps) {
 
 	// API root
 	api := protected.PathPrefix("/api").Subrouter()
+	// Defense-in-depth CSRF: reject cross-site cookie-authenticated mutations.
+	api.Use(middleware.CrossSiteGuard)
 	api.Use(middleware.MaxBodySizeSkipPaths(1<<20,
 		"/api/upload", "/api/upload/multi", "/api/upload/chunk"))
 
@@ -113,7 +123,11 @@ func registerAPIShares(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Ha
 	api.Handle("/upload/chunk/init", aa.RequireCanCreateShares()(http.HandlerFunc(h.InitChunkUpload))).Methods("POST")
 	api.Handle("/upload/chunk/{uploadId}", aa.RequireCanCreateShares()(http.HandlerFunc(h.UploadChunk))).Methods("POST")
 	api.Handle("/upload/chunk/{uploadId}/finalize", aa.RequireCanCreateShares()(http.HandlerFunc(h.FinalizeChunkUpload))).Methods("POST")
-	api.Handle("/share-from-path", aa.RequireCanCreateShares()(http.HandlerFunc(h.ShareFromPath))).Methods("POST")
+	// Sharing an arbitrary server path is a host-filesystem operation gated by
+	// SHARE_ALLOWED_PATHS (defaults include /home, /DATA). It must be admin-only:
+	// a non-admin "user" must not be able to browse and exfiltrate other users'
+	// files (e.g. ~/.ssh keys) via the allow-list roots.
+	api.Handle("/share-from-path", aa.RequireAdmin()(http.HandlerFunc(h.ShareFromPath))).Methods("POST")
 
 	api.HandleFunc("/shares", h.ListShares).Methods("GET")
 	// NOTE: bulk-delete must be registered before /shares/{id}
@@ -126,7 +140,8 @@ func registerAPIShares(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Ha
 
 func registerAPIMisc(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Handler, oidc *auth.Handlers) {
 	api.HandleFunc("/stats", h.GetStats).Methods("GET")
-	api.HandleFunc("/browse", h.BrowseFiles).Methods("GET")
+	// Filesystem browser is admin-only (see /share-from-path rationale).
+	api.Handle("/browse", aa.RequireAdmin()(http.HandlerFunc(h.BrowseFiles))).Methods("GET")
 	api.HandleFunc("/network", h.GetNetworkInfo).Methods("GET")
 	api.Handle("/metrics", aa.RequireAdmin()(promhttp.Handler())).Methods("GET")
 	api.Handle("/webhook", aa.RequireAdmin()(http.HandlerFunc(h.WebhookConfig))).Methods("GET", "POST")
@@ -142,7 +157,9 @@ func registerAPIMisc(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Hand
 }
 
 func registerAPIFolderReceive(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Handler) {
-	api.Handle("/share-folder", aa.RequireCanCreateShares()(http.HandlerFunc(h.ShareFolder))).Methods("POST")
+	// Sharing a host folder browses the filesystem under SHARE_ALLOWED_PATHS —
+	// admin-only, same rationale as /browse and /share-from-path.
+	api.Handle("/share-folder", aa.RequireAdmin()(http.HandlerFunc(h.ShareFolder))).Methods("POST")
 
 	api.HandleFunc("/receive-links", h.ListReceiveLinks).Methods("GET")
 	api.Handle("/receive-links", aa.RequireCanCreateShares()(http.HandlerFunc(h.CreateReceiveLink))).Methods("POST")
@@ -183,6 +200,10 @@ func registerAPITailscale(api *mux.Router, aa *middleware.AdminAuth, h *handlers
 	api.Handle("/tailscale", aa.RequireAdmin()(http.HandlerFunc(h.SaveTailscaleConfig))).Methods("POST")
 	api.Handle("/tailscale/start", aa.RequireAdmin()(http.HandlerFunc(h.StartTailscaleHandler))).Methods("POST")
 	api.Handle("/tailscale/stop", aa.RequireAdmin()(http.HandlerFunc(h.StopTailscaleHandler))).Methods("POST")
+
+	// Taildrop — send an existing share's file to a tailnet device (admin only)
+	api.Handle("/taildrop/status", aa.RequireAdmin()(http.HandlerFunc(h.TaildropStatus))).Methods("GET")
+	api.Handle("/taildrop/send", aa.RequireAdmin()(http.HandlerFunc(h.TaildropSend))).Methods("POST")
 }
 
 // rateLimitDownload wraps a handler with per-IP rate limiting. Extracted

@@ -116,7 +116,7 @@ func (s *Service) SendDownloadNotification(senderEmail, senderName, recipientEma
 		return fmt.Errorf("email service is not configured")
 	}
 
-	subject := fmt.Sprintf("Your file has been downloaded")
+	subject := "Your file has been downloaded"
 	body := s.buildDownloadNotificationHTML(senderName, recipientEmail, fileName)
 
 	return s.sendEmail(senderEmail, subject, body)
