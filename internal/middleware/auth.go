@@ -86,6 +86,8 @@ type AdminAuth struct {
 
 // Session represents an authenticated session
 type Session struct {
+	// Token holds the SHA-256 hash of the bearer token (hex), NOT the raw token.
+	// It doubles as the map key. The raw token is never persisted.
 	Token     string      `json:"token"`
 	ExpiresAt time.Time   `json:"expiresAt"`
 	IP        string      `json:"ip"`
@@ -680,12 +682,21 @@ func (aa *AdminAuth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// hashToken returns the hex SHA-256 of a session token. Sessions are keyed and
+// persisted by this hash so the raw bearer token is never written to disk
+// (sessions.json) — a data-dir read (LFI/backup leak) then can't yield live
+// session-hijack tokens. The raw token lives only in the client cookie.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 // getSession returns a session if it exists and is valid
 func (aa *AdminAuth) getSession(token string) *Session {
 	aa.mu.RLock()
 	defer aa.mu.RUnlock()
 
-	session, exists := aa.sessions[token]
+	session, exists := aa.sessions[hashToken(token)]
 	if !exists {
 		return nil
 	}
@@ -771,7 +782,7 @@ func (aa *AdminAuth) validSession(token string) bool {
 	aa.mu.RLock()
 	defer aa.mu.RUnlock()
 
-	session, exists := aa.sessions[token]
+	session, exists := aa.sessions[hashToken(token)]
 	if !exists {
 		return false
 	}
@@ -782,7 +793,8 @@ func (aa *AdminAuth) extendSession(token string) {
 	aa.mu.Lock()
 	defer aa.mu.Unlock()
 
-	if session, exists := aa.sessions[token]; exists {
+	h := hashToken(token)
+	if session, exists := aa.sessions[h]; exists {
 		newExpiry := time.Now().Add(SessionIdleTTL)
 		// Never extend past the absolute lifetime cap.
 		if !session.CreatedAt.IsZero() {
@@ -791,7 +803,7 @@ func (aa *AdminAuth) extendSession(token string) {
 			}
 		}
 		session.ExpiresAt = newExpiry
-		aa.sessions[token] = session
+		aa.sessions[h] = session
 		aa.saveSessions()
 	}
 }
@@ -808,10 +820,11 @@ func (aa *AdminAuth) CreateSessionForUser(ip, userAgent, userID, userEmail strin
 		return "", err
 	}
 	token := base64.URLEncoding.EncodeToString(b)
+	h := hashToken(token)
 
 	aa.mu.Lock()
-	aa.sessions[token] = Session{
-		Token:     token,
+	aa.sessions[h] = Session{
+		Token:     h, // store the hash, never the raw token
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		IP:        ip,
 		UserAgent: userAgent,
@@ -823,13 +836,14 @@ func (aa *AdminAuth) CreateSessionForUser(ip, userAgent, userID, userEmail strin
 	aa.saveSessions()
 	aa.mu.Unlock()
 
+	// Return the raw token for the cookie; only its hash is kept server-side.
 	return token, nil
 }
 
-// InvalidateSession removes a session
+// InvalidateSession removes a session (token is the raw cookie value).
 func (aa *AdminAuth) InvalidateSession(token string) {
 	aa.mu.Lock()
-	delete(aa.sessions, token)
+	delete(aa.sessions, hashToken(token))
 	aa.saveSessions()
 	aa.mu.Unlock()
 }
