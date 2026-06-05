@@ -15,7 +15,7 @@ name: casadrop
 
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     hostname: casadrop
     restart: unless-stopped
@@ -55,7 +55,7 @@ x-casaos:
   description:
     en_us: Simple and secure file sharing for your homelab. Share files via link with optional password protection and expiration.
   developer: CasaDrop
-  icon: https://raw.githubusercontent.com/user/casadrop/main/web/static/img/icon.png
+  icon: https://raw.githubusercontent.com/chicohaager/casadrop/main/assets/logo.png
   tagline:
     en_us: Secure File Sharing
   title:

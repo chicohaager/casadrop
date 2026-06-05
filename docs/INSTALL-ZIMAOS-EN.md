@@ -31,7 +31,7 @@ docker stop zima-share
 docker rm zima-share
 
 # Optional: Remove old image
-docker rmi ghcr.io/user/casadrop:latest
+docker rmi chicohaager/casadrop:latest
 
 # Optional: Delete data (WARNING: Deletes all shares!)
 # sudo rm -rf /DATA/AppData/casadrop
@@ -78,7 +78,7 @@ version: "3.8"
 
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     ports:
@@ -150,7 +150,7 @@ echo "CasaDrop running at: http://$(hostname -I | awk '{print $1}'):8787"
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     ports:
@@ -167,7 +167,7 @@ services:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     ports:
@@ -188,7 +188,7 @@ services:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     ports:
@@ -215,7 +215,7 @@ services:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     ports:
@@ -244,7 +244,7 @@ services:
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     network_mode: host
@@ -465,5 +465,5 @@ rm -rf casadrop
 
 ## Support
 
-- **GitHub Issues**: [github.com/user/casadrop/issues](https://github.com/user/casadrop/issues)
+- **GitHub Issues**: [github.com/chicohaager/casadrop/issues](https://github.com/chicohaager/casadrop/issues)
 - **IceWhale Community**: [community.zimaspace.com](https://community.zimaspace.com)

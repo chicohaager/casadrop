@@ -38,7 +38,7 @@ OIDC_AUTO_PROVISION=true            # Auto-create users on first login
 ```yaml
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     environment:
       - OIDC_ENABLED=true
       - OIDC_ISSUER_URL=https://authentik.example.com/application/o/casadrop/

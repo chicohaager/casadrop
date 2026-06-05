@@ -1,0 +1,161 @@
+# CasaDrop 2.3.0 — ZimaOS / CasaOS One-Click App
+# =============================================================================
+# INSTALL (one-click):
+#   ZimaOS/CasaOS Dashboard → App Store → "Custom Install" (Import)
+#   → paste / upload this file → Install. Image is pulled from Docker Hub.
+#
+# INSTALL (plain Docker, no App Store):
+#   docker compose -f casadrop-zimaos-app.yaml up -d
+#   then open  http://<host-ip>:8080  (or your WEBUI_PORT)
+#
+# OFFLINE (no internet / no Docker Hub): first load the bundled image, then up:
+#   gunzip -c casadrop-2.3.0-amd64.tar.gz | docker load
+#   docker compose -f casadrop-zimaos-app.yaml up -d
+#
+# CHANGE PORT:   WEBUI_PORT=8085 docker compose -f casadrop-zimaos-app.yaml up -d
+# =============================================================================
+
+name: casadrop
+
+services:
+  casadrop:
+    image: chicohaager/casadrop:2.3.0
+    container_name: casadrop
+    hostname: casadrop
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8080}:8080"
+    volumes:
+      - casadrop-data:/data
+      # ZimaOS standard directories (read-only) — lets the admin browse & share
+      # existing server files. Remove these two lines to forbid host-file sharing.
+      - /DATA:/DATA:ro
+      - /media:/media:ro
+    environment:
+      - PORT=8080
+      - EXTERNAL_PORT=${WEBUI_PORT:-8080}
+      - DATA_DIR=/data
+      - TZ=${TZ:-Europe/Berlin}
+      # Leave blank to use the first-run setup wizard (a one-time setup token is
+      # printed to `docker logs casadrop`). Set a value to skip the wizard.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # File-browser roots (admin-only feature)
+      - SHARE_ALLOWED_PATHS=${SHARE_ALLOWED_PATHS:-/DATA,/media}
+      # Behind a reverse proxy? Set this to the proxy's IP/CIDR so the real
+      # client IP is recovered from X-Forwarded-For. Unset = headers ignored
+      # (fail-closed, anti-spoof).
+      - TRUSTED_PROXY=${TRUSTED_PROXY:-}
+      # Network URLs (optional, normally auto-detected / set in the UI)
+      - TUNNEL_URL=${TUNNEL_URL:-}
+      - LOCAL_IP=${LOCAL_IP:-}
+      - TAILSCALE_URL=${TAILSCALE_URL:-}
+      - CUSTOM_URL=${CUSTOM_URL:-}
+      # Webhook notifications (optional). SSRF guard is fail-closed by default;
+      # set WEBHOOK_STRICT_SSRF=false only for trusted LAN receivers.
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - WEBHOOK_STRICT_SSRF=${WEBHOOK_STRICT_SSRF:-true}
+      # OIDC / SSO (optional)
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URL=${OIDC_REDIRECT_URL:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid,profile,email}
+      - OIDC_DISABLE_LOCAL_AUTH=${OIDC_DISABLE_LOCAL_AUTH:-false}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Root entrypoint chowns the data dir then drops to uid 10001 via su-exec.
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      icon: https://raw.githubusercontent.com/chicohaager/casadrop/main/assets/logo.png
+
+volumes:
+  casadrop-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /DATA/AppData/casadrop/data
+
+# -----------------------------------------------------------------------------
+# CasaOS / ZimaOS App-Store metadata
+# -----------------------------------------------------------------------------
+x-casaos:
+  architectures:
+    - amd64
+  main: casadrop
+  author: Holger Kuehn
+  developer: Holger Kuehn
+  category: Utilities
+  description:
+    de_de: |
+      **CasaDrop** – Einfaches und sicheres File-Sharing für dein Homelab.
+
+      **Funktionen:**
+      - Drag & Drop Datei-Upload (bis 100 GB konfigurierbar)
+      - Datei-Browser zum direkten Teilen von Server-Dateien
+      - Ordner-Freigaben mit Browse-UI und ZIP-Download
+      - Empfangs-Links für eingehende Dateien
+      - Optionaler Passwortschutz, einstellbare Gültigkeit, Download-Limit
+      - QR-Code-Generierung, Medien-Streaming (Video/Audio)
+      - Multi-User mit OIDC/SSO, optionales 2FA für den Admin
+      - Statistik-Dashboard, Prometheus-Metriken
+    en_us: |
+      **CasaDrop** – Simple and secure file sharing for your homelab.
+
+      **Features:**
+      - Drag & drop file upload (up to 100 GB configurable)
+      - File browser to share server files directly
+      - Folder shares with browse UI and ZIP download
+      - Receive links for incoming files
+      - Optional password protection, configurable expiry, download limit
+      - QR code generation, media streaming (video/audio)
+      - Multi-user with OIDC/SSO, optional admin 2FA
+      - Statistics dashboard, Prometheus metrics
+  tagline:
+    de_de: Sicheres File-Sharing mit Multi-Netzwerk-Support
+    en_us: Secure file sharing with multi-network support
+  icon: https://raw.githubusercontent.com/chicohaager/casadrop/main/assets/logo.png
+  thumbnail: https://raw.githubusercontent.com/chicohaager/casadrop/main/assets/desktop.png
+  title:
+    custom: CasaDrop
+    de_de: CasaDrop
+    en_us: CasaDrop
+  index: /
+  port_map: ${WEBUI_PORT:-8080}
+  scheme: http
+  store_app_id: casadrop
+  tips:
+    before_install:
+      de_de: |
+        **Schnellstart:** Die App startet mit lokalem Netzwerk-Zugang auf
+        Port 8080 (oder `WEBUI_PORT`). Beim ersten Aufruf führt ein Setup-
+        Assistent durch die Admin-Passwort-Vergabe; der dafür nötige
+        **Setup-Token** steht im Container-Log (`docker logs casadrop`).
+      en_us: |
+        **Quick start:** the app starts with local network access on port 8080
+        (or `WEBUI_PORT`). On first open a setup wizard creates the admin
+        password; the required **setup token** is printed to the container log
+        (`docker logs casadrop`).

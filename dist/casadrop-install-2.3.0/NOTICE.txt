@@ -1,0 +1,12 @@
+CasaDrop 2.3.0
+Copyright (c) 2026 Holger Kuehn
+
+Licensed under the MIT License. See the bundled LICENSE file for the full terms.
+The software is provided "as is", without warranty of any kind.
+
+Third-party components are distributed under their respective licenses
+(Go standard library and the modules listed in go.mod / go.sum in the source
+repository).
+
+Source code and issue tracker:
+  https://github.com/chicohaager/casadrop

@@ -12,7 +12,7 @@
 
 services:
   casadrop:
-    image: ghcr.io/user/casadrop:latest
+    image: chicohaager/casadrop:latest
     container_name: casadrop
     restart: unless-stopped
     ports:

@@ -14,7 +14,7 @@ Thank you for your interest in contributing to CasaDrop!
 
 ```bash
 # Clone the repository
-git clone https://github.com/user/casadrop.git
+git clone https://github.com/chicohaager/casadrop.git
 cd casadrop
 
 # Run locally (requires Go)

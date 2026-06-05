@@ -63,5 +63,5 @@ CasaDrop
 
 ## Support
 
-- GitHub Issues: [github.com/user/casadrop/issues](https://github.com/user/casadrop/issues)
-- Discussions: [github.com/user/casadrop/discussions](https://github.com/user/casadrop/discussions)
+- GitHub Issues: [github.com/chicohaager/casadrop/issues](https://github.com/chicohaager/casadrop/issues)
+- Discussions: [github.com/chicohaager/casadrop/discussions](https://github.com/chicohaager/casadrop/discussions)
