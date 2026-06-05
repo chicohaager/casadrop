@@ -1,0 +1,47 @@
+# CasaDrop with Traefik reverse proxy
+# Assumes Traefik is running in a Docker network called "traefik"
+#
+# Usage:
+#   docker compose -f docker-compose.traefik.yml up -d
+
+services:
+  casadrop:
+    image: ghcr.io/user/casadrop:latest
+    container_name: casadrop
+    restart: unless-stopped
+    volumes:
+      - casadrop-data:/data
+      # Optional: Mount host directories for file browser
+      # - /mnt/media:/media:ro
+    environment:
+      - TZ=Europe/Berlin
+      - EXTERNAL_PORT=443
+      # - ADMIN_PASSWORD=your-secure-password
+      # - SHARE_ALLOWED_PATHS=/media
+    labels:
+      - "traefik.enable=true"
+      # HTTP Router
+      - "traefik.http.routers.casadrop.rule=Host(`share.example.com`)"
+      - "traefik.http.routers.casadrop.entrypoints=websecure"
+      - "traefik.http.routers.casadrop.tls=true"
+      - "traefik.http.routers.casadrop.tls.certresolver=letsencrypt"
+      # Service
+      - "traefik.http.services.casadrop.loadbalancer.server.port=8080"
+      # Optional: Middleware for security headers (Traefik already adds some)
+      # - "traefik.http.routers.casadrop.middlewares=casadrop-headers"
+      # - "traefik.http.middlewares.casadrop-headers.headers.stsSeconds=31536000"
+    networks:
+      - traefik
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/auth/status"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  casadrop-data:

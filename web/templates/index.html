@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CasaDrop</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar">
+            <div class="sidebar-brand">
+                <img src="/static/logo.png" alt="CasaDrop" class="brand-logo">
+            </div>
+            <nav id="nav">
+                <button class="nav-btn active" data-view="upload">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span data-i18n="nav.upload">Upload</span>
+                </button>
+                <button class="nav-btn" data-view="shares">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <span data-i18n="nav.shares">Shares</span>
+                </button>
+                <button class="nav-btn" data-view="receive">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span data-i18n="nav.receive">Receive</span>
+                </button>
+                <button class="nav-btn" data-view="settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                    <span data-i18n="nav.settings">Settings</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info" id="user-info"></div>
+                <button id="logout-btn" class="nav-btn logout-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    <span data-i18n="nav.logout">Logout</span>
+                </button>
+            </div>
+        </aside>
+
+        <main id="main-content">
+            <!-- LOGIN VIEW -->
+            <div id="login-view" class="view" style="display:none">
+                <div class="login-card">
+                    <div class="login-brand">
+                        <img src="/static/logo.png" alt="CasaDrop" class="login-logo">
+                    </div>
+                    <form id="login-form">
+                        <div class="form-group">
+                            <label data-i18n="login.password" for="login-password">Password</label>
+                            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block" data-i18n="login.submit">Sign In</button>
+                        <p id="login-error" class="error-text" style="display:none"></p>
+                    </form>
+                    <div id="sso-section" style="display:none">
+                        <div class="login-divider"><span data-i18n="login.or">or</span></div>
+                        <button id="sso-btn" class="btn-sso" type="button">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                            <span data-i18n="login.sso">Login with SSO</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- UPLOAD VIEW -->
+            <div id="upload-view" class="view" style="display:none">
+                <div class="view-header">
+                    <h2 data-i18n="upload.title">Upload Files</h2>
+                </div>
+                <div class="upload-area" id="drop-zone">
+                    <div class="upload-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </div>
+                    <p class="upload-text" data-i18n="upload.dropText">Drag & drop files here or click to browse</p>
+                    <p class="upload-hint" data-i18n="upload.hint">Multiple files supported</p>
+                    <input type="file" id="file-input" multiple style="display:none">
+                </div>
+                <div id="upload-options" class="card" style="display:none">
+                    <h3 data-i18n="upload.options">Upload Options</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label data-i18n="upload.password">Password (optional)</label>
+                            <input type="password" id="upload-password" placeholder="">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="upload.expiry">Expires in</label>
+                            <select id="upload-expiry">
+                                <option value="1"    data-i18n="upload.expiry.1h">1 hour</option>
+                                <option value="6"    data-i18n="upload.expiry.6h">6 hours</option>
+                                <option value="12"   data-i18n="upload.expiry.12h">12 hours</option>
+                                <option value="24" selected data-i18n="upload.expiry.1d">1 day</option>
+                                <option value="72"   data-i18n="upload.expiry.3d">3 days</option>
+                                <option value="168"  data-i18n="upload.expiry.7d">7 days</option>
+                                <option value="336"  data-i18n="upload.expiry.14d">14 days</option>
+                                <option value="720"  data-i18n="upload.expiry.30d">30 days</option>
+                                <option value="0"    data-i18n="upload.expiry.never">Never (unlimited)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="upload.maxDownloads">Max downloads (0 = unlimited)</label>
+                            <input type="number" id="upload-max-downloads" value="0" min="0">
+                        </div>
+                    </div>
+                    <div id="file-list" class="file-list"></div>
+                    <button id="upload-btn" class="btn btn-primary" data-i18n="upload.submit">Upload</button>
+                </div>
+                <div id="upload-progress" style="display:none"></div>
+                <div id="upload-results" style="display:none"></div>
+            </div>
+
+            <!-- SHARES VIEW -->
+            <div id="shares-view" class="view" style="display:none">
+                <div class="view-header">
+                    <h2 data-i18n="shares.title">Active Shares</h2>
+                    <button id="refresh-shares" class="btn btn-ghost btn-sm" title="Refresh">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                    </button>
+                    <div id="bulk-actions" style="display:none;gap:8px;align-items:center;margin-left:auto">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;color:var(--text-secondary)"><input type="checkbox" id="select-all-shares"> <span data-i18n="shares.selectAll">Select All</span></label>
+                        <span id="selected-count" style="font-size:0.85rem;color:var(--text-secondary)">0 selected</span>
+                        <button class="btn btn-danger btn-sm" id="bulk-delete-btn" data-i18n="shares.bulkDelete">Delete Selected</button>
+                    </div>
+                </div>
+                <div id="shares-stats" class="stats-bar"></div>
+                <div id="shares-list" class="shares-grid"></div>
+                <div id="shares-empty" class="empty-state" style="display:none">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <p data-i18n="shares.empty">No active shares yet</p>
+                </div>
+            </div>
+
+            <!-- RECEIVE VIEW -->
+            <div id="receive-view" class="view" style="display:none">
+                <div class="view-header">
+                    <h2 data-i18n="receive.title">Receive Links</h2>
+                    <button id="create-receive-btn" class="btn btn-primary btn-sm">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <span data-i18n="receive.create">New Link</span>
+                    </button>
+                </div>
+                <div id="receive-form-wrapper" class="card" style="display:none">
+                    <h3 data-i18n="receive.formTitle">Create Receive Link</h3>
+                    <form id="receive-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="receive.name">Name</label>
+                                <input type="text" id="receive-name" required placeholder="">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="receive.password">Password (optional)</label>
+                                <input type="password" id="receive-password" placeholder="">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="receive.maxUploads">Max uploads (0 = unlimited)</label>
+                                <input type="number" id="receive-max-uploads" value="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="receive.maxFileSize">Max file size (MB, 0 = unlimited)</label>
+                                <input type="number" id="receive-max-file-size" value="0" min="0">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label data-i18n="receive.expiry">Expires in (hours, 0 = never)</label>
+                                <input type="number" id="receive-expiry" value="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label data-i18n="receive.extensions">Allowed extensions (e.g. .pdf,.doc)</label>
+                                <input type="text" id="receive-extensions" placeholder="">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="receive-auto-share">
+                                <span class="toggle-switch"></span>
+                                <span data-i18n="receive.autoShare">Auto-share uploaded files</span>
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary" data-i18n="receive.submit">Create</button>
+                            <button type="button" id="receive-cancel" class="btn btn-ghost" data-i18n="receive.cancel">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="receive-list" class="shares-grid"></div>
+                <div id="receive-empty" class="empty-state" style="display:none">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <p data-i18n="receive.empty">No receive links yet</p>
+                </div>
+            </div>
+
+            <!-- SETTINGS VIEW -->
+            <div id="settings-view" class="view" style="display:none">
+                <div class="view-header">
+                    <h2 data-i18n="settings.title">Settings</h2>
+                </div>
+                <div class="settings-sections">
+                    <div class="card">
+                        <h3 data-i18n="settings.network">Network Configuration</h3>
+                        <div id="network-config"></div>
+                    </div>
+                    <div class="card">
+                        <h3 data-i18n="settings.fileRestrictions">File Restrictions</h3>
+                        <div id="file-restrictions-config"></div>
+                    </div>
+                    <div class="card">
+                        <h3 data-i18n="settings.webhook">Webhook</h3>
+                        <div id="webhook-config"></div>
+                    </div>
+                    <div class="card">
+                        <h3 data-i18n="settings.users">User Management</h3>
+                        <div id="user-management"></div>
+                    </div>
+                    <div class="card">
+                        <h3 data-i18n="settings.twofa">Two-Factor Authentication</h3>
+                        <div id="twofa-config"></div>
+                    </div>
+                    <div class="card">
+                        <h3 data-i18n="settings.apiKeys">API Keys</h3>
+                        <div id="apikeys-config"></div>
+                    </div>
+                    <div class="card">
+                        <h3 data-i18n="settings.smtp">Email / SMTP</h3>
+                        <div id="smtp-config"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <div id="modal-overlay" class="modal-overlay" style="display:none">
+        <div class="modal" id="modal-content"></div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

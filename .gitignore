@@ -1,0 +1,52 @@
+# Runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Config files with secrets
+sessions.json
+admin_config.json
+oidc_config.json
+tailscale_config.json
+smtp_config.json
+
+# Environment files
+.env
+.env.*
+.env.local
+
+# Build artifacts
+*.tar.gz
+*.raw
+casadrop
+zima-share
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Additional runtime config (never commit)
+tunnel_config.json
+webhook_config.json
+tunnel_url.txt
+*.tgz
+
+# Internal pre-release review / design notes (do not publish)
+TEST_REPORT.md
+SECURITY_REPORT.md
+SECURITY_REPORT.html
+SECURITY_REPORT.pdf
+SESSION_NOTES.md
+DESIGN_SPEC.md
+REFACTORING.md
+
+# Junk
+/1

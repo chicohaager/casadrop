@@ -1,0 +1,151 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: casadrop
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: casadrop-config
+  namespace: casadrop
+data:
+  TZ: "Europe/Berlin"
+  PORT: "8080"
+  DATA_DIR: "/data"
+  SHARE_ALLOWED_PATHS: "/data"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: casadrop-data
+  namespace: casadrop
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: longhorn  # Uncomment and adjust for your cluster
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: casadrop
+  namespace: casadrop
+  labels:
+    app: casadrop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: casadrop
+  template:
+    metadata:
+      labels:
+        app: casadrop
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: casadrop
+          image: ghcr.io/user/casadrop:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: casadrop-config
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: casadrop-secrets
+                  key: admin-password
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/auth/status
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/auth/status
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: casadrop-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: casadrop
+  namespace: casadrop
+  labels:
+    app: casadrop
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: casadrop
+---
+# Optional: Ingress (uncomment and customize)
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: casadrop
+#   namespace: casadrop
+#   annotations:
+#     # For Traefik:
+#     # traefik.ingress.kubernetes.io/router.entrypoints: websecure
+#     # For Nginx:
+#     # nginx.ingress.kubernetes.io/proxy-body-size: "10g"
+# spec:
+#   ingressClassName: traefik  # or: nginx
+#   rules:
+#     - host: share.example.com
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: casadrop
+#                 port:
+#                   number: 8080
+#   tls:
+#     - hosts:
+#         - share.example.com
+#       secretName: casadrop-tls

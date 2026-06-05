@@ -1,0 +1,54 @@
+# CasaDrop with Caddy reverse proxy (all-in-one)
+# Caddy automatically handles HTTPS certificates
+#
+# Usage:
+#   Replace share.example.com with your domain
+#   docker compose -f docker-compose.caddy.yml up -d
+
+services:
+  casadrop:
+    image: ghcr.io/user/casadrop:latest
+    container_name: casadrop
+    restart: unless-stopped
+    volumes:
+      - casadrop-data:/data
+      # Optional: Mount host directories
+      # - /mnt/media:/media:ro
+    environment:
+      - TZ=Europe/Berlin
+      - EXTERNAL_PORT=443
+      # - ADMIN_PASSWORD=your-secure-password
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/auth/status"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: casadrop-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - casadrop
+
+volumes:
+  casadrop-data:
+  caddy-data:
+  caddy-config:
+
+# Create a Caddyfile in the same directory:
+#
+# share.example.com {
+#     reverse_proxy casadrop:8080
+#     request_body {
+#         max_size 10GB
+#     }
+# }

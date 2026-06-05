@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CasaDrop - {{.FileName}}</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-body: #F5F6F8;
+            --bg-card: #FFFFFF;
+            --bg-secondary: #FFFFFF;
+            --accent: #2D6A4F;
+            --accent-gradient: linear-gradient(135deg, #2D6A4F, #40916C, #52B788);
+            --text-primary: #1A1A2E;
+            --text-secondary: #4A5568;
+            --text-muted: #A0AEC0;
+            --border: #E8ECF0;
+            --success: #38A169;
+            --danger: #E53E3E;
+            --warning: #DD6B20;
+            --radius: 10px;
+            --radius-card: 16px;
+            --radius-lg: 20px;
+            --shadow: 0 10px 32px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg-body);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .card {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 800px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 32px 32px 0;
+            text-align: center;
+        }
+
+        .brand-icon {
+            width: 40px;
+            height: 40px;
+            color: var(--accent);
+            margin-bottom: 8px;
+        }
+
+        .brand-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .card-body {
+            padding: 24px 32px 32px;
+        }
+
+        /* File info section */
+        .file-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .file-icon {
+            flex-shrink: 0;
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-card);
+            background: rgba(45,106,79,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .file-icon svg {
+            width: 24px;
+            height: 24px;
+            color: var(--accent);
+        }
+
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            word-break: break-word;
+            line-height: 1.3;
+            margin-bottom: 8px;
+        }
+
+        .file-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .meta-item svg {
+            width: 14px;
+            height: 14px;
+            color: var(--text-muted);
+        }
+
+        /* Preview area */
+        .preview-container {
+            margin-bottom: 24px;
+            border-radius: var(--radius-card);
+            overflow: hidden;
+            background: var(--bg-body);
+            border: 1px solid var(--border);
+        }
+
+        .preview-container img {
+            display: block;
+            width: 100%;
+            max-height: 500px;
+            object-fit: contain;
+        }
+
+        .preview-container video {
+            display: block;
+            width: 100%;
+            max-height: 500px;
+            background: #000;
+        }
+
+        .audio-preview {
+            padding: 32px 24px;
+            background: rgba(45,106,79,0.03);
+        }
+
+        .audio-preview audio {
+            width: 100%;
+        }
+
+        .preview-container iframe {
+            display: block;
+            width: 100%;
+            height: 500px;
+            border: none;
+        }
+
+        /* Actions */
+        .actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn-download {
+            flex: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 14px 28px;
+            background: var(--accent-gradient);
+            color: #fff;
+            font-family: var(--font);
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            text-decoration: none;
+            transition: box-shadow 0.2s, transform 0.1s;
+        }
+
+        .btn-download:hover { box-shadow: 0 4px 16px rgba(45,106,79,0.18); transform: translateY(-1px); }
+        .btn-download:active { transform: scale(0.98); }
+
+        .btn-download svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .btn-qr {
+            flex-shrink: 0;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: border-color 0.2s, color 0.2s, background 0.2s;
+        }
+
+        .btn-qr:hover {
+            border-color: #D1D5DB;
+            color: var(--text-primary);
+            background: #F0F2F5;
+        }
+
+        .btn-qr svg { width: 20px; height: 20px; }
+
+        /* QR modal */
+        .qr-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: rgba(0,0,0,0.30);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .qr-overlay.active { display: flex; }
+
+        .qr-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .qr-modal img {
+            width: 200px;
+            height: 200px;
+            border-radius: var(--radius);
+            background: #fff;
+            padding: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .qr-modal p {
+            margin-top: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Password form */
+        .password-section {
+            text-align: center;
+        }
+
+        .lock-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            color: var(--text-muted);
+        }
+
+        .password-section h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .password-section p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        .password-form {
+            display: flex;
+            gap: 8px;
+            max-width: 360px;
+            margin: 0 auto;
+        }
+
+        .password-form input {
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-primary);
+            font-family: var(--font);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .password-form input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(45,106,79,0.08);
+        }
+
+        .password-form input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .password-form button {
+            padding: 12px 24px;
+            background: var(--accent-gradient);
+            color: #fff;
+            font-family: var(--font);
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: box-shadow 0.2s, transform 0.1s;
+        }
+
+        .password-form button:hover { box-shadow: 0 4px 16px rgba(45,106,79,0.18); transform: translateY(-1px); }
+
+        .password-error {
+            color: var(--danger);
+            font-size: 13px;
+            margin-top: 12px;
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .card-header { padding: 24px 20px 0; }
+            .card-body { padding: 20px; }
+            .file-header { flex-direction: column; gap: 12px; }
+            .file-meta { gap: 10px; }
+            .actions { flex-direction: column; }
+            .btn-qr { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="card" id="share-root" data-share-id="{{.ID}}" data-has-password="{{.HasPassword}}">
+        <div class="card-header">
+            <img src="/static/logo.png" alt="CasaDrop" style="height:160px;width:auto;">
+        </div>
+        <div class="card-body">
+            {{if .HasPassword}}
+            <div id="password-gate" class="password-section">
+                <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0110 0v4"/>
+                </svg>
+                <h3>Password Protected</h3>
+                <p>Enter the password to access this file</p>
+                <form class="password-form" id="password-form">
+                    <input type="password" id="share-password" placeholder="Enter password" autocomplete="off" autofocus>
+                    <button type="submit">Unlock</button>
+                </form>
+                <div class="password-error" id="password-error">Incorrect password. Please try again.</div>
+            </div>
+            {{end}}
+
+            <div id="share-content" {{if .HasPassword}}style="display:none"{{end}}>
+                <div class="file-header">
+                    <div class="file-icon">
+                        {{if .IsImage}}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        {{else if .IsVideo}}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                        {{else if .IsAudio}}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        {{else if .IsPDF}}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        {{else}}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                        {{end}}
+                    </div>
+                    <div class="file-info">
+                        <div class="file-name">{{.FileName}}</div>
+                        <div class="file-meta">
+                            <span class="meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                {{.FileSize}}
+                            </span>
+                            <span class="meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                Expires {{.ExpiresAt}}
+                            </span>
+                            <span class="meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                {{.FileExt}}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {{if .CanPreview}}
+                <div class="preview-container">
+                    {{if .IsImage}}
+                    <img id="preview-image" src="/thumbnail/{{.ID}}" alt="{{.FileName}}" loading="lazy" style="cursor:zoom-in" title="Click for full resolution">
+                    {{end}}
+                    {{if .IsVideo}}
+                    <video controls preload="metadata">
+                        <source src="/stream/{{.ID}}" type="{{.MimeType}}">
+                        Your browser does not support video playback.
+                    </video>
+                    {{end}}
+                    {{if .IsAudio}}
+                    <div class="audio-preview">
+                        <audio controls preload="metadata" style="width:100%">
+                            <source src="/stream/{{.ID}}" type="{{.MimeType}}">
+                            Your browser does not support audio playback.
+                        </audio>
+                    </div>
+                    {{end}}
+                    {{if .IsPDF}}
+                    <iframe src="/stream/{{.ID}}" title="PDF Preview"></iframe>
+                    {{end}}
+                </div>
+                {{end}}
+
+                <div class="actions">
+                    <a href="/d/{{.ID}}" class="btn-download" id="download-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download
+                    </a>
+                    <button class="btn-qr" id="qr-toggle-btn" title="Show QR Code">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/><rect x="14" y="18" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Modal -->
+    <div class="qr-overlay" id="qr-overlay">
+        <div class="qr-modal">
+            <img src="/qr/{{.ID}}" alt="QR Code">
+            <p>Scan to download on another device</p>
+        </div>
+    </div>
+
+    <script src="/static/js/share.js"></script>
+</body>
+</html>

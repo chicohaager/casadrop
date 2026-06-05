@@ -1,0 +1,31 @@
+# Tunnel container with shell support (runs the cloudflared supervisor wrapper).
+FROM alpine:3.21
+
+# Pin a cloudflared release for reproducible builds, e.g.
+#   docker build --build-arg CLOUDFLARED_VERSION=2025.1.0 -f Dockerfile.tunnel .
+# Defaults to the latest release. For supply-chain hardening, pin the version and
+# verify the published SHA256 from
+#   https://github.com/cloudflare/cloudflared/releases
+ARG CLOUDFLARED_VERSION=latest
+# Provided automatically by BuildKit (amd64 / arm64 / arm) so the image is built
+# for the correct architecture instead of being hardcoded to amd64.
+ARG TARGETARCH=amd64
+
+RUN apk add --no-cache curl ca-certificates
+
+# Download cloudflared for the target architecture. `-f` makes curl fail on an
+# HTTP error instead of silently writing an error page into the binary.
+RUN set -eux; \
+    if [ "$CLOUDFLARED_VERSION" = "latest" ]; then \
+        url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}"; \
+    else \
+        url="https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${TARGETARCH}"; \
+    fi; \
+    curl -fsSL "$url" -o /usr/local/bin/cloudflared; \
+    chmod +x /usr/local/bin/cloudflared; \
+    /usr/local/bin/cloudflared --version
+
+COPY scripts/tunnel-wrapper.sh /tunnel-wrapper.sh
+RUN chmod +x /tunnel-wrapper.sh
+
+ENTRYPOINT ["/bin/sh", "/tunnel-wrapper.sh"]
