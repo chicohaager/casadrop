@@ -66,7 +66,7 @@ func registerPublic(r *mux.Router, d Deps) {
 
 	// Share landing / download (rate-limited)
 	r.HandleFunc("/s/{id}", h.SharePage).Methods("GET")
-	r.HandleFunc("/d/{id}", rateLimitDownload(h.DownloadFile, d.DownloadLimiter)).Methods("GET")
+	r.HandleFunc("/d/{id}", rateLimitDownload(h.DownloadFile, d.DownloadLimiter)).Methods("GET", "HEAD")
 	r.HandleFunc("/stream/{id}", h.StreamFile).Methods("GET", "HEAD", "OPTIONS")
 	r.HandleFunc("/qr/{id}", h.QRCode).Methods("GET")
 	r.HandleFunc("/thumbnail/{id}", h.GetThumbnail).Methods("GET")
