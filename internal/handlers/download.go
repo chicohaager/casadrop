@@ -129,6 +129,15 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		h.sharePassLimiter.resetAttempts(id, clientIP)
 	}
 
+	// The share page validates a password via a HEAD probe before reloading
+	// (see web/static/js/share.js). Answer 200 once the checks above pass,
+	// without consuming a download or streaming the body. gorilla/mux does not
+	// route HEAD to GET handlers automatically, so the route must list HEAD.
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	filePath := filepath.Join(h.storage.UploadsDir(), share.FileName)
 	file, err := os.Open(filePath)
 	if err != nil {

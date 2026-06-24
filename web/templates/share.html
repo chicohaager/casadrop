@@ -418,25 +418,29 @@
 
                 {{if .CanPreview}}
                 <div class="preview-container">
+                    {{/* For password-protected shares the preview source is
+                         deferred to data-src and only set once the password is
+                         validated (see revealContent in share.js), so the locked
+                         page never fires a 401 against /thumbnail or /stream. */}}
                     {{if .IsImage}}
-                    <img id="preview-image" src="/thumbnail/{{.ID}}" alt="{{.FileName}}" loading="lazy" style="cursor:zoom-in" title="Click for full resolution">
+                    <img id="preview-image" {{if .HasPassword}}data-src{{else}}src{{end}}="/thumbnail/{{.ID}}" alt="{{.FileName}}" loading="lazy" style="cursor:zoom-in" title="Click for full resolution">
                     {{end}}
                     {{if .IsVideo}}
                     <video controls preload="metadata">
-                        <source src="/stream/{{.ID}}" type="{{.MimeType}}">
+                        <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" type="{{.MimeType}}">
                         Your browser does not support video playback.
                     </video>
                     {{end}}
                     {{if .IsAudio}}
                     <div class="audio-preview">
                         <audio controls preload="metadata" style="width:100%">
-                            <source src="/stream/{{.ID}}" type="{{.MimeType}}">
+                            <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" type="{{.MimeType}}">
                             Your browser does not support audio playback.
                         </audio>
                     </div>
                     {{end}}
                     {{if .IsPDF}}
-                    <iframe src="/stream/{{.ID}}" title="PDF Preview"></iframe>
+                    <iframe {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" title="PDF Preview"></iframe>
                     {{end}}
                 </div>
                 {{end}}
