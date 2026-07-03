@@ -23,23 +23,27 @@ type UserResponse struct {
 	IsOIDCUser  bool        `json:"isOidcUser"`
 	CreatedAt   time.Time   `json:"createdAt"`
 	LastLoginAt *time.Time  `json:"lastLoginAt,omitempty"`
+	QuotaBytes  int64       `json:"quotaBytes"`  // 0 = unlimited
+	UsageBytes  int64       `json:"usageBytes"`  // managed storage currently used
 }
 
 // CreateUserRequest represents a request to create a new user
 type CreateUserRequest struct {
-	Email    string      `json:"email"`
-	Name     string      `json:"name"`
-	Role     models.Role `json:"role"`
-	Password string      `json:"password,omitempty"`
+	Email      string      `json:"email"`
+	Name       string      `json:"name"`
+	Role       models.Role `json:"role"`
+	Password   string      `json:"password,omitempty"`
+	QuotaBytes int64       `json:"quotaBytes,omitempty"` // 0 = unlimited
 }
 
 // UpdateUserRequest represents a request to update a user
 type UpdateUserRequest struct {
-	Email    string      `json:"email,omitempty"`
-	Name     string      `json:"name,omitempty"`
-	Role     models.Role `json:"role,omitempty"`
-	Password string      `json:"password,omitempty"`
-	IsActive *bool       `json:"isActive,omitempty"`
+	Email      string      `json:"email,omitempty"`
+	Name       string      `json:"name,omitempty"`
+	Role       models.Role `json:"role,omitempty"`
+	Password   string      `json:"password,omitempty"`
+	IsActive   *bool       `json:"isActive,omitempty"`
+	QuotaBytes *int64      `json:"quotaBytes,omitempty"` // nil = keep current
 }
 
 // toResponse converts a User to UserResponse
@@ -53,6 +57,7 @@ func toUserResponse(user *models.User) UserResponse {
 		IsOIDCUser:  user.IsOIDCUser(),
 		CreatedAt:   user.CreatedAt,
 		LastLoginAt: user.LastLoginAt,
+		QuotaBytes:  user.QuotaBytes,
 	}
 }
 
@@ -68,6 +73,9 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	responses := make([]UserResponse, len(users))
 	for i, user := range users {
 		responses[i] = toUserResponse(user)
+		// User counts are small in practice; per-user usage lets the admin UI
+		// show "used / quota" without a second round-trip.
+		responses[i].UsageBytes, _ = h.storage.GetUserUsage(user.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -128,6 +136,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: passwordHash,
 		IsActive:     true,
 		CreatedAt:    time.Now().UTC(),
+		QuotaBytes:   req.QuotaBytes,
 	}
 
 	if err := h.storage.CreateUser(user); err != nil {
@@ -222,6 +231,14 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.IsActive = *req.IsActive
 	}
 
+	if req.QuotaBytes != nil {
+		if *req.QuotaBytes < 0 {
+			http.Error(w, "Quota must be >= 0 (0 = unlimited)", http.StatusBadRequest)
+			return
+		}
+		user.QuotaBytes = *req.QuotaBytes
+	}
+
 	if err := h.storage.UpdateUser(user); err != nil {
 		http.Error(w, "Failed to update user", http.StatusInternalServerError)
 		return
@@ -301,8 +318,10 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toUserResponse(user)
+	resp.UsageBytes, _ = h.storage.GetUserUsage(user.ID)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toUserResponse(user))
+	json.NewEncoder(w).Encode(resp)
 }
 
 // UpdateCurrentUser updates the current user's profile

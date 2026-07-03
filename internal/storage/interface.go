@@ -48,6 +48,7 @@ type StorageBackend interface {
 	DeleteUser(id string) error
 	GetSharesByUser(userID string) []*models.Share
 	GetReceiveLinksByUser(userID string) ([]*models.ReceiveLink, error)
+	GetUserUsage(userID string) (int64, error)
 
 	// SMTP/Email operations
 	GetSMTPConfig() (*models.SMTPConfig, error)

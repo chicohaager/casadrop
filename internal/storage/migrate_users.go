@@ -99,6 +99,11 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 		return err
 	}
 
+	// Per-user storage quota (v2.4). 0 = unlimited.
+	if err := addColumnIfNotExists(tx, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
 	// Assign all existing shares to admin user
 	if adminUserID != "" {
 		_, err = tx.Exec(`
@@ -144,6 +149,10 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 		return err
 	}
 	if err := addColumnIfNotExists(tx, "receive_links", "user_id", "TEXT"); err != nil {
+		return err
+	}
+	// Per-user storage quota (v2.4). 0 = unlimited.
+	if err := addColumnIfNotExists(tx, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 

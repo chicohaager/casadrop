@@ -25,6 +25,10 @@ type User struct {
 	IsActive     bool       `json:"is_active"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+	// QuotaBytes caps the managed storage this user may consume (uploaded/copied
+	// shares + received files). 0 = unlimited. Symlink shares and in-place folder
+	// shares don't consume managed storage and are excluded from usage.
+	QuotaBytes int64 `json:"quota_bytes"`
 }
 
 // IsAdmin returns true if the user has admin role

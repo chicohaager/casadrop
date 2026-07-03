@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,9 @@ import (
 	"casadrop/internal/config"
 	"casadrop/internal/middleware"
 	"casadrop/internal/models"
+	"casadrop/internal/pow"
 	"casadrop/internal/preview"
+	"casadrop/internal/scan"
 	"casadrop/internal/storage"
 	"casadrop/internal/utils"
 	"casadrop/internal/webhook"
@@ -39,6 +42,9 @@ type Handler struct {
 	sharePassLimiter *sharePasswordRateLimiter
 	thumbnails       *preview.ThumbnailService
 	emailHandler     *EmailHandler
+	scanner          scan.Scanner            // nil = malware scanning disabled (no CLAMAV_ADDR)
+	pow              *pow.Manager            // nil = receive-upload proof-of-work disabled
+	receiveLimiter   *middleware.RateLimiter // per-IP throttle on public receive uploads
 
 	// Config cache
 	tunnelConfigCache     *TunnelConfig
@@ -144,12 +150,45 @@ func New(s *storage.Storage, templatesDir string) (*Handler, error) {
 		// Continue without thumbnails - not critical
 	}
 
+	// Initialize optional malware scanner (opt-in via CLAMAV_ADDR).
+	scanner, err := scan.FromEnv()
+	if err != nil {
+		// A malformed CLAMAV_* config is an operator error we must not paper
+		// over: refuse to start rather than silently run without scanning.
+		return nil, fmt.Errorf("malware scanner config: %w", err)
+	}
+	if scanner != nil {
+		log.Printf("Malware scanning: ENABLED (clamd via CLAMAV_ADDR)")
+	}
+
+	// Optional proof-of-work throttle for public receive uploads (opt-in via
+	// RECEIVE_POW_BITS).
+	powMgr, err := pow.FromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("proof-of-work config: %w", err)
+	}
+	if powMgr != nil {
+		log.Printf("Receive-upload proof-of-work: ENABLED (%d bits)", powMgr.Bits())
+	}
+
+	// Per-IP rate limit on public receive uploads (baseline abuse control).
+	// Default 30/hour; override with RECEIVE_RATE_PER_HOUR.
+	receiveRate := 30
+	if v := strings.TrimSpace(os.Getenv("RECEIVE_RATE_PER_HOUR")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			receiveRate = n
+		}
+	}
+
 	return &Handler{
 		storage:          s,
 		templates:        tmpl,
 		webhook:          webhookSvc,
 		sharePassLimiter: newSharePasswordRateLimiter(),
 		thumbnails:       thumbSvc,
+		scanner:          scanner,
+		pow:              powMgr,
+		receiveLimiter:   middleware.NewRateLimiter(receiveRate, time.Hour),
 	}, nil
 }
 
@@ -159,11 +198,39 @@ func (h *Handler) Stop() {
 	if h.webhook != nil {
 		h.webhook.Stop()
 	}
+	if h.receiveLimiter != nil {
+		h.receiveLimiter.Stop()
+	}
+	if h.pow != nil {
+		h.pow.Stop()
+	}
 }
 
 // SetEmailHandler sets the email handler for download notifications
 func (h *Handler) SetEmailHandler(emailHandler *EmailHandler) {
 	h.emailHandler = emailHandler
+}
+
+// quotaExceededBy reports whether adding `incoming` bytes would push the user
+// over their storage quota. It is a no-op (false) for single-user/admin mode
+// (empty userID) and for users with no quota set (0 = unlimited). A DB error is
+// surfaced so callers reject the upload rather than bypass the quota silently.
+func (h *Handler) quotaExceededBy(userID string, incoming int64) (bool, error) {
+	if userID == "" {
+		return false, nil
+	}
+	u, err := h.storage.GetUser(userID)
+	if err != nil {
+		return false, err
+	}
+	if u == nil || u.QuotaBytes <= 0 {
+		return false, nil
+	}
+	used, err := h.storage.GetUserUsage(userID)
+	if err != nil {
+		return false, err
+	}
+	return used+incoming > u.QuotaBytes, nil
 }
 
 // getPrimaryBaseURL returns the base URL based on user's primary network setting
@@ -319,6 +386,20 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 	if allowed, reason := config.IsExtensionAllowed(fileName); !allowed {
 		http.Error(w, reason, http.StatusUnsupportedMediaType)
 		return
+	}
+
+	// Per-user storage quota: only a copy consumes managed storage; a symlink
+	// share references the host file in place and is exempt.
+	if !req.UseSymlink {
+		if user := middleware.GetUserFromContext(r.Context()); user != nil {
+			if over, err := h.quotaExceededBy(user.ID, fileInfo.Size()); err != nil {
+				http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
+				return
+			} else if over {
+				http.Error(w, "Storage quota exceeded", http.StatusRequestEntityTooLarge)
+				return
+			}
+		}
 	}
 
 	// Generate unique ID

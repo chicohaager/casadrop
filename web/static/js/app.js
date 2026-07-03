@@ -28,10 +28,22 @@
     const I18N = {
         en: {
             'nav.upload': 'Upload',
+            'nav.hostshare': 'Share from host',
             'nav.shares': 'Shares',
             'nav.receive': 'Receive',
             'nav.settings': 'Settings',
             'nav.logout': 'Logout',
+            'hostshare.title': 'Share from host',
+            'hostshare.hint': 'Share files and folders that already live on the server — no re-upload.',
+            'hostshare.home': 'Home',
+            'hostshare.empty': 'This folder is empty',
+            'hostshare.error': 'Could not access this location',
+            'hostshare.folder': 'Folder',
+            'hostshare.share': 'Share',
+            'hostshare.dialogTitle': 'Share this item',
+            'hostshare.symlink': 'Link instead of copy (no extra disk space)',
+            'hostshare.success': 'Share created',
+            'hostshare.done': 'Done',
             'login.subtitle': 'Self-hosted file sharing',
             'login.password': 'Password',
             'login.submit': 'Sign In',
@@ -111,6 +123,10 @@
             'settings.webhookSecret': 'Webhook Secret',
             'settings.webhookSent': 'Webhook sent',
             'settings.createUser': 'Create User',
+            'settings.quota': 'Storage / Quota',
+            'settings.quotaGB': 'Quota (GB, 0 = unlimited)',
+            'settings.unlimited': 'unlimited',
+            'settings.quotaUpdated': 'Quota updated',
             'settings.email': 'Email',
             'settings.name': 'Name',
             'settings.role': 'Role',
@@ -181,8 +197,20 @@
         },
         de: {
             'nav.upload': 'Hochladen',
+            'nav.hostshare': 'Vom Host teilen',
             'nav.shares': 'Freigaben',
             'nav.receive': 'Empfangen',
+            'hostshare.title': 'Vom Host teilen',
+            'hostshare.hint': 'Teile Dateien und Ordner, die schon auf dem Server liegen — ohne erneutes Hochladen.',
+            'hostshare.home': 'Start',
+            'hostshare.empty': 'Dieser Ordner ist leer',
+            'hostshare.error': 'Zugriff auf diesen Ort nicht möglich',
+            'hostshare.folder': 'Ordner',
+            'hostshare.share': 'Teilen',
+            'hostshare.dialogTitle': 'Diesen Eintrag teilen',
+            'hostshare.symlink': 'Verknüpfen statt kopieren (kein zusätzlicher Speicher)',
+            'hostshare.success': 'Freigabe erstellt',
+            'hostshare.done': 'Fertig',
             'nav.settings': 'Einstellungen',
             'nav.logout': 'Abmelden',
             'login.subtitle': 'Selbst-gehostetes Filesharing',
@@ -264,6 +292,10 @@
             'settings.webhookSecret': 'Webhook Secret',
             'settings.webhookSent': 'Webhook gesendet',
             'settings.createUser': 'Benutzer erstellen',
+            'settings.quota': 'Speicher / Quota',
+            'settings.quotaGB': 'Quota (GB, 0 = unbegrenzt)',
+            'settings.unlimited': 'unbegrenzt',
+            'settings.quotaUpdated': 'Quota aktualisiert',
             'settings.email': 'E-Mail',
             'settings.name': 'Name',
             'settings.role': 'Rolle',
@@ -1605,6 +1637,7 @@
     let currentShares = [];
     let taildropState = { available: false, devices: [] };
     let networkConfig = null;
+    let currentHostPath = '/';
 
     // ==========================================
     // Navigation
@@ -1622,6 +1655,7 @@
         if (name === 'shares') loadShares();
         if (name === 'receive') loadReceiveLinks();
         if (name === 'settings') loadSettings();
+        if (name === 'hostshare') loadHostBrowser(currentHostPath);
 
         // Close mobile sidebar
         document.getElementById('sidebar')?.classList.remove('open');
@@ -1729,6 +1763,17 @@
         } catch { /* might be single-user mode */ }
         // Always render sidebar controls (language, theme) regardless of /api/me
         renderSidebarControls();
+        applyRoleVisibility();
+    }
+
+    // Reveal admin-only UI. The host-share endpoints (/api/browse,
+    // /api/share-from-path, /api/share-folder) are admin-gated server-side;
+    // hiding the entry for non-admins just avoids dead 403 buttons. Default
+    // role is 'admin' (single-user mode), so it shows unless we know otherwise.
+    function applyRoleVisibility() {
+        const isAdmin = (currentUser?.role || 'admin') === 'admin';
+        const btn = document.getElementById('nav-hostshare');
+        if (btn) btn.style.display = isAdmin ? '' : 'none';
     }
 
     function renderUserInfo() {
@@ -2077,6 +2122,164 @@
         card.querySelector('.copy-url-btn')?.addEventListener('click', (e) => {
             copyToClipboard(e.currentTarget.dataset.url);
         });
+    }
+
+    // ==========================================
+    // Host Share (browse server paths, share without re-upload) — admin only
+    // ==========================================
+    const ICON_FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>';
+    const ICON_FILE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>';
+
+    async function loadHostBrowser(path) {
+        const listEl = document.getElementById('hostshare-list');
+        const crumbEl = document.getElementById('hostshare-breadcrumb');
+        if (!listEl) return;
+        listEl.innerHTML = '<div style="text-align:center;padding:40px"><span class="spinner"></span></div>';
+
+        let data;
+        try {
+            const res = await api(`/api/browse?path=${encodeURIComponent(path || '/')}`);
+            if (!res.ok) throw new Error(await res.text());
+            data = await res.json();
+        } catch (err) {
+            listEl.innerHTML = `<div class="empty-state"><p>${escapeHtml(err.message || t('hostshare.error'))}</p></div>`;
+            toast(t('hostshare.error'), 'error');
+            return;
+        }
+
+        currentHostPath = data.path || '/';
+        renderHostBreadcrumb(crumbEl, currentHostPath, data.parent);
+
+        const entries = data.entries || [];
+        if (entries.length === 0) {
+            listEl.innerHTML = `<div class="empty-state"><p>${t('hostshare.empty')}</p></div>`;
+            return;
+        }
+
+        listEl.innerHTML = entries.map(e => {
+            const icon = e.is_dir ? ICON_FOLDER : ICON_FILE;
+            const meta = e.is_dir ? t('hostshare.folder') : formatSize(e.size || 0);
+            // Folders: clicking the name navigates in. Both files and folders get a Share button.
+            const nameCell = e.is_dir
+                ? `<button class="host-open host-name" data-path="${escapeHtml(e.path)}">${icon}<span>${escapeHtml(e.name)}</span></button>`
+                : `<span class="host-name">${icon}<span>${escapeHtml(e.name)}</span></span>`;
+            return `
+                <div class="host-row">
+                    ${nameCell}
+                    <span class="host-meta">${escapeHtml(meta)}</span>
+                    <button class="btn btn-primary btn-sm host-share-btn"
+                            data-path="${escapeHtml(e.path)}"
+                            data-name="${escapeHtml(e.name)}"
+                            data-isdir="${e.is_dir ? '1' : '0'}"
+                            data-size="${e.size || 0}"
+                            data-i18n="hostshare.share">Share</button>
+                </div>`;
+        }).join('');
+        applyI18n();
+    }
+
+    function renderHostBreadcrumb(el, path, parent) {
+        if (!el) return;
+        const crumbs = [`<button class="crumb host-open" data-path="/">${t('hostshare.home')}</button>`];
+        if (path && path !== '/') {
+            // Build cumulative absolute paths for each segment (server re-validates each).
+            const segs = path.split('/').filter(Boolean);
+            let acc = '';
+            segs.forEach((seg, i) => {
+                acc += '/' + seg;
+                const last = i === segs.length - 1;
+                crumbs.push('<span class="crumb-sep">/</span>');
+                crumbs.push(last
+                    ? `<span class="crumb crumb-current">${escapeHtml(seg)}</span>`
+                    : `<button class="crumb host-open" data-path="${escapeHtml(acc)}">${escapeHtml(seg)}</button>`);
+            });
+        }
+        // parent shortcut is implicit via the breadcrumb segments; keep signature stable.
+        void parent;
+        el.innerHTML = crumbs.join('');
+    }
+
+    function openHostShareDialog(entry) {
+        const isDir = entry.isdir === '1';
+        const expiryOpts = [
+            ['1', 'upload.expiry.1h'], ['6', 'upload.expiry.6h'], ['12', 'upload.expiry.12h'],
+            ['24', 'upload.expiry.1d'], ['72', 'upload.expiry.3d'], ['168', 'upload.expiry.7d'],
+            ['336', 'upload.expiry.14d'], ['720', 'upload.expiry.30d'], ['0', 'upload.expiry.never'],
+        ].map(([v, k]) => `<option value="${v}"${v === '24' ? ' selected' : ''}>${t(k)}</option>`).join('');
+
+        showModal(`
+            <h3>${t('hostshare.dialogTitle')}</h3>
+            <div class="host-share-target">${isDir ? ICON_FOLDER : ICON_FILE}<span>${escapeHtml(entry.name)}</span></div>
+            <div id="hostshare-form">
+                <div class="form-group">
+                    <label>${t('upload.expiry')}</label>
+                    <select id="hostshare-expiry">${expiryOpts}</select>
+                </div>
+                <div class="form-group">
+                    <label>${t('upload.password')}</label>
+                    <input type="password" id="hostshare-password" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label>${t('upload.maxDownloads')}</label>
+                    <input type="number" id="hostshare-max-downloads" value="0" min="0">
+                </div>
+                ${isDir ? '' : `
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="hostshare-symlink" checked>
+                        <span class="toggle-switch"></span>
+                        <span>${t('hostshare.symlink')}</span>
+                    </label>
+                </div>`}
+                <div class="form-actions">
+                    <button class="btn btn-primary" id="hostshare-submit">${t('hostshare.share')}</button>
+                    <button class="btn btn-ghost" id="hostshare-cancel">${t('receive.cancel')}</button>
+                </div>
+            </div>
+            <div id="hostshare-result"></div>
+        `);
+
+        document.getElementById('hostshare-cancel')?.addEventListener('click', closeModal);
+        document.getElementById('hostshare-submit')?.addEventListener('click', () => submitHostShare(entry));
+    }
+
+    async function submitHostShare(entry) {
+        const isDir = entry.isdir === '1';
+        const submitBtn = document.getElementById('hostshare-submit');
+        const body = {
+            path: entry.path,
+            password: document.getElementById('hostshare-password')?.value || '',
+            expires_in: parseInt(document.getElementById('hostshare-expiry')?.value || '24', 10),
+            max_downloads: parseInt(document.getElementById('hostshare-max-downloads')?.value || '0', 10),
+        };
+        if (!isDir) body.use_symlink = !!document.getElementById('hostshare-symlink')?.checked;
+
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner"></span>'; }
+        try {
+            const res = await api(isDir ? '/api/share-folder' : '/api/share-from-path', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const result = await res.json();
+
+            // Reuse the upload result renderer (link + QR). Folder size comes from
+            // the response since the browse entry reports 0 for directories.
+            document.getElementById('hostshare-form')?.remove();
+            document.querySelector('.host-share-target')?.remove();
+            const container = document.getElementById('hostshare-result');
+            container.innerHTML = '';
+            renderUploadResult(container, result, { name: entry.name, size: result.file_size || parseInt(entry.size, 10) || 0 });
+            const closeRow = document.createElement('div');
+            closeRow.className = 'form-actions';
+            closeRow.innerHTML = `<button class="btn btn-ghost" id="hostshare-done">${t('hostshare.done')}</button>`;
+            container.appendChild(closeRow);
+            document.getElementById('hostshare-done')?.addEventListener('click', closeModal);
+            toast(t('hostshare.success'), 'success');
+        } catch (err) {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = t('hostshare.share'); }
+            toast(err.message || t('hostshare.error'), 'error');
+        }
     }
 
     // ==========================================
@@ -2905,6 +3108,7 @@
                             <th>${t('settings.name')}</th>
                             <th>${t('settings.email')}</th>
                             <th>${t('settings.role')}</th>
+                            <th>${t('settings.quota')}</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -2914,6 +3118,15 @@
                                 <td>${escapeHtml(u.name || '-')}</td>
                                 <td>${escapeHtml(u.email || '-')}</td>
                                 <td><span class="role-badge role-${(u.role || 'viewer').toLowerCase()}">${escapeHtml(u.role || 'viewer')}</span></td>
+                                <td style="white-space:nowrap">
+                                    <span style="color:var(--text-muted);font-size:var(--text-sm)">${formatSize(u.usageBytes || 0)}</span>
+                                    <span style="color:var(--text-muted)"> / </span>
+                                    <input type="number" min="0" step="1" class="user-quota-input"
+                                           value="${u.quotaBytes ? Math.round(u.quotaBytes / 1073741824) : 0}"
+                                           data-user-quota="${escapeHtml(u.id)}"
+                                           title="GB, 0 = ${t('settings.unlimited')}"
+                                           style="width:64px;padding:2px 6px"> GB
+                                </td>
                                 <td>
                                     <button class="btn-icon danger" data-delete-user="${escapeHtml(u.id)}" title="Delete">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
@@ -2949,6 +3162,12 @@
                             <input type="password" id="new-user-password" required>
                         </div>
                     </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>${t('settings.quotaGB')}</label>
+                            <input type="number" id="new-user-quota" value="0" min="0" step="1">
+                        </div>
+                    </div>
                     <button class="btn btn-primary btn-sm" id="create-user-btn">${t('settings.createUser')}</button>
                 </div>
             `;
@@ -2966,11 +3185,28 @@
                 });
             });
 
+            // Inline quota edit: PUT the new limit when an admin changes the GB field.
+            container.querySelectorAll('.user-quota-input').forEach(input => {
+                input.addEventListener('change', async () => {
+                    const gb = Math.max(0, parseInt(input.value || '0', 10));
+                    input.value = gb;
+                    try {
+                        const putRes = await api(`/api/users/${input.dataset.userQuota}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ quotaBytes: gb * 1073741824 }),
+                        });
+                        if (putRes.ok) toast(t('settings.quotaUpdated'), 'success');
+                        else toast((await putRes.text()) || t('toast.error'), 'error');
+                    } catch { toast(t('toast.error'), 'error'); }
+                });
+            });
+
             document.getElementById('create-user-btn')?.addEventListener('click', async () => {
                 const email = document.getElementById('new-user-email').value;
                 const name = document.getElementById('new-user-name').value;
                 const role = document.getElementById('new-user-role').value;
                 const password = document.getElementById('new-user-password').value;
+                const quotaGB = Math.max(0, parseInt(document.getElementById('new-user-quota')?.value || '0', 10));
 
                 if (!email || !name || !password) {
                     toast(t('settings.fillAll'), 'warning');
@@ -2980,7 +3216,7 @@
                 try {
                     const createRes = await api('/api/users', {
                         method: 'POST',
-                        body: JSON.stringify({ email, name, role, password }),
+                        body: JSON.stringify({ email, name, role, password, quotaBytes: quotaGB * 1073741824 }),
                     });
                     if (createRes.ok) {
                         toast(t('settings.userCreated'), 'success');
@@ -3319,6 +3555,16 @@
 
         // Refresh shares
         document.getElementById('refresh-shares').addEventListener('click', loadShares);
+
+        // Host share browser: refresh + delegated row actions
+        document.getElementById('hostshare-refresh')?.addEventListener('click', () => loadHostBrowser(currentHostPath));
+        const hostshareView = document.getElementById('hostshare-view');
+        hostshareView?.addEventListener('click', (e) => {
+            const openBtn = e.target.closest('.host-open');
+            if (openBtn) { loadHostBrowser(openBtn.dataset.path); return; }
+            const shareBtn = e.target.closest('.host-share-btn');
+            if (shareBtn) { openHostShareDialog(shareBtn.dataset); return; }
+        });
 
         // Start auth check
         checkAuth();
