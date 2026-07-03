@@ -2,7 +2,7 @@ module casadrop
 
 go 1.25.0
 
-toolchain go1.25.10
+toolchain go1.25.11
 
 require (
 	github.com/coreos/go-oidc/v3 v3.9.0
@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.19.0
-	golang.org/x/image v0.14.0
+	golang.org/x/image v0.43.0
 	golang.org/x/oauth2 v0.15.0
 	modernc.org/sqlite v1.48.2
 )

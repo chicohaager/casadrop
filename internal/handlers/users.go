@@ -23,8 +23,8 @@ type UserResponse struct {
 	IsOIDCUser  bool        `json:"isOidcUser"`
 	CreatedAt   time.Time   `json:"createdAt"`
 	LastLoginAt *time.Time  `json:"lastLoginAt,omitempty"`
-	QuotaBytes  int64       `json:"quotaBytes"`  // 0 = unlimited
-	UsageBytes  int64       `json:"usageBytes"`  // managed storage currently used
+	QuotaBytes  int64       `json:"quotaBytes"` // 0 = unlimited
+	UsageBytes  int64       `json:"usageBytes"` // managed storage currently used
 }
 
 // CreateUserRequest represents a request to create a new user

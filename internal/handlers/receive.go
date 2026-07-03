@@ -184,7 +184,12 @@ func (h *Handler) GetReceiveLink(w http.ResponseWriter, r *http.Request) {
 	// Check ownership: non-admin users can only view their own links
 	user := middleware.GetUserFromContext(r.Context())
 	if user != nil && user.Role != models.RoleAdmin {
-		if link.UserID != "" && link.UserID != user.ID {
+		// Ownerless links (UserID=="") are created under the shared-admin login;
+		// they must remain admin-only. Non-admins reach this branch, so an empty
+		// owner must NOT short-circuit the check (matches GetShareInfo). Removing
+		// the previous `link.UserID != ""` guard closes an IDOR where any
+		// authenticated Viewer/User could read the admin's received files.
+		if link.UserID != user.ID {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -248,7 +253,12 @@ func (h *Handler) GetReceivedFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user != nil && user.Role != models.RoleAdmin {
-		if link.UserID != "" && link.UserID != user.ID {
+		// Ownerless links (UserID=="") are created under the shared-admin login;
+		// they must remain admin-only. Non-admins reach this branch, so an empty
+		// owner must NOT short-circuit the check (matches GetShareInfo). Removing
+		// the previous `link.UserID != ""` guard closes an IDOR where any
+		// authenticated Viewer/User could read the admin's received files.
+		if link.UserID != user.ID {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
@@ -675,7 +685,12 @@ func (h *Handler) DownloadReceivedFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user != nil && user.Role != models.RoleAdmin {
-		if link.UserID != "" && link.UserID != user.ID {
+		// Ownerless links (UserID=="") are created under the shared-admin login;
+		// they must remain admin-only. Non-admins reach this branch, so an empty
+		// owner must NOT short-circuit the check (matches GetShareInfo). Removing
+		// the previous `link.UserID != ""` guard closes an IDOR where any
+		// authenticated Viewer/User could read the admin's received files.
+		if link.UserID != user.ID {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
