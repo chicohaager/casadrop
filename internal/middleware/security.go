@@ -14,8 +14,10 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		// Verhindert Clickjacking
 		w.Header().Set("X-Frame-Options", "DENY")
 
-		// XSS-Schutz (für ältere Browser)
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		// Legacy XSS filter: modern guidance is "0" (disable). The old auditor
+		// is deprecated and has itself caused info-leak issues; our real XSS
+		// defense is the strict CSP below + output escaping.
+		w.Header().Set("X-XSS-Protection", "0")
 
 		// Referrer-Policy
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -31,7 +33,7 @@ func SecurityHeaders(next http.Handler) http.Handler {
 			"default-src 'self'; "+
 				"script-src 'self'; "+
 				"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
-				"img-src 'self' data: blob: https://api.qrserver.com; "+
+				"img-src 'self' data: blob:; "+
 				"font-src 'self' https://fonts.gstatic.com; "+
 				"connect-src 'self'; "+
 				"frame-ancestors 'none'; "+

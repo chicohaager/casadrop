@@ -102,35 +102,56 @@ func TestFormatFileSize(t *testing.T) {
 }
 
 func TestGetBaseURL(t *testing.T) {
+	// Trust the loopback peer so the honored X-Forwarded-* cases (RemoteAddr
+	// 127.0.0.1) apply the headers, while an untrusted peer must fail closed.
+	_, loop, _ := net.ParseCIDR("127.0.0.0/8")
+	trustedProxies = []*net.IPNet{loop}
+	trustedProxiesOnce.Do(func() {})
+
+	const trusted = "127.0.0.1:12345"
+	const untrusted = "203.0.113.9:4444"
+
 	tests := []struct {
-		name     string
-		host     string
-		headers  map[string]string
-		expected string
+		name       string
+		host       string
+		remoteAddr string
+		headers    map[string]string
+		expected   string
 	}{
 		{
-			name:     "HTTP request",
-			host:     "example.com",
-			headers:  map[string]string{},
-			expected: "http://example.com",
+			name:       "HTTP request",
+			host:       "example.com",
+			remoteAddr: trusted,
+			headers:    map[string]string{},
+			expected:   "http://example.com",
 		},
 		{
-			name:     "X-Forwarded-Proto HTTPS",
-			host:     "example.com",
-			headers:  map[string]string{"X-Forwarded-Proto": "https"},
-			expected: "https://example.com",
+			name:       "X-Forwarded-Proto HTTPS from trusted proxy",
+			host:       "example.com",
+			remoteAddr: trusted,
+			headers:    map[string]string{"X-Forwarded-Proto": "https"},
+			expected:   "https://example.com",
 		},
 		{
-			name:     "X-Forwarded-Host",
-			host:     "internal.local",
-			headers:  map[string]string{"X-Forwarded-Host": "public.example.com"},
-			expected: "http://public.example.com",
+			name:       "X-Forwarded-Host from trusted proxy",
+			host:       "internal.local",
+			remoteAddr: trusted,
+			headers:    map[string]string{"X-Forwarded-Host": "public.example.com"},
+			expected:   "http://public.example.com",
 		},
 		{
-			name:     "Both forwarded headers",
-			host:     "internal.local",
-			headers:  map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-Host": "public.example.com"},
-			expected: "https://public.example.com",
+			name:       "Both forwarded headers from trusted proxy",
+			host:       "internal.local",
+			remoteAddr: trusted,
+			headers:    map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-Host": "public.example.com"},
+			expected:   "https://public.example.com",
+		},
+		{
+			name:       "fail-closed: forwarded headers ignored from untrusted peer",
+			host:       "internal.local",
+			remoteAddr: untrusted,
+			headers:    map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-Host": "public.example.com"},
+			expected:   "http://internal.local",
 		},
 	}
 
@@ -138,6 +159,7 @@ func TestGetBaseURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://"+tt.host+"/", nil)
 			req.Host = tt.host
+			req.RemoteAddr = tt.remoteAddr
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)
 			}
@@ -246,8 +268,14 @@ func TestIsLocalHostname(t *testing.T) {
 }
 
 func TestPreferredPublicBaseURL(t *testing.T) {
-	// Public host via X-Forwarded-Host → used for links.
+	// Trust the loopback peer so the forwarded-host path is honored.
+	_, loop, _ := net.ParseCIDR("127.0.0.0/8")
+	trustedProxies = []*net.IPNet{loop}
+	trustedProxiesOnce.Do(func() {})
+
+	// Public host via X-Forwarded-Host (from a trusted proxy) → used for links.
 	r := httptest.NewRequest("GET", "http://backend/", nil)
+	r.RemoteAddr = "127.0.0.1:12345"
 	r.Header.Set("X-Forwarded-Host", "casadrop.example.com")
 	r.Header.Set("X-Forwarded-Proto", "https")
 	if got := PreferredPublicBaseURL(r); got != "https://casadrop.example.com" {

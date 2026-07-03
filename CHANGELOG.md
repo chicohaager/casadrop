@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security (multi-agent code review — v2.4 follow-up)
+- **IDOR fix — ownerless receive links are now admin-only.** `GetReceiveLink`,
+  `GetReceivedFiles`, and `DownloadReceivedFile` guarded with
+  `link.UserID != "" && link.UserID != user.ID`, so an ownerless link (created
+  under the shared-admin login, `UserID==""`) skipped the check — any
+  authenticated Viewer/User could read/download the admin's received files by
+  ID. Now matches the share path (`link.UserID != user.ID`). Regression test
+  `TestOwnerlessReceiveLinkIsAdminOnly`.
+- **Chunked-upload disk-exhaustion / size+quota bypass.** `UploadChunk` enforced
+  only a 10 MB per-chunk cap; a client could declare `TotalSize:1` and stream
+  10 MB per index to disk until `FinalizeChunkUpload` finally rechecked. Added a
+  running cumulative cap against the declared `TotalSize` (413 on overflow).
+  Regression test `TestUploadChunkEnforcesCumulativeSize`.
+- **Multi-file upload quota now fails closed.** A `GetUser`/`GetUserUsage`
+  storage error left `quotaCap=0` (unlimited), letting a batch bypass a nearly
+  full quota; it now returns 500 on error, matching the single-file path.
+- **Folder-ZIP symlink leak.** `DownloadFolderZip` followed symlinks
+  (`copyFileToZip` → `os.Open`), so a `link -> /etc/passwd` inside a shared
+  folder leaked the target's content into the public ZIP, escaping the share
+  root + `SHARE_ALLOWED_PATHS` and defeating the `MAX_FOLDER_ZIP_GB` budget.
+  Symlinks are now skipped (consistent with the single-file path).
+- **Email header injection.** The email `Subject` (derived from
+  attacker-controlled transfer title/sender) was written verbatim; CR/LF are now
+  stripped from header values (`stripHeaderValue`). Test `TestStripHeaderValue`.
+- **Share/QR URL host is now fail-closed.** `GetBaseURL` honored
+  `X-Forwarded-Host`/`-Proto` unconditionally; a direct client could spoof the
+  host baked into generated share links and poison the cacheable public
+  `/qr/{id}`. Forwarded headers are now trusted only from a `TRUSTED_PROXY` peer
+  (matching `GetClientIP`/`IsRequestSecure`). Test adds a fail-closed case.
+- **Hardening:** `DownloadFolderFile` now sends `X-Content-Type-Options:
+  nosniff`; dropped the unused `api.qrserver.com` origin from the `img-src` CSP
+  (QR is served locally); `X-XSS-Protection` set to `0` (modern guidance).
+- **Dependency CVEs cleared.** Go toolchain 1.25.10 → 1.25.11 (net/textproto
+  GO-2026-5039, crypto/x509 GO-2026-5037) and `golang.org/x/image` 0.14.0 →
+  0.43.0 (webp-decode panic GO-2026-5061, reachable via the thumbnail path).
+  `govulncheck ./...` now reports **0** affected vulnerabilities.
+
 ### Security (pre-public-release hardening review)
 - **Setup-wizard takeover guard.** When no `ADMIN_PASSWORD` is set, the
   unauthenticated `/setup` wizard now requires a one-time **setup token** that is
