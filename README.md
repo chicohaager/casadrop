@@ -58,6 +58,8 @@ Open http://localhost:8080 and start sharing!
 - File type restrictions
 - Auto-share received files
 - Webhook notifications
+- Optional ClamAV malware scanning (fail-closed) and proof-of-work throttle for
+  the anonymous upload path; always-on per-IP rate limit
 
 ### Multi-User Support
 - **Three roles**: Admin, User, Viewer
@@ -66,6 +68,8 @@ Open http://localhost:8080 and start sharing!
 - **Viewer**: Read-only, download shared files only
 - User management UI for admins
 - Ownership tracking for shares
+- **Per-user storage quota** (0 = unlimited), set inline by admins; counts
+  uploaded/copied shares + received files, excludes symlink/in-place shares
 
 ### OIDC/SSO Authentication
 - Single Sign-On with any OIDC provider (Authentik, Keycloak, Google, etc.)
@@ -88,6 +92,8 @@ Open http://localhost:8080 and start sharing!
 - Webhook SSRF guard (literal-IP block, redirect refusal, optional DNS pinning)
 - Session absolute lifetime on top of rolling idle timeout
 - Blocked executable uploads
+- Optional ClamAV malware scanning (fail-closed) + proof-of-work throttle on the
+  anonymous receive-upload path; per-user storage quotas
 - SQLite with WAL mode (pure-Go, fully static binary)
 
 ---
@@ -200,6 +206,18 @@ Or build the container image: `docker build -t casadrop:latest .`
 | `WEBHOOK_SECRET` | - | HMAC-SHA256 signing secret |
 | `STRICT_WEBHOOK_URLS` | true | Reject webhook URLs whose host is a literal private/loopback IP |
 | `WEBHOOK_STRICT_SSRF` | true | Resolve + pin the target IP, reject private addresses (defeats DNS rebinding). On by default; set `false` for LAN webhook receivers |
+
+### Abuse Protection (receive-link uploads)
+
+These apply to `POST /r/{id}/upload` — the only path where anonymous strangers
+upload files.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAMAV_ADDR` | - | clamd address for malware scanning (`host:port`, `tcp://host:port`, `unix:/path`). Unset = disabled. When set, uploads are **fail-closed**: infected ⇒ 422, any scanner error (incl. clamd unreachable) ⇒ 503 |
+| `CLAMAV_TIMEOUT` | 30 | clamd dial+scan timeout in seconds (only used when `CLAMAV_ADDR` is set) |
+| `RECEIVE_POW_BITS` | - | Proof-of-work throttle: required leading zero bits of `SHA-256(challenge+"."+solution)`, solved in-browser (WebCrypto). Unset/0 = disabled; needs a secure context (HTTPS/localhost) |
+| `RECEIVE_RATE_PER_HOUR` | 30 | Per-IP rate limit (always on, independent of PoW) |
 
 ### OIDC/SSO Settings
 

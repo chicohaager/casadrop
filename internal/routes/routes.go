@@ -78,6 +78,7 @@ func registerPublic(r *mux.Router, d Deps) {
 
 	// Receive link public routes (for uploaders)
 	r.HandleFunc("/r/{id}", h.ReceivePage).Methods("GET")
+	r.HandleFunc("/r/{id}/challenge", h.ReceiveChallenge).Methods("GET")
 	r.HandleFunc("/r/{id}/upload", h.ReceiveUpload).Methods("POST")
 
 	// Force the browser to revalidate cached assets on every load. FileServer

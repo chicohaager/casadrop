@@ -130,6 +130,19 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-user storage quota preflight (header.Size is the declared part size,
+	// known before we write anything to disk).
+	user := middleware.GetUserFromContext(r.Context())
+	if user != nil {
+		if over, err := h.quotaExceededBy(user.ID, header.Size); err != nil {
+			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
+			return
+		} else if over {
+			http.Error(w, "Storage quota exceeded", http.StatusRequestEntityTooLarge)
+			return
+		}
+	}
+
 	// Parse form values
 	password := r.FormValue("password")
 	// expires_in semantics: positive = hours from now, 0/negative = unbegrenzt.
@@ -180,8 +193,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user from context for ownership
-	user := middleware.GetUserFromContext(r.Context())
+	// user was resolved above for the quota preflight; reuse it for ownership.
 
 	// Create share record
 	share := &models.Share{
@@ -248,6 +260,17 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 		maxSizeGB := maxSize >> 30
 		http.Error(w, fmt.Sprintf("File too large (max %d GB)", maxSizeGB), http.StatusRequestEntityTooLarge)
 		return
+	}
+
+	// Per-user storage quota preflight — reject before any chunk is written.
+	if user := middleware.GetUserFromContext(r.Context()); user != nil {
+		if over, err := h.quotaExceededBy(user.ID, req.TotalSize); err != nil {
+			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
+			return
+		} else if over {
+			http.Error(w, "Storage quota exceeded", http.StatusRequestEntityTooLarge)
+			return
+		}
 	}
 
 	// Generate upload ID
@@ -435,6 +458,21 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 	// Cleanup temp directory
 	os.RemoveAll(upload.TempDir)
 
+	// Per-user storage quota re-check with the ACTUAL assembled size — a client
+	// could understate totalSize at init, so we verify against real bytes here
+	// and roll back the assembled file if it would exceed the quota.
+	if user := middleware.GetUserFromContext(r.Context()); user != nil {
+		if over, err := h.quotaExceededBy(user.ID, totalSize); err != nil {
+			os.Remove(destPath)
+			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
+			return
+		} else if over {
+			os.Remove(destPath)
+			http.Error(w, "Storage quota exceeded", http.StatusRequestEntityTooLarge)
+			return
+		}
+	}
+
 	// Hash password if provided
 	hashedPassword, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -547,6 +585,19 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 	// Get user from context for ownership
 	user := middleware.GetUserFromContext(r.Context())
 
+	// Quota context, computed once. quotaUsed is a running tally we grow as we
+	// reserve each accepted file's bytes, so a single multi-file request can't
+	// collectively blow past the cap. quotaCap == 0 means unlimited.
+	var quotaCap, quotaUsed int64
+	if user != nil {
+		if u, err := h.storage.GetUser(user.ID); err == nil && u != nil {
+			quotaCap = u.QuotaBytes
+		}
+		if quotaCap > 0 {
+			quotaUsed, _ = h.storage.GetUserUsage(user.ID)
+		}
+	}
+
 	for _, fileHeader := range files {
 		// Check file type using config-based validation
 		if allowed, reason := config.IsExtensionAllowed(fileHeader.Filename); !allowed {
@@ -554,6 +605,14 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 			failedCount++
 			continue
 		}
+
+		// Per-user storage quota (reserve this file's bytes on acceptance).
+		if quotaCap > 0 && quotaUsed+fileHeader.Size > quotaCap {
+			errors = append(errors, fmt.Sprintf("%s: storage quota exceeded", fileHeader.Filename))
+			failedCount++
+			continue
+		}
+		quotaUsed += fileHeader.Size
 
 		// Open uploaded file
 		file, err := fileHeader.Open()

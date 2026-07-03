@@ -68,6 +68,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   builds pure-Go (`CGO_ENABLED=0`); `start-with-tailscale.sh` chowns to uid 10001.
 
 ### Added
+- **Per-user storage quota** — admins can cap managed storage per user
+  (`users.quota_bytes`, 0 = unlimited), set inline in User Management (GB
+  granularity). Usage = Σ uploaded/copied share `file_size` **plus** Σ
+  receive-link `total_size`; symlink and in-place folder shares are excluded
+  (they reference host files without copying). Enforced with HTTP 413 on
+  `UploadFile`, `UploadMultipleFiles`, chunk `Init`+`Finalize` (re-checked with
+  the actual assembled size), and copy-mode `ShareFromPath`. **Receive uploads
+  count against the LINK OWNER's quota**, so anonymous uploads can't bypass a
+  user's limit. `/api/me` and `/api/users` expose `quotaBytes` + `usageBytes`.
+- **Optional ClamAV malware scanning of receive-link uploads** (`CLAMAV_ADDR`) —
+  the only path where anonymous strangers upload. Dependency-free clamd
+  `INSTREAM` client (`internal/scan`); `CLAMAV_TIMEOUT` (default 30s) bounds
+  dial+scan. **Unset = disabled** (opt-in). When set, uploads are **fail-closed**:
+  an infected file is rejected (422) and any scanner error — including clamd
+  unreachable — rejects the upload (503) rather than waving it through.
+- **Optional proof-of-work throttle on public receive uploads** (`RECEIVE_POW_BITS`)
+  — anti-abuse for anonymous strangers. Value = required leading zero bits of
+  `SHA-256(challenge+"."+solution)`, solved in-browser via WebCrypto
+  (dependency-free, `internal/pow`, stateless HMAC-signed single-use challenge
+  served at `GET /r/{id}/challenge`). **Unset/0 = disabled** (opt-in); needs a
+  secure context (HTTPS/localhost) client-side. Plus an always-on per-IP baseline
+  limit `RECEIVE_RATE_PER_HOUR` (default 30) on `POST /r/{id}/upload`.
 - **Tailscale Taildrop** — send an existing share's file straight to one of your
   own tailnet devices ("send to my device"). Admin-only action in the shares
   list; the target must match a live `tailscale status` peer and the file is

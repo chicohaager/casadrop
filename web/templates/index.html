@@ -18,6 +18,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     <span data-i18n="nav.upload">Upload</span>
                 </button>
+                <button class="nav-btn" data-view="hostshare" id="nav-hostshare" style="display:none">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 11 15 14"/></svg>
+                    <span data-i18n="nav.hostshare">Share from host</span>
+                </button>
                 <button class="nav-btn" data-view="shares">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                     <span data-i18n="nav.shares">Shares</span>
@@ -109,6 +113,19 @@
                 </div>
                 <div id="upload-progress" style="display:none"></div>
                 <div id="upload-results" style="display:none"></div>
+            </div>
+
+            <!-- HOST SHARE VIEW (admin only) -->
+            <div id="hostshare-view" class="view" style="display:none">
+                <div class="view-header">
+                    <h2 data-i18n="hostshare.title">Share from host</h2>
+                    <button id="hostshare-refresh" class="btn btn-ghost btn-sm" title="Refresh">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                    </button>
+                </div>
+                <p class="upload-hint" data-i18n="hostshare.hint">Share files and folders that already live on the server — no re-upload.</p>
+                <nav id="hostshare-breadcrumb" class="breadcrumb" aria-label="Breadcrumb"></nav>
+                <div id="hostshare-list" class="host-browser"></div>
             </div>
 
             <!-- SHARES VIEW -->

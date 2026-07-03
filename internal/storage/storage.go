@@ -207,6 +207,11 @@ func (s *Storage) GetReceiveLinksByUser(userID string) ([]*models.ReceiveLink, e
 	return s.backend.GetReceiveLinksByUser(userID)
 }
 
+// GetUserUsage returns the managed storage (bytes) a user consumes.
+func (s *Storage) GetUserUsage(userID string) (int64, error) {
+	return s.backend.GetUserUsage(userID)
+}
+
 // ============= SMTP/Email Operations =============
 
 // GetSMTPConfig returns the SMTP configuration

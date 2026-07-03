@@ -18,6 +18,7 @@ import (
 	"casadrop/internal/auth"
 	"casadrop/internal/middleware"
 	"casadrop/internal/models"
+	"casadrop/internal/scan"
 	"casadrop/internal/utils"
 )
 
@@ -291,6 +292,25 @@ func (h *Handler) ReceivePage(w http.ResponseWriter, r *http.Request) {
 	h.templates.ExecuteTemplate(w, "receive.html", data)
 }
 
+// ReceiveChallenge issues a proof-of-work challenge for a receive upload.
+// When PoW is disabled it returns {"bits":0} so the client skips solving.
+func (h *Handler) ReceiveChallenge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.pow == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"bits": 0})
+		return
+	}
+	challenge, err := h.pow.Issue()
+	if err != nil {
+		http.Error(w, "Failed to create challenge", http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"challenge": challenge,
+		"bits":      h.pow.Bits(),
+	})
+}
+
 // ReceiveUpload handles file uploads to a receive link
 func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -305,6 +325,13 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	// Check upload limit
 	if link.MaxUploads > 0 && link.CurrentUploads >= link.MaxUploads {
 		http.Error(w, "Upload limit reached", http.StatusForbidden)
+		return
+	}
+
+	// Per-IP rate limit: baseline abuse control on this public, anonymous
+	// endpoint (independent of the optional proof-of-work below).
+	if h.receiveLimiter != nil && !h.receiveLimiter.Allow(utils.GetClientIP(r)) {
+		http.Error(w, "Too many uploads. Please try again later.", http.StatusTooManyRequests)
 		return
 	}
 
@@ -352,6 +379,15 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Proof-of-work throttle (opt-in via RECEIVE_POW_BITS). Verify before we
+	// touch the uploaded file so unsolved/bot requests are cheap to reject.
+	if h.pow != nil {
+		if err := h.pow.Verify(r.FormValue("pow_challenge"), r.FormValue("pow_solution")); err != nil {
+			http.Error(w, "Proof-of-work verification failed. Please retry.", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "No file uploaded", http.StatusBadRequest)
@@ -375,6 +411,18 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		if !allowed {
 			http.Error(w, fmt.Sprintf("File type %s not allowed", ext), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Per-user storage quota: received files count against the LINK OWNER's
+	// quota, so an anonymous uploader can't be used to bypass a user's limit.
+	if link.UserID != "" {
+		if over, err := h.quotaExceededBy(link.UserID, header.Size); err != nil {
+			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
+			return
+		} else if over {
+			http.Error(w, "Upload rejected: owner storage quota exceeded", http.StatusRequestEntityTooLarge)
 			return
 		}
 	}
@@ -405,6 +453,29 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Detect MIME type — sync to ensure data is flushed before re-reading
 	dest.Sync()
+
+	// Optional malware scan (opt-in via CLAMAV_ADDR). Receive links accept files
+	// from anonymous strangers, so this is the highest-risk upload path. The file
+	// is on disk but not yet recorded/auto-shared, so we can still cleanly delete
+	// it. Fail closed: any scanner error (not just a detection) rejects the upload
+	// — a broken scanner must never wave an unverified file through.
+	if h.scanner != nil {
+		if err := h.scanner.ScanFile(destPath); err != nil {
+			os.Remove(destPath)
+			clientIP := utils.GetClientIP(r)
+			if scan.IsInfected(err) {
+				log.Printf("SECURITY: rejected malicious receive upload link=%s file=%q from ip=%s: %v",
+					id, header.Filename, clientIP, err)
+				http.Error(w, "File rejected: malware detected", http.StatusUnprocessableEntity)
+				return
+			}
+			log.Printf("SECURITY: receive upload rejected, virus scan failed link=%s file=%q from ip=%s: %v",
+				id, header.Filename, clientIP, err)
+			http.Error(w, "Virus scan unavailable, upload rejected", http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	dest.Seek(0, 0)
 	buffer := make([]byte, 512)
 	n, _ := dest.Read(buffer)

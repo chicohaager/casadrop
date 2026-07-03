@@ -1739,3 +1739,77 @@ input::placeholder { color: var(--text-muted); }
 @media (min-width: 769px) {
     .mobile-header { display: none !important; }
 }
+
+/* ==========================================
+   Host Share browser (admin: share server paths)
+   ========================================== */
+.breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin: var(--space-3) 0;
+    font-size: var(--text-sm);
+}
+.crumb {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: var(--text-sm);
+    font-family: inherit;
+}
+.crumb:hover { background: var(--bg-hover); }
+.crumb-current { color: var(--text-secondary); padding: 2px 4px; }
+.crumb-sep { color: var(--text-muted); }
+
+.host-browser {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-card);
+}
+.host-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-light);
+}
+.host-row:last-child { border-bottom: none; }
+.host-row:hover { background: var(--bg-hover); }
+.host-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1;
+    min-width: 0;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: var(--text-base);
+    text-align: left;
+}
+button.host-name { cursor: pointer; }
+button.host-name:hover span { text-decoration: underline; }
+.host-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-name svg { flex-shrink: 0; color: var(--accent-muted); }
+.host-meta { color: var(--text-muted); font-size: var(--text-sm); flex-shrink: 0; }
+
+.host-share-target {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    margin: var(--space-3) 0;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    font-weight: 600;
+    word-break: break-all;
+}
+.host-share-target svg { flex-shrink: 0; color: var(--accent-muted); }
