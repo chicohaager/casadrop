@@ -650,7 +650,12 @@ input::placeholder { color: var(--text-muted); }
 
 /* Toggle switch */
 .toggle-label {
-    display: flex;
+    /* !important: a .toggle-label nested in a .form-group is matched by
+       `.form-group label { display:block }` (higher specificity), which would
+       kill the flex row and collapse the toggle-switch (an inline <span>) to
+       zero size — leaving just the ::after knob overlapping the text. The
+       text-transform/letter-spacing overrides below fight the same rule. */
+    display: flex !important;
     align-items: center;
     gap: var(--space-3);
     cursor: pointer;
