@@ -798,11 +798,11 @@ func (h *Handler) UpdateShare(w http.ResponseWriter, r *http.Request) {
 
 	// Apply updates
 	if req.ExpiresInHours != nil {
-		if *req.ExpiresInHours <= 0 {
-			http.Error(w, "Expiry must be positive", http.StatusBadRequest)
-			return
-		}
-		share.ExpiresAt = time.Now().Add(time.Duration(utils.ClampExpiryHours(*req.ExpiresInHours)) * time.Hour)
+		// <= 0 means "unbegrenzt" (never expires) — the same sentinel the upload
+		// path uses via expiresAtFromHours; positive values are hours-from-now
+		// (clamped). This previously rejected <= 0, so the edit dialog had no way
+		// to make a share unlimited.
+		share.ExpiresAt = expiresAtFromHours(*req.ExpiresInHours)
 	}
 
 	if req.MaxDownloads != nil {

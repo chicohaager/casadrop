@@ -64,6 +64,7 @@
             'upload.expiry.14d': '14 days',
             'upload.expiry.30d': '30 days',
             'upload.expiry.never': 'Never (unlimited)',
+            'upload.expiry.hours': 'hours',
             'upload.maxDownloads': 'Max downloads (0 = unlimited)',
             'upload.submit': 'Upload',
             'upload.uploading': 'Uploading...',
@@ -233,6 +234,7 @@
             'upload.expiry.14d': '14 Tage',
             'upload.expiry.30d': '30 Tage',
             'upload.expiry.never': 'Unbegrenzt',
+            'upload.expiry.hours': 'Stunden',
             'upload.maxDownloads': 'Max Downloads (0 = unbegrenzt)',
             'upload.submit': 'Hochladen',
             'upload.uploading': 'Wird hochgeladen...',
@@ -2545,14 +2547,23 @@
         const share = currentShares.find(s => s.id === shareId);
         if (!share) return;
 
-        const remaining = Math.max(1, Math.ceil((new Date(share.expires_at) - Date.now()) / 3600000));
+        // Sentinel: backend stores year 9999 for "unbegrenzt" shares (see
+        // relativeExpiry). Detect it so an already-unlimited share opens with
+        // the toggle on instead of an astronomically large hour count.
+        const isUnlimited = new Date(share.expires_at).getFullYear() > 9000;
+        const remaining = isUnlimited ? 24 : Math.max(1, Math.ceil((new Date(share.expires_at) - Date.now()) / 3600000));
 
         const html = `
             <h3>${t('shares.edit')}</h3>
             <p style="color:var(--text-secondary);margin-bottom:16px;font-size:0.9rem">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
             <div class="form-group">
-                <label>${t('upload.expiry')}</label>
-                <input type="number" id="edit-expiry" value="${remaining}" min="1" max="8760">
+                <label>${t('upload.expiry')} (${t('upload.expiry.hours')})</label>
+                <input type="number" id="edit-expiry" value="${remaining}" min="1" max="8760"${isUnlimited ? ' disabled' : ''}>
+                <label class="toggle-label" style="margin-top:10px">
+                    <input type="checkbox" id="edit-unlimited"${isUnlimited ? ' checked' : ''}>
+                    <span class="toggle-switch"></span>
+                    <span>${t('upload.expiry.never')}</span>
+                </label>
             </div>
             <div class="form-group">
                 <label>${t('upload.maxDownloads')}</label>
@@ -2572,10 +2583,22 @@
 
         document.getElementById('cancel-edit-btn').addEventListener('click', closeModal);
 
+        // Unlimited toggle disables the hour input; when on we send 0, which the
+        // backend maps to the "never expires" sentinel.
+        const unlimitedEl = document.getElementById('edit-unlimited');
+        const expiryEl = document.getElementById('edit-expiry');
+        unlimitedEl.addEventListener('change', () => {
+            expiryEl.disabled = unlimitedEl.checked;
+        });
+
         document.getElementById('save-edit-btn').onclick = async () => {
             const body = {};
-            const expiry = parseInt(document.getElementById('edit-expiry').value);
-            if (expiry > 0) body.expires_in_hours = expiry;
+            if (unlimitedEl.checked) {
+                body.expires_in_hours = 0; // unbegrenzt
+            } else {
+                const expiry = parseInt(expiryEl.value);
+                if (expiry > 0) body.expires_in_hours = expiry;
+            }
             const maxDl = parseInt(document.getElementById('edit-max-downloads').value);
             if (!isNaN(maxDl)) body.max_downloads = maxDl;
             const pw = document.getElementById('edit-password').value;
