@@ -1554,7 +1554,13 @@
                 ...opts.headers,
             },
         });
-        if (res.status === 401 || res.status === 403) {
+        // Only a 401 means the session is actually gone — that's the one case
+        // where dropping the user to the login screen is right. A 403 is
+        // "authenticated but not allowed" (e.g. a non-admin hitting an admin
+        // endpoint, or a host path outside SHARE_ALLOWED_PATHS). Re-logging-in
+        // can't fix a 403, so surfacing the login modal there is misleading —
+        // let the caller handle it as a normal error (inline message + toast).
+        if (res.status === 401) {
             showLogin();
             throw new Error('Unauthorized');
         }
@@ -1638,6 +1644,11 @@
     let taildropState = { available: false, devices: [] };
     let networkConfig = null;
     let currentHostPath = '/';
+    // Allowed host-share roots (from SHARE_ALLOWED_PATHS), learned from the
+    // root ("/") browse listing. Used to keep breadcrumb ancestors that sit
+    // ABOVE every allowed root (e.g. "/DATA" when only "/DATA/Media" is shared)
+    // non-clickable, since browsing them would 403.
+    let hostRoots = [];
 
     // ==========================================
     // Navigation
@@ -2148,6 +2159,11 @@
         }
 
         currentHostPath = data.path || '/';
+        // The root listing enumerates exactly the allowed roots — remember them
+        // so the breadcrumb knows which ancestor segments are browsable.
+        if (currentHostPath === '/') {
+            hostRoots = (data.entries || []).map(e => e.path).filter(Boolean);
+        }
         renderHostBreadcrumb(crumbEl, currentHostPath, data.parent);
 
         const entries = data.entries || [];
@@ -2178,6 +2194,16 @@
         applyI18n();
     }
 
+    // A host path is browsable if it is the virtual root ("/", which lists the
+    // allowed roots) or sits at/below one of the allowed roots. Ancestors above
+    // every allowed root (e.g. "/DATA" when only "/DATA/Media" is shared) are
+    // NOT browsable and must not be turned into links that 403.
+    function isHostBrowsable(p) {
+        if (p === '/') return true;
+        if (!hostRoots.length) return true; // roots not learned yet — don't over-restrict
+        return hostRoots.some(r => p === r || p.startsWith(r + '/'));
+    }
+
     function renderHostBreadcrumb(el, path, parent) {
         if (!el) return;
         const crumbs = [`<button class="crumb host-open" data-path="/">${t('hostshare.home')}</button>`];
@@ -2189,9 +2215,15 @@
                 acc += '/' + seg;
                 const last = i === segs.length - 1;
                 crumbs.push('<span class="crumb-sep">/</span>');
-                crumbs.push(last
-                    ? `<span class="crumb crumb-current">${escapeHtml(seg)}</span>`
-                    : `<button class="crumb host-open" data-path="${escapeHtml(acc)}">${escapeHtml(seg)}</button>`);
+                if (last) {
+                    crumbs.push(`<span class="crumb crumb-current">${escapeHtml(seg)}</span>`);
+                } else if (isHostBrowsable(acc)) {
+                    crumbs.push(`<button class="crumb host-open" data-path="${escapeHtml(acc)}">${escapeHtml(seg)}</button>`);
+                } else {
+                    // Non-browsable ancestor: inert text, not a link (avoids the
+                    // 403 → login-screen trap). "Start" still returns to roots.
+                    crumbs.push(`<span class="crumb crumb-muted">${escapeHtml(seg)}</span>`);
+                }
             });
         }
         // parent shortcut is implicit via the breadcrumb segments; keep signature stable.

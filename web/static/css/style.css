@@ -1763,6 +1763,9 @@ input::placeholder { color: var(--text-muted); }
 }
 .crumb:hover { background: var(--bg-hover); }
 .crumb-current { color: var(--text-secondary); padding: 2px 4px; }
+/* Ancestor above every allowed root: shown but not navigable (would 403). */
+.crumb-muted { color: var(--text-muted); cursor: default; padding: 2px 4px; }
+.crumb-muted:hover { background: none; }
 .crumb-sep { color: var(--text-muted); }
 
 .host-browser {
