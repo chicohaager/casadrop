@@ -367,8 +367,10 @@ Returns thumbnail for image/video files.
 
 ## Prometheus Metrics
 
+Admin-only — requires an admin session cookie or an admin API key.
+
 ```bash
-GET /metrics
+GET /api/metrics
 ```
 
 Available metrics:

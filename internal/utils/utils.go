@@ -142,15 +142,21 @@ func GetBaseURL(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	// Check X-Forwarded-Proto header (for reverse proxies)
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	}
-
 	host := r.Host
-	// Check X-Forwarded-Host header (for reverse proxies)
-	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
-		host = fwdHost
+
+	// Honor reverse-proxy forwarded headers ONLY when the direct peer is a
+	// configured trusted proxy — fail-closed, matching GetClientIP and
+	// IsRequestSecure. Otherwise an untrusted direct client could spoof
+	// X-Forwarded-Host to control the host baked into generated share/QR URLs
+	// (phishing / cache-poisoning of the public, cacheable /qr/{id} endpoint).
+	trustedProxiesOnce.Do(loadTrustedProxies)
+	if peerIsTrustedProxy(r) {
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			scheme = proto
+		}
+		if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
+			host = fwdHost
+		}
 	}
 
 	return fmt.Sprintf("%s://%s", scheme, host)

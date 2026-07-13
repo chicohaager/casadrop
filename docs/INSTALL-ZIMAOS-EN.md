@@ -6,7 +6,7 @@ This guide covers installing CasaDrop on ZimaOS, including:
 - Removing an existing installation
 - Fresh installation via Docker Compose
 - Configuration options
-- Integration with Pangolin/Newt, Tailscale, ZeroTier
+- Integration with Pangolin/Newt, Tailscale, EasyTier
 
 ---
 
@@ -107,11 +107,12 @@ services:
       # ============= NETWORK (Optional) =============
       # Set manually if auto-detection doesn't work
       # - LOCAL_IP=192.168.1.100
-      # - ZEROTIER_IP=10.147.20.50
+      # - EASYTIER_IP=10.147.20.50
       # - TAILSCALE_URL=https://zima.tail1234.ts.net
-      # - PANGOLIN_URL=https://share.example.com
+      # Pangolin/Newt needs no variable — share links automatically
+      # follow the X-Forwarded-Host/Host header.
       
-    # For ZeroTier/Tailscale auto-detection:
+    # For EasyTier/Tailscale auto-detection:
     network_mode: host
     # OR with port mapping (then set IPs manually):
     # networks:
@@ -164,6 +165,10 @@ services:
 
 ### Variant B: With Pangolin/Newt
 
+Pangolin/Newt needs **no dedicated variable**: CasaDrop builds share links from the
+`X-Forwarded-Host`/`Host` header sent by the reverse proxy, so the public domain is
+used automatically.
+
 ```yaml
 services:
   casadrop:
@@ -179,7 +184,6 @@ services:
       - TZ=Europe/Berlin
       - ADMIN_PASSWORD=my-password
       - EXTERNAL_PORT=8787
-      - PANGOLIN_URL=https://share.my-domain.com
       - SHARE_ALLOWED_PATHS=/DATA,/media
 ```
 
@@ -285,11 +289,13 @@ services:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LOCAL_IP` | auto | Local IP address |
-| `ZEROTIER_IP` | auto | ZeroTier IP |
+| `EASYTIER_IP` | auto | EasyTier IP |
 | `TAILSCALE_URL` | auto | Tailscale Funnel URL |
-| `PANGOLIN_URL` | - | Pangolin/Newt public URL |
 | `TUNNEL_URL` | - | Cloudflare Tunnel URL |
 | `CUSTOM_URL` | - | Custom URL (WireGuard, etc.) |
+
+There is no variable for Pangolin/Newt — share links automatically follow the
+`X-Forwarded-Host`/`Host` header.
 
 ### OIDC/SSO
 
@@ -304,13 +310,8 @@ services:
 
 ### Email
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SMTP_HOST` | - | SMTP server |
-| `SMTP_PORT` | 587 | SMTP port |
-| `SMTP_USER` | - | SMTP username |
-| `SMTP_PASSWORD` | - | SMTP password |
-| `SMTP_FROM` | - | Sender email |
+Email/SMTP is **not** configured via environment variables. It is configured only
+in the admin UI under **Settings** (persisted through the `/api/smtp` endpoints).
 
 ---
 
@@ -326,11 +327,11 @@ services:
 
 1. Open **Settings** → **Network**
 2. Choose **Primary Network** (for share URLs):
-   - `Cloudflare` - For Cloudflare Tunnel
-   - `Pangolin` - For Pangolin/Newt
-   - `Tailscale` - For Tailscale Funnel
-   - `ZeroTier` - For ZeroTier
-   - `Local` - For local network
+   - `Cloudflare Tunnel` - For Cloudflare Tunnel
+   - `Tailscale Funnel` - For Tailscale Funnel
+   - `EasyTier` - For EasyTier
+   - `Custom Domain / URL` - Own reverse proxy / domain (e.g. Pangolin/Newt)
+   - `Local Network` - For local network
 3. Disable unused networks
 
 ### Set Up Receive Links
@@ -426,18 +427,18 @@ Otherwise set manually:
 ```yaml
 environment:
   - LOCAL_IP=192.168.1.100
-  - ZEROTIER_IP=10.147.20.50
+  - EASYTIER_IP=10.147.20.50
 ```
 
 ### Database Errors
 
 ```bash
 # Repair SQLite
-docker exec casadrop sqlite3 /data/casadrop.db "PRAGMA integrity_check;"
+docker exec casadrop sqlite3 /data/shares.db "PRAGMA integrity_check;"
 
 # Or reset completely (DELETES ALL DATA!)
 docker compose stop
-rm /DATA/AppData/casadrop/data/casadrop.db
+rm /DATA/AppData/casadrop/data/shares.db
 docker compose start
 ```
 

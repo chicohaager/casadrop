@@ -23,7 +23,7 @@ homelabs**. Those three words drive almost every architectural decision:
    — not even an SMTP daemon (outbound only, optional).
 2. **Self-hosted.** Operators run the binary on boxes they own,
    often behind one or more tunnels (Cloudflare, Tailscale Funnel,
-   Pangolin/Newt, ZeroTier, plain LAN). The app must render consistent
+   Pangolin/Newt, EasyTier, plain LAN). The app must render consistent
    share URLs regardless of which ingress a request arrived on.
 3. **Homelab.** Single admin is the common case. Multi-user exists
    (`admin`/`user`/`viewer` roles) but is opt-in. Threat model assumes

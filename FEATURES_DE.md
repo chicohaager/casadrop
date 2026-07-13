@@ -15,7 +15,7 @@
               │                      │                      │
               ▼                      ▼                      ▼
     ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-    │ Lokales Netzwerk│    │    ZeroTier     │    │   Cloudflare    │
+    │ Lokales Netzwerk│    │    EasyTier     │    │   Cloudflare    │
     │ 192.168.x.x:80  │    │ 10.147.x.x:80   │    │    Tunnel       │
     └────────┬────────┘    └────────┬────────┘    └────────┬────────┘
              │                      │                      │
@@ -116,7 +116,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         start.sh                                    │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │  1. ZeroTier-IP erkennen (Interface: zt*)                   │   │
+│   │  1. EasyTier-IP erkennen (easytier-cli, tun*)               │   │
 │   │  2. Lokale IP erkennen (erste nicht-Docker, nicht-Loopback) │   │
 │   │  3. Als Umgebungsvariablen exportieren                      │   │
 │   └─────────────────────────────────────────────────────────────┘   │
@@ -128,7 +128,7 @@
 │   ┌─────────────────────────────────────────────────────────────┐   │
 │   │  Umgebungsvariablen:                                        │   │
 │   │  - LOCAL_IP=192.168.x.x                                     │   │
-│   │  - ZEROTIER_IP=10.147.x.x                                   │   │
+│   │  - EASYTIER_IP=10.147.x.x                                   │   │
 │   │  - EXTERNAL_PORT=8080                                       │   │
 │   └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -137,9 +137,9 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        /api/network                                 │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │  Priorität für ZeroTier-IP:                                 │   │
+│   │  Priorität für EasyTier-IP:                                 │   │
 │   │  1. Benutzer-Konfiguration (tunnel_config.json)             │   │
-│   │  2. Umgebungsvariable (ZEROTIER_IP)                         │   │
+│   │  2. Umgebungsvariable (EASYTIER_IP)                         │   │
 │   │  3. Automatische Erkennung aus Netzwerk-Interfaces          │   │
 │   └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -148,7 +148,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          Web UI                                     │
 │   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐       │
-│   │ Cloudflare URL  │ │  ZeroTier URL   │ │   Lokale URL    │       │
+│   │ Cloudflare URL  │ │  EasyTier URL   │ │   Lokale URL    │       │
 │   │ https://...     │ │ http://10.x:80  │ │ http://192.x:80 │       │
 │   └─────────────────┘ └─────────────────┘ └─────────────────┘       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -186,7 +186,7 @@
 | Methode | URL-Format | Anwendungsfall |
 |---------|------------|----------------|
 | **Lokales Netzwerk** | `http://192.168.x.x:8080` | Gleiches WLAN/LAN |
-| **ZeroTier VPN** | `http://10.147.x.x:8080` | Fernzugriff über VPN |
+| **EasyTier VPN** | `http://10.147.x.x:8080` | Fernzugriff über VPN |
 | **Cloudflare Tunnel** | `https://xxx.trycloudflare.com` | Öffentlicher Internetzugang |
 
 ### Automatische IP-Erkennung
@@ -197,13 +197,13 @@
 
 # Ausgabe:
 # Detected IPs:
-#   ZeroTier: 10.147.19.1
+#   EasyTier: 10.147.19.1
 #   Local:    192.168.1.100
 ```
 
 ### Netzwerk-Einstellungen UI
 - **Zahnrad-Symbol** - Netzwerk-Einstellungen im Header öffnen
-- **ZeroTier IP-Eingabe** - Manuelle Eingabe falls Auto-Erkennung fehlschlägt
+- **EasyTier IP-Eingabe** - Manuelle Eingabe falls Auto-Erkennung fehlschlägt
 - **Cloudflare Checkbox** - Externen Tunnel aktivieren
 - **Persistente Konfiguration** - Einstellungen werden in `tunnel_config.json` gespeichert
 
@@ -298,7 +298,7 @@ GET    /d/{id}           - Direkter Download
 ### ZimaOS Integration
 - **x-casaos Metadaten** - Native ZimaOS App-Unterstützung
 - **Cloudflared-Web kompatibel** - Funktioniert mit vorhandenen Tunnels
-- **Auto IP-Erkennung** - Funktioniert mit ZeroTier out-of-the-box
+- **Auto IP-Erkennung** - Funktioniert mit EasyTier out-of-the-box
 - **start.sh Skript** - Automatische Netzwerk-Konfiguration
 
 ---

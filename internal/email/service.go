@@ -156,6 +156,13 @@ func (s *Service) SendExpiryWarning(recipientEmail, recipientName, fileName stri
 	return s.sendEmail(recipientEmail, subject, body)
 }
 
+// stripHeaderValue removes CR and LF so a user-controlled value (e.g. the
+// email subject) can't inject additional headers or a forged body (SMTP/MIME
+// header injection).
+func stripHeaderValue(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
+}
+
 func (s *Service) sendEmail(to, subject, htmlBody string) error {
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
 
@@ -174,7 +181,11 @@ func (s *Service) sendEmail(to, subject, htmlBody string) error {
 
 	var msg bytes.Buffer
 	for k, v := range headers {
-		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+		// Strip CR/LF from header values to prevent header/body injection.
+		// Subject in particular derives from attacker-controlled transfer
+		// title/sender fields; a raw "\r\n" would inject arbitrary MIME headers
+		// and a forged body into the outbound message.
+		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, stripHeaderValue(v)))
 	}
 	msg.WriteString("\r\n")
 	msg.WriteString(htmlBody)

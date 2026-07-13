@@ -395,6 +395,7 @@ func (h *Handler) DownloadFolderFile(w http.ResponseWriter, r *http.Request) {
 	// Detect MIME from the validated, symlink-resolved path — not the raw
 	// input path, which could be swapped to escape the share dir (TOCTOU).
 	w.Header().Set("Content-Type", detectMimeType(fullPathAbs))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
 
 	if _, err := io.Copy(w, file); err != nil {
@@ -502,6 +503,17 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return r.Context().Err()
 		default:
+		}
+
+		// Skip symlinks. filepath.Walk uses Lstat, so a symlink-to-file is
+		// reported here with ModeSymlink set; copyFileToZip would os.Open() it
+		// and stream the TARGET's content into the archive — leaking files
+		// outside the share root and SHARE_ALLOWED_PATHS (e.g. link -> /etc/passwd)
+		// and defeating the byte budget (which counts the symlink's tiny size).
+		// The single-file path (DownloadFolderFile) already refuses this; keep
+		// the ZIP path consistent.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
 		}
 
 		// Enforce byte budget (checked per entry, before we stream data)

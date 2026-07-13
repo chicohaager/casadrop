@@ -99,6 +99,11 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 		return err
 	}
 
+	// Per-user storage quota (v2.4). 0 = unlimited.
+	if err := addColumnIfNotExists(tx, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
 	// Assign all existing shares to admin user
 	if adminUserID != "" {
 		_, err = tx.Exec(`
@@ -144,6 +149,25 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 		return err
 	}
 	if err := addColumnIfNotExists(tx, "receive_links", "user_id", "TEXT"); err != nil {
+		return err
+	}
+	// Per-user storage quota (v2.4). 0 = unlimited.
+	if err := addColumnIfNotExists(tx, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
+	// Local (non-OIDC) accounts used to store "" in the OIDC columns, which
+	// collides with UNIQUE(oidc_subject, oidc_issuer) as soon as a second local
+	// account is created (SQLite: NULLs are distinct, empty strings are not).
+	// Normalize the legacy rows so existing installs can add more local users.
+	if _, err := tx.Exec(
+		`UPDATE users SET oidc_subject = NULL WHERE oidc_subject = ''`,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`UPDATE users SET oidc_issuer = NULL WHERE oidc_issuer = ''`,
+	); err != nil {
 		return err
 	}
 

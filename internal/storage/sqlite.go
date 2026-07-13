@@ -122,6 +122,7 @@ func (s *SQLiteStorage) initBaseSchema() error {
 		is_active INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		last_login_at DATETIME,
+		quota_bytes INTEGER NOT NULL DEFAULT 0,
 		UNIQUE(oidc_subject, oidc_issuer)
 	);
 
@@ -951,20 +952,35 @@ func (s *SQLiteStorage) DeleteReceivedFile(linkID, fileID string) error {
 
 // ============= User Operations =============
 
+// nullIfEmpty maps an empty string to a SQL NULL.
+//
+// The users table carries UNIQUE(oidc_subject, oidc_issuer). SQLite treats two
+// NULLs as distinct but two empty strings as equal, so storing "" for the
+// non-OIDC (local) users would let only the *first* local account exist — every
+// later one collides on (”, ”). Local accounts must therefore write NULL.
+// All read paths already COALESCE these columns back to "".
+func nullIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 // CreateUser creates a new user
 func (s *SQLiteStorage) CreateUser(user *models.User) error {
 	query := `
 		INSERT INTO users (
 			id, email, name, role, password_hash,
-			oidc_subject, oidc_issuer, is_active, created_at, last_login_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			oidc_subject, oidc_issuer, is_active, created_at, last_login_at, quota_bytes
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	lastLoginAt := fmtTimePtr(user.LastLoginAt)
 
 	_, err := s.db.Exec(query,
 		user.ID, user.Email, user.Name, user.Role, user.PasswordHash,
-		user.OIDCSubject, user.OIDCIssuer, user.IsActive, fmtTime(user.CreatedAt), lastLoginAt,
+		nullIfEmpty(user.OIDCSubject), nullIfEmpty(user.OIDCIssuer),
+		user.IsActive, fmtTime(user.CreatedAt), lastLoginAt, user.QuotaBytes,
 	)
 	return err
 }
@@ -974,7 +990,7 @@ func (s *SQLiteStorage) GetUser(id string) (*models.User, error) {
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
-			   is_active, created_at, last_login_at
+			   is_active, created_at, last_login_at, COALESCE(quota_bytes, 0)
 		FROM users
 		WHERE id = ?
 	`
@@ -984,7 +1000,7 @@ func (s *SQLiteStorage) GetUser(id string) (*models.User, error) {
 
 	err := s.db.QueryRow(query, id).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
-		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
+		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt, &user.QuotaBytes,
 	)
 
 	if err == sql.ErrNoRows {
@@ -1003,10 +1019,14 @@ func (s *SQLiteStorage) GetUser(id string) (*models.User, error) {
 
 // GetUserByEmail retrieves a user by email
 func (s *SQLiteStorage) GetUserByEmail(email string) (*models.User, error) {
+	// quota_bytes MUST be selected here: callers (the OIDC login path) load a
+	// user through this query and hand the very same struct back to UpdateUser,
+	// which persists every column. Omitting it would write back a zeroed quota
+	// — i.e. silently promote the account to "unlimited" on each login.
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
-			   is_active, created_at, last_login_at
+			   is_active, created_at, last_login_at, COALESCE(quota_bytes, 0)
 		FROM users
 		WHERE email = ?
 	`
@@ -1017,6 +1037,7 @@ func (s *SQLiteStorage) GetUserByEmail(email string) (*models.User, error) {
 	err := s.db.QueryRow(query, email).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
 		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
+		&user.QuotaBytes,
 	)
 
 	if err == sql.ErrNoRows {
@@ -1035,10 +1056,12 @@ func (s *SQLiteStorage) GetUserByEmail(email string) (*models.User, error) {
 
 // GetUserByOIDC retrieves a user by OIDC subject and issuer
 func (s *SQLiteStorage) GetUserByOIDC(subject, issuer string) (*models.User, error) {
+	// quota_bytes MUST be selected — see the note in GetUserByEmail. This is the
+	// query the SSO login path uses before writing the user back.
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
-			   is_active, created_at, last_login_at
+			   is_active, created_at, last_login_at, COALESCE(quota_bytes, 0)
 		FROM users
 		WHERE oidc_subject = ? AND oidc_issuer = ?
 	`
@@ -1049,6 +1072,7 @@ func (s *SQLiteStorage) GetUserByOIDC(subject, issuer string) (*models.User, err
 	err := s.db.QueryRow(query, subject, issuer).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
 		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
+		&user.QuotaBytes,
 	)
 
 	if err == sql.ErrNoRows {
@@ -1070,7 +1094,7 @@ func (s *SQLiteStorage) GetAllUsers() ([]*models.User, error) {
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
-			   is_active, created_at, last_login_at
+			   is_active, created_at, last_login_at, COALESCE(quota_bytes, 0)
 		FROM users
 		ORDER BY created_at DESC
 	`
@@ -1088,7 +1112,7 @@ func (s *SQLiteStorage) GetAllUsers() ([]*models.User, error) {
 
 		if err := rows.Scan(
 			&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
-			&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
+			&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt, &user.QuotaBytes,
 		); err != nil {
 			continue
 		}
@@ -1111,7 +1135,7 @@ func (s *SQLiteStorage) UpdateUser(user *models.User) error {
 	query := `
 		UPDATE users SET
 			email = ?, name = ?, role = ?, password_hash = ?,
-			oidc_subject = ?, oidc_issuer = ?, is_active = ?, last_login_at = ?
+			oidc_subject = ?, oidc_issuer = ?, is_active = ?, last_login_at = ?, quota_bytes = ?
 		WHERE id = ?
 	`
 
@@ -1119,7 +1143,8 @@ func (s *SQLiteStorage) UpdateUser(user *models.User) error {
 
 	_, err := s.db.Exec(query,
 		user.Email, user.Name, user.Role, user.PasswordHash,
-		user.OIDCSubject, user.OIDCIssuer, user.IsActive, lastLoginAt,
+		nullIfEmpty(user.OIDCSubject), nullIfEmpty(user.OIDCIssuer),
+		user.IsActive, lastLoginAt, user.QuotaBytes,
 		user.ID,
 	)
 	return err
@@ -1131,6 +1156,29 @@ func (s *SQLiteStorage) DeleteUser(id string) error {
 	// They will remain but be "orphaned" (user_id will point to non-existent user)
 	_, err := s.db.Exec("DELETE FROM users WHERE id = ?", id)
 	return err
+}
+
+// GetUserUsage returns the managed storage a user consumes: the sum of their
+// uploaded/copied share files plus everything received via their receive links.
+// Symlink shares (is_symlink=1) and in-place folder shares (is_directory=1)
+// reference host files on disk without copying, so they consume no managed
+// storage and are excluded — matching what actually lives under data/uploads.
+func (s *SQLiteStorage) GetUserUsage(userID string) (int64, error) {
+	var shareBytes, receivedBytes int64
+	err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(file_size), 0) FROM shares
+		 WHERE user_id = ? AND is_symlink = 0 AND is_directory = 0`, userID,
+	).Scan(&shareBytes)
+	if err != nil {
+		return 0, err
+	}
+	err = s.db.QueryRow(
+		`SELECT COALESCE(SUM(total_size), 0) FROM receive_links WHERE user_id = ?`, userID,
+	).Scan(&receivedBytes)
+	if err != nil {
+		return 0, err
+	}
+	return shareBytes + receivedBytes, nil
 }
 
 // GetSharesByUser returns all non-expired shares for a user

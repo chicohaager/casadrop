@@ -5,7 +5,7 @@
 | Version | Feature | Description |
 |---------|---------|-------------|
 | v1.6 | SQLite Database | Migrated from JSON to SQLite with WAL mode |
-| v1.7 | Prometheus Metrics | Monitor at `/metrics` endpoint |
+| v1.7 | Prometheus Metrics | Monitor at `/api/metrics` endpoint (admin-only) |
 | v1.8 | Image Thumbnails | Automatic thumbnail generation |
 | v1.9 | Folder Shares | Browse folders, download as ZIP |
 | v2.0 | Receive Links | Let others upload files to you |
@@ -27,7 +27,7 @@
               │                      │                      │
               ▼                      ▼                      ▼
     ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-    │  Local Network  │    │    ZeroTier     │    │   Cloudflare    │
+    │  Local Network  │    │    EasyTier     │    │   Cloudflare    │
     │ 192.168.x.x:80  │    │ 10.147.x.x:80   │    │    Tunnel       │
     └────────┬────────┘    └────────┬────────┘    └────────┬────────┘
              │                      │                      │
@@ -129,7 +129,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         start.sh                                    │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │  1. Detect ZeroTier IP (interface: zt*)                     │   │
+│   │  1. Detect EasyTier IP (easytier-cli, tun*)                 │   │
 │   │  2. Detect Local IP (first non-docker, non-loopback)        │   │
 │   │  3. Export as environment variables                         │   │
 │   └─────────────────────────────────────────────────────────────┘   │
@@ -141,7 +141,7 @@
 │   ┌─────────────────────────────────────────────────────────────┐   │
 │   │  Environment Variables:                                      │   │
 │   │  - LOCAL_IP=192.168.x.x                                     │   │
-│   │  - ZEROTIER_IP=10.147.x.x                                   │   │
+│   │  - EASYTIER_IP=10.147.x.x                                   │   │
 │   │  - EXTERNAL_PORT=8080                                       │   │
 │   └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -150,9 +150,9 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        /api/network                                 │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │  Priority for ZeroTier IP:                                  │   │
+│   │  Priority for EasyTier IP:                                  │   │
 │   │  1. User config (tunnel_config.json)                        │   │
-│   │  2. Environment variable (ZEROTIER_IP)                      │   │
+│   │  2. Environment variable (EASYTIER_IP)                      │   │
 │   │  3. Auto-detect from network interfaces                     │   │
 │   └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -161,7 +161,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          Web UI                                     │
 │   ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐       │
-│   │ Cloudflare URL  │ │  ZeroTier URL   │ │   Local URL     │       │
+│   │ Cloudflare URL  │ │  EasyTier URL   │ │   Local URL     │       │
 │   │ https://...     │ │ http://10.x:80  │ │ http://192.x:80 │       │
 │   └─────────────────┘ └─────────────────┘ └─────────────────┘       │
 └─────────────────────────────────────────────────────────────────────┘
@@ -208,7 +208,7 @@
 - **Auto-Cleanup** - Expired files are automatically removed (hourly check)
 
 ### Monitoring (v1.7)
-- **Prometheus Metrics** - `/metrics` endpoint for monitoring
+- **Prometheus Metrics** - `/api/metrics` endpoint for monitoring (admin-only)
 - **Upload/Download Counts** - Track file operations
 - **Active Shares** - Monitor current share count
 - **HTTP Metrics** - Request counts and latency
@@ -222,7 +222,7 @@
 | Method | URL Format | Use Case |
 |--------|------------|----------|
 | **Local Network** | `http://192.168.x.x:8080` | Same WiFi/LAN |
-| **ZeroTier VPN** | `http://10.147.x.x:8080` | Remote access via VPN |
+| **EasyTier VPN** | `http://10.147.x.x:8080` | Remote access via VPN |
 | **Cloudflare Tunnel** | `https://xxx.trycloudflare.com` | Public internet access |
 
 ### Automatic IP Detection
@@ -233,13 +233,13 @@
 
 # Output:
 # Detected IPs:
-#   ZeroTier: 10.147.19.1
+#   EasyTier: 10.147.19.1
 #   Local:    192.168.1.100
 ```
 
 ### Network Settings UI
 - **Gear Icon** - Access network settings from the header
-- **ZeroTier IP Input** - Manual override if auto-detection fails
+- **EasyTier IP Input** - Manual override if auto-detection fails
 - **Cloudflare Checkbox** - Enable external tunnel URL
 - **Persistent Config** - Settings saved to `tunnel_config.json`
 
@@ -346,7 +346,7 @@ GET    /api/tunnel       - Get tunnel config
 POST   /api/tunnel       - Save tunnel/network config
 GET    /api/network      - Get all network URLs
 GET    /api/stats        - Statistics
-GET    /metrics          - Prometheus metrics
+GET    /api/metrics      - Prometheus metrics (admin-only)
 ```
 
 ### Docker Support
@@ -358,7 +358,7 @@ GET    /metrics          - Prometheus metrics
 ### ZimaOS Integration
 - **x-casaos Metadata** - Native ZimaOS app support
 - **Cloudflared-Web Compatible** - Works with existing tunnels
-- **Auto IP Detection** - Works with ZeroTier out of the box
+- **Auto IP Detection** - Works with EasyTier out of the box
 - **start.sh Script** - Automatic network configuration
 
 ---
