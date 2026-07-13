@@ -150,7 +150,12 @@ func (h *Handler) ListReceiveLinks(w http.ResponseWriter, r *http.Request) {
 
 	var responses []map[string]interface{}
 	for _, link := range links {
-		files, _ := h.storage.GetReceivedFiles(link.ID)
+		files, err := h.storage.GetReceivedFiles(link.ID)
+		if err != nil {
+			// Don't fail the whole list over one link's count, but don't hide it
+			// as a genuine "0 files" either — make the error visible in the log.
+			log.Printf("GetReceivedFiles(%s) failed while listing links: %v", link.ID, err)
+		}
 		responses = append(responses, map[string]interface{}{
 			"id":              link.ID,
 			"name":            link.Name,
@@ -195,7 +200,12 @@ func (h *Handler) GetReceiveLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	files, _ := h.storage.GetReceivedFiles(id)
+	files, err := h.storage.GetReceivedFiles(id)
+	if err != nil {
+		log.Printf("GetReceivedFiles(%s) failed: %v", id, err)
+		http.Error(w, "Failed to load received files", http.StatusInternalServerError)
+		return
+	}
 
 	resp := map[string]interface{}{
 		"id":              link.ID,
@@ -223,12 +233,19 @@ func (h *Handler) DeleteReceiveLink(w http.ResponseWriter, r *http.Request) {
 	// Check ownership
 	user := middleware.GetUserFromContext(r.Context())
 	link, ok := h.storage.GetReceiveLink(id)
-	if ok {
-		if user != nil && user.Role != models.RoleAdmin {
-			if link.UserID != user.ID {
-				http.Error(w, "You can only delete your own receive links", http.StatusForbidden)
-				return
-			}
+	if !ok {
+		// Not visible (missing or expired). Don't fall through to an
+		// unconditional delete — that skipped the ownership check and let any
+		// authenticated user cascade-delete another user's expired link and its
+		// received files by ID. Expired links are reaped by the cleanup worker.
+		http.Error(w, "Receive link not found", http.StatusNotFound)
+		return
+	}
+	if user != nil && user.Role != models.RoleAdmin {
+		// Ownerless links (UserID=="") are admin-only, matching GetReceivedFiles.
+		if link.UserID != user.ID {
+			http.Error(w, "You can only delete your own receive links", http.StatusForbidden)
+			return
 		}
 	}
 
