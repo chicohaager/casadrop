@@ -7,7 +7,16 @@
 # are required at build time. This shrinks the builder image from ~600 MB
 # to the base golang:alpine and removes glibc/musl from the transitive
 # dependency graph entirely.
-FROM golang:1.25-alpine AS builder
+# --platform=$BUILDPLATFORM pins the builder to the NATIVE architecture of the
+# build host and cross-compiles to $TARGETARCH instead of emulating the whole Go
+# toolchain under QEMU. Because the binary is CGO-free, that cross-build is a
+# plain GOARCH switch — a multi-arch build stays about as fast as a single-arch
+# one.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+# Provided automatically by BuildKit.
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -26,7 +35,7 @@ COPY internal/ internal/
 #   -ldflags="-w -s"  → strip DWARF (-w) and symbol table (-s), ~25% smaller
 #   -trimpath         → remove local filesystem paths for reproducibility +
 #                       so stack traces don't leak the build host's layout
-RUN CGO_ENABLED=0 GOOS=linux \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build \
         -ldflags="-w -s" \
         -trimpath \
