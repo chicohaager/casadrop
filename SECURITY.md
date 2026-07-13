@@ -147,10 +147,10 @@ func validateURL(urlStr string, requireHTTPS bool) error {
 | `/r/{id}` | Receive link page | Low (optional password) |
 | `/r/{id}/upload` | Upload to receive link | Low (password/limits enforced) |
 | `/api/auth/status` | Auth status check | Low |
-| `/metrics` | Prometheus metrics | Low (no sensitive data) |
 
 **Notes:**
 - `/api/network` and `/api/tunnel` now require authentication (v1.5+)
+- Prometheus metrics are served at `/api/metrics` and require an admin session or admin API key — there is no public `/metrics` endpoint
 - Receive links have configurable upload limits and allowed extensions
 - Folder shares support optional password protection
 
@@ -294,9 +294,9 @@ RUN apk add --no-cache ca-certificates tzdata wget
 - `zima_http_request_duration_seconds` - Request latency
 
 ### Security Considerations
-- Endpoint `/metrics` is public (no auth)
+- Endpoint `/api/metrics` is admin-only (401 without an admin session or admin API key)
 - No sensitive data exposed (no IPs, filenames, passwords)
-- Consider firewall rules if metrics should be internal only
+- Scrapers (e.g. Prometheus) must authenticate as admin
 
 ---
 

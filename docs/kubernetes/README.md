@@ -119,7 +119,9 @@ For true horizontal scaling, an external database (PostgreSQL) would be needed -
 
 ## Monitoring
 
-CasaDrop exposes Prometheus metrics at `/metrics`. Add a ServiceMonitor:
+CasaDrop exposes Prometheus metrics at `/api/metrics`. The endpoint is
+**admin-only** — it is not public, so the scraper must authenticate (e.g. with an
+admin API key sent as the `X-API-Key` header). Add a ServiceMonitor:
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -132,9 +134,15 @@ spec:
       app: casadrop
   endpoints:
     - port: http
-      path: /metrics
+      path: /api/metrics
       interval: 30s
 ```
+
+Because the endpoint is not public, the scrape must carry admin credentials.
+CasaDrop accepts an admin API key in the `X-API-Key` header. Consult your
+Prometheus Operator version's ServiceMonitor reference for how to attach a
+custom scrape header from a Secret — support for arbitrary headers varies by
+version.
 
 ## Resource Recommendations
 
