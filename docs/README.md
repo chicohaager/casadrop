@@ -6,6 +6,7 @@ Self-hosted file sharing for your homelab.
 
 | Topic | Description |
 |-------|-------------|
+| **[Complete HowTo](HOWTO.md)** | **Start here** — install, share, expose publicly, automate, harden |
 | [Docker Compose Setup](docker-compose.md) | Standard deployment guide |
 | [Reverse Proxy](reverse-proxy.md) | Nginx, Traefik, Caddy configurations |
 | [OIDC/SSO](oidc.md) | Authentik, Keycloak integration |
@@ -30,16 +31,18 @@ Self-hosted file sharing for your homelab.
 |----------|-------------|
 | `TUNNEL_URL` | Cloudflare Tunnel URL |
 | `TAILSCALE_URL` | Tailscale Funnel URL |
-| `PANGOLIN_URL` | Pangolin public URL |
-| `ZEROTIER_IP` | ZeroTier network IP |
+| `EASYTIER_IP` | EasyTier network IP |
 | `CUSTOM_URL` | Custom/WireGuard URL |
 | `LOCAL_IP` | Local network IP |
+
+Pangolin/Newt needs no variable: share links follow the `X-Forwarded-Host`/`Host`
+header, so they are generated with the public hostname automatically.
 
 ### Optional Features
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SHARE_ALLOWED_PATHS` | `/DATA,/media,/home,/mnt` | Paths for file browser |
+| `SHARE_ALLOWED_PATHS` | `/DATA,/media,/home` | Paths for file browser |
 | `WEBHOOK_URL` | - | Webhook notification URL |
 | `WEBHOOK_SECRET` | - | HMAC secret for webhooks |
 
@@ -58,7 +61,7 @@ CasaDrop
 └── Storage
     ├── /data/uploads/ (files)
     ├── /data/thumbnails/ (image previews)
-    └── /data/casadrop.db (SQLite)
+    └── /data/shares.db (SQLite)
 ```
 
 ## Support

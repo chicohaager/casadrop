@@ -303,6 +303,7 @@ See [docs/api.md](docs/api.md) for full API documentation.
 
 ## Documentation
 
+- **[Complete HowTo](docs/HOWTO.md)** — install → first share → public access → automation → hardening
 - [Docker Compose Setup](docs/docker-compose.md)
 - [Reverse Proxy (Traefik/Caddy/nginx)](docs/reverse-proxy.md)
 - [OIDC Configuration](docs/oidc.md)
