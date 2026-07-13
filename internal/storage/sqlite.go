@@ -850,26 +850,36 @@ func (s *SQLiteStorage) IncrementReceiveLinkUploads(id string) (bool, error) {
 
 // SaveReceivedFile saves a received file record
 func (s *SQLiteStorage) SaveReceivedFile(file *models.ReceivedFile) error {
-	query := `
+	// Insert the file row and bump the link's running total_size in ONE
+	// transaction. total_size feeds GetUserUsage (quota accounting), so the two
+	// must not drift: a crash/error between two separate Execs would leave the
+	// file counted in received_files but not in total_size. DeleteReceivedFile
+	// already uses a transaction for the reverse operation.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
 		INSERT INTO received_files (
 			id, receive_link_id, file_name, original_name, file_size,
 			mime_type, uploader_ip, uploader_agent, created_at, share_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-
-	_, err := s.db.Exec(query,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		file.ID, file.ReceiveLinkID, file.FileName, file.OriginalName, file.FileSize,
 		file.MimeType, file.UploaderIP, file.UploaderAgent, fmtTime(file.CreatedAt), file.ShareID,
-	)
-
-	if err == nil {
-		// Update total size on receive link
-		if _, execErr := s.db.Exec("UPDATE receive_links SET total_size = total_size + ? WHERE id = ?", file.FileSize, file.ReceiveLinkID); execErr != nil {
-			log.Printf("Warning: failed to update receive link total_size: %v", execErr)
-		}
+	); err != nil {
+		return err
 	}
 
-	return err
+	if _, err := tx.Exec(
+		"UPDATE receive_links SET total_size = total_size + ? WHERE id = ?",
+		file.FileSize, file.ReceiveLinkID,
+	); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // GetReceivedFiles returns all files for a receive link
@@ -1314,15 +1324,38 @@ func (s *SQLiteStorage) cleanupExpiredShares() {
 		log.Printf("Error iterating expired shares: %v", err)
 	}
 
-	// Delete expired shares from database
+	// Delete exactly the rows whose files we just removed. Re-running the
+	// datetime('now') predicate here would delete any share that crossed the
+	// expiry boundary between the SELECT and now — leaving its file orphaned on
+	// disk because it was never in expiredIDs. Newly-expired rows are picked up
+	// (file and all) on the next cleanup pass instead.
 	if len(expiredIDs) > 0 {
-		_, err := s.db.Exec("DELETE FROM shares WHERE datetime(substr(expires_at, 1, 19)) <= datetime('now')")
-		if err != nil {
+		if _, err := s.db.Exec(
+			"DELETE FROM shares WHERE id IN ("+sqlPlaceholders(len(expiredIDs))+")",
+			toAnySlice(expiredIDs)...,
+		); err != nil {
 			log.Printf("Error deleting expired shares: %v", err)
 		} else {
 			log.Printf("Cleaned up %d expired shares", len(expiredIDs))
 		}
 	}
+}
+
+// sqlPlaceholders returns "?, ?, ..." with n placeholders for an IN clause.
+func sqlPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", n-1) + "?"
+}
+
+// toAnySlice converts a []string to []any for variadic db.Exec args.
+func toAnySlice(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
 }
 
 func (s *SQLiteStorage) cleanupExpiredReceiveLinks() {
@@ -1354,8 +1387,13 @@ func (s *SQLiteStorage) cleanupExpiredReceiveLinks() {
 	}
 
 	if len(expiredIDs) > 0 {
-		_, err := s.db.Exec("DELETE FROM receive_links WHERE expires_at IS NOT NULL AND datetime(substr(expires_at, 1, 19)) <= datetime('now')")
-		if err != nil {
+		// Delete exactly the collected IDs, not a re-evaluated now() predicate,
+		// so a link that expires mid-cleanup isn't removed from the DB while its
+		// received-files directory is left orphaned (see cleanupExpiredShares).
+		if _, err := s.db.Exec(
+			"DELETE FROM receive_links WHERE id IN ("+sqlPlaceholders(len(expiredIDs))+")",
+			toAnySlice(expiredIDs)...,
+		); err != nil {
 			log.Printf("Error deleting expired receive links: %v", err)
 		} else {
 			log.Printf("Cleaned up %d expired receive links", len(expiredIDs))

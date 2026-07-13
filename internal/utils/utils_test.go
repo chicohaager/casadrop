@@ -28,10 +28,22 @@ func TestGetClientIP(t *testing.T) {
 			expected:   "1.2.3.4",
 		},
 		{
-			name:       "X-Forwarded-For multiple IPs",
+			// Rightmost non-proxy entry is the real client: a conforming proxy
+			// appends the peer it saw, so 5.6.7.8 is what our trusted proxy
+			// observed and 1.2.3.4 is whatever the client pre-seeded (spoofable).
+			name:       "X-Forwarded-For multiple IPs takes rightmost non-proxy",
 			headers:    map[string]string{"X-Forwarded-For": "1.2.3.4, 5.6.7.8"},
 			remoteAddr: "127.0.0.1:12345",
-			expected:   "1.2.3.4",
+			expected:   "5.6.7.8",
+		},
+		{
+			// Anti-spoof: a client pre-seeding a fake IP cannot control the
+			// result. Peer 127.0.0.1 (trusted) appended the real 5.6.7.8;
+			// the pre-seeded 9.9.9.9 on the left is ignored.
+			name:       "X-Forwarded-For client-spoofed leftmost is ignored",
+			headers:    map[string]string{"X-Forwarded-For": "9.9.9.9, 5.6.7.8"},
+			remoteAddr: "127.0.0.1:12345",
+			expected:   "5.6.7.8",
 		},
 		{
 			name:       "X-Real-IP",
