@@ -58,12 +58,8 @@ func remoteIP(r *http.Request) string {
 	return host
 }
 
-// peerIsTrustedProxy reports whether the direct peer is in the TRUSTED_PROXY set.
-func peerIsTrustedProxy(r *http.Request) bool {
-	if len(trustedProxies) == 0 {
-		return false
-	}
-	ip := net.ParseIP(remoteIP(r))
+// ipIsTrustedProxy reports whether ip (already parsed) is in the TRUSTED_PROXY set.
+func ipIsTrustedProxy(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
@@ -75,6 +71,14 @@ func peerIsTrustedProxy(r *http.Request) bool {
 	return false
 }
 
+// peerIsTrustedProxy reports whether the direct peer is in the TRUSTED_PROXY set.
+func peerIsTrustedProxy(r *http.Request) bool {
+	if len(trustedProxies) == 0 {
+		return false
+	}
+	return ipIsTrustedProxy(net.ParseIP(remoteIP(r)))
+}
+
 // GetClientIP extracts the client IP address from an HTTP request.
 //
 // Fail-closed: X-Forwarded-For / X-Real-IP are honored ONLY when the request
@@ -82,18 +86,37 @@ func peerIsTrustedProxy(r *http.Request) bool {
 // forwarded headers are ignored and the real socket peer is used, so a directly
 // reachable client cannot spoof its IP to defeat per-IP rate limiting / lockout.
 // Behind a reverse proxy, set TRUSTED_PROXY to the proxy's IP/CIDR so the real
-// client IP is recovered. Only the leftmost XFF entry is used.
+// client IP is recovered.
+//
+// X-Forwarded-For is read RIGHT-TO-LEFT: a conforming proxy (nginx
+// proxy_add_x_forwarded_for, Caddy, Traefik) APPENDS the peer it saw to the end
+// of the header, so the rightmost entries are the trustworthy hops and anything
+// the original client pre-seeded sits on the left. We walk from the right,
+// skipping entries that are themselves trusted proxies, and return the first
+// non-trusted address — the real client. Taking the leftmost entry instead
+// (the old behavior) let a client spoof its IP by pre-seeding X-Forwarded-For,
+// defeating the per-IP rate-limit and login lockout (CWE-348).
 func GetClientIP(r *http.Request) string {
 	trustedProxiesOnce.Do(loadTrustedProxies)
 
-	honorForwarded := peerIsTrustedProxy(r)
-	if honorForwarded {
+	if peerIsTrustedProxy(r) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if idx := strings.Index(xff, ","); idx != -1 {
-				return strings.TrimSpace(xff[:idx])
+			parts := strings.Split(xff, ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				entry := strings.TrimSpace(parts[i])
+				ip := net.ParseIP(entry)
+				if ip == nil {
+					// A malformed entry means we can no longer trust anything
+					// further left in the chain — stop and fall back.
+					break
+				}
+				if ipIsTrustedProxy(ip) {
+					continue // a known proxy hop; keep walking left
+				}
+				return entry // first non-proxy address from the right = client
 			}
-			return strings.TrimSpace(xff)
 		}
+		// X-Real-IP is set to a single address by the proxy, so it's safe here.
 		if xri := r.Header.Get("X-Real-IP"); xri != "" {
 			return strings.TrimSpace(xri)
 		}
