@@ -5,7 +5,64 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.0] - 2026-07-13 — Storage Quotas, Malware Scanning & Abuse Protection
+
+### Added
+- **Per-user storage quota** (`users.quota_bytes`, 0 = unlimited), set inline by
+  admins in User Management. Enforced with HTTP 413 on single/multi/chunked
+  uploads and copy-mode host shares. Receive-link uploads count against the
+  **link owner's** quota, so anonymous uploads can't bypass a user's limit.
+  Symlink shares and in-place folder shares are excluded — they reference host
+  files and consume no managed storage. Exposed via `/api/me` and `/api/users`.
+- **ClamAV malware scanning** for the public receive-upload path
+  (`CLAMAV_ADDR`, opt-in). Dependency-free clamd `INSTREAM` client
+  (`internal/scan`). **Fail-closed:** an infected file is rejected (422) and any
+  scanner error — including clamd being unreachable — rejects the upload (503)
+  rather than waving it through.
+- **Proof-of-work throttle** on public receive uploads (`RECEIVE_POW_BITS`,
+  opt-in): stateless HMAC-signed, single-use challenge solved in-browser via
+  WebCrypto (`internal/pow`). Plus an always-on per-IP rate limit
+  (`RECEIVE_RATE_PER_HOUR`, default 30).
+- **Unlimited expiry for shares** — a share can now be set to never expire, both
+  at creation and when editing an existing one.
+- **`docs/HOWTO.md`** — complete community guide: install (Docker/Compose/source),
+  the first-run setup-token flow, sharing, receive links, users/roles/quotas,
+  public access incl. the `TRUSTED_PROXY` fail-closed trap, an API cookbook of
+  verified `curl` examples, a hardening checklist, backups and troubleshooting.
+
+### Changed
+- **Multi-arch images: `linux/amd64` + `linux/arm64`.** The Go build stage now
+  runs natively on the build host and cross-compiles to `$TARGETARCH` (the binary
+  is CGO-free), so Raspberry Pi 4+ and ARM NAS boxes can finally `docker pull`
+  instead of building from source. Applies to `Dockerfile` and
+  `Dockerfile.scratch`.
+- Documentation corrected against the code: the Prometheus endpoint is
+  `/api/metrics` and is **admin-only** (it was documented as a public `/metrics`);
+  the database file is `shares.db` (not `casadrop.db`); `PANGOLIN_URL` and
+  `ZEROTIER_IP` are not read by the application (Pangolin needs no variable —
+  links follow `X-Forwarded-Host`; EasyTier uses `EASYTIER_IP`); the `SMTP_*`
+  environment variables never existed — SMTP is configured in the admin UI.
+
+### Fixed
+- **SSO login silently wiped a user's storage quota.** `GetUserByEmail` and
+  `GetUserByOIDC` did not `SELECT quota_bytes`, so they returned `QuotaBytes: 0`.
+  The OIDC login path loads the user through exactly those queries and hands the
+  same struct to `UpdateUser` (to refresh `last_login_at`), which persists every
+  column — so each single sign-on wrote the quota back as `0`, i.e. *unlimited*,
+  with no error and no log line. Admin-set quotas therefore survived only until
+  the user's next SSO login. Both lookups now select the column. Regression test
+  `TestLookupsPreserveQuota` (fails against the old code).
+- **Only one local user account could ever be created.** The `users` table
+  carries `UNIQUE(oidc_subject, oidc_issuer)`, and local (non-OIDC) accounts
+  were inserted with `''` in both columns. SQLite treats two NULLs as distinct
+  but two empty strings as equal, so the *second* local account always collided
+  and the API answered a bare `500 Failed to create user` — with nothing in the
+  log. Local accounts now store `NULL` (all read paths already `COALESCE` back
+  to `""`), existing `''` rows are normalized on startup, and the handler logs
+  the underlying error instead of swallowing it. Affects every release that
+  shipped per-user local auth (≤ 2.3.0). Regression tests
+  `TestCreateMultipleLocalUsers` and `TestOIDCIdentityStillUnique` (the latter
+  proves the real OIDC uniqueness constraint still bites).
 
 ### Security (multi-agent code review — v2.4 follow-up)
 - **IDOR fix — ownerless receive links are now admin-only.** `GetReceiveLink`,
