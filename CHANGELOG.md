@@ -5,7 +5,101 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.0] - 2026-07-13 — Storage Quotas, Malware Scanning & Abuse Protection
+
+### Added
+- **Per-user storage quota** (`users.quota_bytes`, 0 = unlimited), set inline by
+  admins in User Management. Enforced with HTTP 413 on single/multi/chunked
+  uploads and copy-mode host shares. Receive-link uploads count against the
+  **link owner's** quota, so anonymous uploads can't bypass a user's limit.
+  Symlink shares and in-place folder shares are excluded — they reference host
+  files and consume no managed storage. Exposed via `/api/me` and `/api/users`.
+- **ClamAV malware scanning** for the public receive-upload path
+  (`CLAMAV_ADDR`, opt-in). Dependency-free clamd `INSTREAM` client
+  (`internal/scan`). **Fail-closed:** an infected file is rejected (422) and any
+  scanner error — including clamd being unreachable — rejects the upload (503)
+  rather than waving it through.
+- **Proof-of-work throttle** on public receive uploads (`RECEIVE_POW_BITS`,
+  opt-in): stateless HMAC-signed, single-use challenge solved in-browser via
+  WebCrypto (`internal/pow`). Plus an always-on per-IP rate limit
+  (`RECEIVE_RATE_PER_HOUR`, default 30).
+- **Unlimited expiry for shares** — a share can now be set to never expire, both
+  at creation and when editing an existing one.
+- **`docs/HOWTO.md`** — complete community guide: install (Docker/Compose/source),
+  the first-run setup-token flow, sharing, receive links, users/roles/quotas,
+  public access incl. the `TRUSTED_PROXY` fail-closed trap, an API cookbook of
+  verified `curl` examples, a hardening checklist, backups and troubleshooting.
+
+### Changed
+- **Multi-arch images: `linux/amd64` + `linux/arm64`.** The Go build stage now
+  runs natively on the build host and cross-compiles to `$TARGETARCH` (the binary
+  is CGO-free), so Raspberry Pi 4+ and ARM NAS boxes can finally `docker pull`
+  instead of building from source. Applies to `Dockerfile` and
+  `Dockerfile.scratch`.
+- Documentation corrected against the code: the Prometheus endpoint is
+  `/api/metrics` and is **admin-only** (it was documented as a public `/metrics`);
+  the database file is `shares.db` (not `casadrop.db`); `PANGOLIN_URL` and
+  `ZEROTIER_IP` are not read by the application (Pangolin needs no variable —
+  links follow `X-Forwarded-Host`; EasyTier uses `EASYTIER_IP`); the `SMTP_*`
+  environment variables never existed — SMTP is configured in the admin UI.
+
+### Fixed
+- **SSO login silently wiped a user's storage quota.** `GetUserByEmail` and
+  `GetUserByOIDC` did not `SELECT quota_bytes`, so they returned `QuotaBytes: 0`.
+  The OIDC login path loads the user through exactly those queries and hands the
+  same struct to `UpdateUser` (to refresh `last_login_at`), which persists every
+  column — so each single sign-on wrote the quota back as `0`, i.e. *unlimited*,
+  with no error and no log line. Admin-set quotas therefore survived only until
+  the user's next SSO login. Both lookups now select the column. Regression test
+  `TestLookupsPreserveQuota` (fails against the old code).
+- **Only one local user account could ever be created.** The `users` table
+  carries `UNIQUE(oidc_subject, oidc_issuer)`, and local (non-OIDC) accounts
+  were inserted with `''` in both columns. SQLite treats two NULLs as distinct
+  but two empty strings as equal, so the *second* local account always collided
+  and the API answered a bare `500 Failed to create user` — with nothing in the
+  log. Local accounts now store `NULL` (all read paths already `COALESCE` back
+  to `""`), existing `''` rows are normalized on startup, and the handler logs
+  the underlying error instead of swallowing it. Affects every release that
+  shipped per-user local auth (≤ 2.3.0). Regression tests
+  `TestCreateMultipleLocalUsers` and `TestOIDCIdentityStillUnique` (the latter
+  proves the real OIDC uniqueness constraint still bites).
+
+### Security (multi-agent code review — v2.4 follow-up)
+- **IDOR fix — ownerless receive links are now admin-only.** `GetReceiveLink`,
+  `GetReceivedFiles`, and `DownloadReceivedFile` guarded with
+  `link.UserID != "" && link.UserID != user.ID`, so an ownerless link (created
+  under the shared-admin login, `UserID==""`) skipped the check — any
+  authenticated Viewer/User could read/download the admin's received files by
+  ID. Now matches the share path (`link.UserID != user.ID`). Regression test
+  `TestOwnerlessReceiveLinkIsAdminOnly`.
+- **Chunked-upload disk-exhaustion / size+quota bypass.** `UploadChunk` enforced
+  only a 10 MB per-chunk cap; a client could declare `TotalSize:1` and stream
+  10 MB per index to disk until `FinalizeChunkUpload` finally rechecked. Added a
+  running cumulative cap against the declared `TotalSize` (413 on overflow).
+  Regression test `TestUploadChunkEnforcesCumulativeSize`.
+- **Multi-file upload quota now fails closed.** A `GetUser`/`GetUserUsage`
+  storage error left `quotaCap=0` (unlimited), letting a batch bypass a nearly
+  full quota; it now returns 500 on error, matching the single-file path.
+- **Folder-ZIP symlink leak.** `DownloadFolderZip` followed symlinks
+  (`copyFileToZip` → `os.Open`), so a `link -> /etc/passwd` inside a shared
+  folder leaked the target's content into the public ZIP, escaping the share
+  root + `SHARE_ALLOWED_PATHS` and defeating the `MAX_FOLDER_ZIP_GB` budget.
+  Symlinks are now skipped (consistent with the single-file path).
+- **Email header injection.** The email `Subject` (derived from
+  attacker-controlled transfer title/sender) was written verbatim; CR/LF are now
+  stripped from header values (`stripHeaderValue`). Test `TestStripHeaderValue`.
+- **Share/QR URL host is now fail-closed.** `GetBaseURL` honored
+  `X-Forwarded-Host`/`-Proto` unconditionally; a direct client could spoof the
+  host baked into generated share links and poison the cacheable public
+  `/qr/{id}`. Forwarded headers are now trusted only from a `TRUSTED_PROXY` peer
+  (matching `GetClientIP`/`IsRequestSecure`). Test adds a fail-closed case.
+- **Hardening:** `DownloadFolderFile` now sends `X-Content-Type-Options:
+  nosniff`; dropped the unused `api.qrserver.com` origin from the `img-src` CSP
+  (QR is served locally); `X-XSS-Protection` set to `0` (modern guidance).
+- **Dependency CVEs cleared.** Go toolchain 1.25.10 → 1.25.11 (net/textproto
+  GO-2026-5039, crypto/x509 GO-2026-5037) and `golang.org/x/image` 0.14.0 →
+  0.43.0 (webp-decode panic GO-2026-5061, reachable via the thumbnail path).
+  `govulncheck ./...` now reports **0** affected vulnerabilities.
 
 ### Security (pre-public-release hardening review)
 - **Setup-wizard takeover guard.** When no `ADMIN_PASSWORD` is set, the
@@ -68,6 +162,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   builds pure-Go (`CGO_ENABLED=0`); `start-with-tailscale.sh` chowns to uid 10001.
 
 ### Added
+- **Per-user storage quota** — admins can cap managed storage per user
+  (`users.quota_bytes`, 0 = unlimited), set inline in User Management (GB
+  granularity). Usage = Σ uploaded/copied share `file_size` **plus** Σ
+  receive-link `total_size`; symlink and in-place folder shares are excluded
+  (they reference host files without copying). Enforced with HTTP 413 on
+  `UploadFile`, `UploadMultipleFiles`, chunk `Init`+`Finalize` (re-checked with
+  the actual assembled size), and copy-mode `ShareFromPath`. **Receive uploads
+  count against the LINK OWNER's quota**, so anonymous uploads can't bypass a
+  user's limit. `/api/me` and `/api/users` expose `quotaBytes` + `usageBytes`.
+- **Optional ClamAV malware scanning of receive-link uploads** (`CLAMAV_ADDR`) —
+  the only path where anonymous strangers upload. Dependency-free clamd
+  `INSTREAM` client (`internal/scan`); `CLAMAV_TIMEOUT` (default 30s) bounds
+  dial+scan. **Unset = disabled** (opt-in). When set, uploads are **fail-closed**:
+  an infected file is rejected (422) and any scanner error — including clamd
+  unreachable — rejects the upload (503) rather than waving it through.
+- **Optional proof-of-work throttle on public receive uploads** (`RECEIVE_POW_BITS`)
+  — anti-abuse for anonymous strangers. Value = required leading zero bits of
+  `SHA-256(challenge+"."+solution)`, solved in-browser via WebCrypto
+  (dependency-free, `internal/pow`, stateless HMAC-signed single-use challenge
+  served at `GET /r/{id}/challenge`). **Unset/0 = disabled** (opt-in); needs a
+  secure context (HTTPS/localhost) client-side. Plus an always-on per-IP baseline
+  limit `RECEIVE_RATE_PER_HOUR` (default 30) on `POST /r/{id}/upload`.
 - **Tailscale Taildrop** — send an existing share's file straight to one of your
   own tailnet devices ("send to my device"). Admin-only action in the shares
   list; the target must match a live `tailscale status` peer and the file is

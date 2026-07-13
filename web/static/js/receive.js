@@ -80,7 +80,51 @@
         document.getElementById('btn-upload').classList.remove('visible');
     }
 
-    function uploadFile() {
+    // Count leading zero bits of a byte array (matches the server's check).
+    function leadingZeroBits(bytes) {
+        var count = 0;
+        for (var i = 0; i < bytes.length; i++) {
+            var b = bytes[i];
+            if (b === 0) { count += 8; continue; }
+            for (var bit = 7; bit >= 0; bit--) {
+                if ((b & (1 << bit)) === 0) count++; else return count;
+            }
+            break;
+        }
+        return count;
+    }
+
+    // Fetch a proof-of-work challenge and solve it, appending the result to
+    // formData. No-op when PoW is disabled (bits <= 0). Returns true on success.
+    async function attachProofOfWork(formData, btn) {
+        var data;
+        try {
+            var res = await fetch('/r/' + linkId + '/challenge');
+            data = await res.json();
+        } catch (e) {
+            return true; // challenge endpoint unreachable; let the server decide
+        }
+        if (!data || !data.bits || data.bits <= 0) return true; // disabled
+
+        if (!(window.crypto && window.crypto.subtle)) {
+            showError('Spam protection requires a secure (HTTPS) connection.');
+            return false;
+        }
+
+        btn.innerHTML = 'Verifying...';
+        var enc = new TextEncoder();
+        for (var i = 0; ; i++) {
+            var buf = await crypto.subtle.digest('SHA-256', enc.encode(data.challenge + '.' + i));
+            if (leadingZeroBits(new Uint8Array(buf)) >= data.bits) {
+                formData.append('pow_challenge', data.challenge);
+                formData.append('pow_solution', String(i));
+                return true;
+            }
+            if (i % 2000 === 0) await new Promise(function (r) { setTimeout(r, 0); });
+        }
+    }
+
+    async function uploadFile() {
         if (!selectedFile) return;
 
         // Client-side size check
@@ -100,6 +144,14 @@
         var btn = document.getElementById('btn-upload');
         btn.disabled = true;
         btn.innerHTML = 'Uploading...';
+
+        // Solve the anti-abuse proof of work before sending (if enabled).
+        var ok = await attachProofOfWork(formData, btn);
+        if (!ok) {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload File';
+            return;
+        }
 
         var progress = document.getElementById('progress-area');
         var progressFill = document.getElementById('progress-fill');
