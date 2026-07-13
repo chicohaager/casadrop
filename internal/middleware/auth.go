@@ -66,13 +66,18 @@ type failedAttemptInfo struct {
 
 // AdminAuth handles admin authentication
 type AdminAuth struct {
-	envPassword       string                        // Password from environment variable
-	dataDir           string                        // Data directory for persistent storage
-	sessions          map[string]Session            // Active sessions
-	csrfTokens        map[string]time.Time          // CSRF tokens with expiry
-	failedAttempts    map[string]*failedAttemptInfo // Failed login attempts per IP (for lockout)
-	mu                sync.RWMutex
-	rateLimiter       *RateLimiter
+	envPassword    string                        // Password from environment variable
+	dataDir        string                        // Data directory for persistent storage
+	sessions       map[string]Session            // Active sessions
+	csrfTokens     map[string]time.Time          // CSRF tokens with expiry
+	failedAttempts map[string]*failedAttemptInfo // Failed login attempts per IP (for lockout)
+	mu             sync.RWMutex
+	rateLimiter    *RateLimiter
+	// configMu guards config and setupToken. It is deliberately separate from mu
+	// (which guards sessions/csrf/failedAttempts) and is NEVER nested with mu, so
+	// the two can't deadlock. Every config read/write and the setup-token
+	// compare/clear must hold it.
+	configMu          sync.RWMutex
 	config            *AdminConfig
 	oidcEnabled       bool                                 // Whether OIDC is enabled (startup-cached fallback)
 	oidcLocalDisabled bool                                 // Whether local auth is disabled when OIDC is enabled (fallback)
@@ -217,8 +222,10 @@ func (aa *AdminAuth) sessionsPath() string {
 	return filepath.Join(aa.dataDir, "sessions.json")
 }
 
-// loadConfig loads admin config from file
+// loadConfig loads admin config from file.
 func (aa *AdminAuth) loadConfig() {
+	aa.configMu.Lock()
+	defer aa.configMu.Unlock()
 	data, err := os.ReadFile(aa.configPath())
 	if err != nil {
 		aa.config = &AdminConfig{SetupDone: false}
@@ -233,13 +240,47 @@ func (aa *AdminAuth) loadConfig() {
 	aa.config = &config
 }
 
-// saveConfig saves admin config to file
+// saveConfig saves admin config to file. Callers MUST hold aa.configMu.
 func (aa *AdminAuth) saveConfig() error {
 	data, err := json.MarshalIndent(aa.config, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(aa.configPath(), data, 0600)
+}
+
+// consumeSetupToken atomically checks the provided one-time setup token against
+// the stored one and, on a match, clears it. Because the compare and the clear
+// happen under a single configMu critical section, two concurrent setup POSTs
+// can't both pass — the loser sees an already-empty token. Returns false when
+// setup tokens are disabled ("") or the value doesn't match (constant-time).
+func (aa *AdminAuth) consumeSetupToken(provided string) bool {
+	aa.configMu.Lock()
+	defer aa.configMu.Unlock()
+	if aa.setupToken == "" {
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(aa.setupToken)) != 1 {
+		return false
+	}
+	aa.setupToken = ""
+	return true
+}
+
+// regenerateSetupToken mints and logs a fresh setup token. Used to recover the
+// one-time token when setup fails after it was already consumed, so the operator
+// can retry.
+func (aa *AdminAuth) regenerateSetupToken() {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("FATAL: failed to regenerate setup token: %v", err)
+		return
+	}
+	aa.configMu.Lock()
+	aa.setupToken = hex.EncodeToString(b)
+	token := aa.setupToken
+	aa.configMu.Unlock()
+	log.Printf("=== CasaDrop SETUP TOKEN: %s ===", token)
 }
 
 // loadSessions loads sessions from disk
@@ -391,11 +432,15 @@ func (aa *AdminAuth) ResetFailedAttempts(ip string) {
 
 // IsEnabled returns true if authentication is required
 func (aa *AdminAuth) IsEnabled() bool {
+	aa.configMu.RLock()
+	defer aa.configMu.RUnlock()
 	return aa.envPassword != "" || (aa.config != nil && aa.config.SetupDone)
 }
 
 // NeedsSetup returns true if initial setup is required
 func (aa *AdminAuth) NeedsSetup() bool {
+	aa.configMu.RLock()
+	defer aa.configMu.RUnlock()
 	return aa.envPassword == "" && (aa.config == nil || !aa.config.SetupDone)
 }
 
@@ -417,12 +462,14 @@ func (aa *AdminAuth) ValidatePassword(password string) bool {
 		envOK = subtle.ConstantTimeCompare([]byte(password), []byte(aa.envPassword)) == 1
 	}
 
+	aa.configMu.RLock()
 	var storedHash string
 	if aa.config != nil && aa.config.SetupDone && aa.config.PasswordHash != "" {
 		storedHash = aa.config.PasswordHash
 	} else {
 		storedHash = dummyHash
 	}
+	aa.configMu.RUnlock()
 	hashOK := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) == nil
 	// Only count the stored-hash result when a real one exists.
 	if storedHash == dummyHash {
@@ -477,6 +524,8 @@ func (aa *AdminAuth) SetPassword(password string) error {
 		return err
 	}
 
+	aa.configMu.Lock()
+	defer aa.configMu.Unlock()
 	// Preserve any existing TOTP config across password changes.
 	if aa.config == nil {
 		aa.config = &AdminConfig{}
@@ -488,16 +537,18 @@ func (aa *AdminAuth) SetPassword(password string) error {
 
 // IsTOTPEnabled reports whether admin TOTP 2FA is active.
 func (aa *AdminAuth) IsTOTPEnabled() bool {
+	aa.configMu.RLock()
+	defer aa.configMu.RUnlock()
 	return aa.config != nil && aa.config.TOTPEnabled && aa.config.TOTPSecret != ""
 }
 
 // verifyTOTP validates a 6-digit code against the configured admin secret and
 // enforces single-use (anti-replay): a code is rejected if its 30s step counter
 // is at or below the last consumed counter. Returns true when 2FA is not
-// enabled (nothing to verify). Takes aa.mu because it persists the counter.
+// enabled (nothing to verify). Takes configMu because it persists the counter.
 func (aa *AdminAuth) verifyTOTP(code string) bool {
-	aa.mu.Lock()
-	defer aa.mu.Unlock()
+	aa.configMu.Lock()
+	defer aa.configMu.Unlock()
 	if aa.config == nil || !aa.config.TOTPEnabled || aa.config.TOTPSecret == "" {
 		return true
 	}
@@ -559,7 +610,7 @@ func (aa *AdminAuth) TOTPEnableHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid or expired code", http.StatusBadRequest)
 		return
 	}
-	aa.mu.Lock()
+	aa.configMu.Lock()
 	if aa.config == nil {
 		aa.config = &AdminConfig{SetupDone: true}
 	}
@@ -568,7 +619,7 @@ func (aa *AdminAuth) TOTPEnableHandler(w http.ResponseWriter, r *http.Request) {
 	// Consume the enrollment code so it can't immediately be replayed to log in.
 	aa.config.LastTOTPCounter = enrollCounter
 	err := aa.saveConfig()
-	aa.mu.Unlock()
+	aa.configMu.Unlock()
 	if err != nil {
 		http.Error(w, "Failed to save", http.StatusInternalServerError)
 		return
@@ -592,11 +643,11 @@ func (aa *AdminAuth) TOTPDisableHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Invalid code", http.StatusBadRequest)
 		return
 	}
-	aa.mu.Lock()
+	aa.configMu.Lock()
 	aa.config.TOTPEnabled = false
 	aa.config.TOTPSecret = ""
 	err := aa.saveConfig()
-	aa.mu.Unlock()
+	aa.configMu.Unlock()
 	if err != nil {
 		http.Error(w, "Failed to save", http.StatusInternalServerError)
 		return
@@ -1158,23 +1209,8 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate the one-time setup token (printed to the server logs) so an
-	// internet-exposed, not-yet-configured instance can't be claimed by an
-	// anonymous visitor who reaches /setup first.
-	if aa.setupToken == "" ||
-		subtle.ConstantTimeCompare([]byte(r.FormValue("setup_token")), []byte(aa.setupToken)) != 1 {
-		clientIP := utils.GetClientIP(r)
-		LogAuditEvent(AuditLoginFailed, clientIP, r.Header.Get("User-Agent"), "Setup rejected: invalid setup token")
-		time.Sleep(500 * time.Millisecond)
-		newToken, err := aa.GenerateCSRFToken()
-		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		aa.renderSetupPage(w, "Invalid setup token. Find it in the server logs (e.g. `docker logs casadrop`).", newToken)
-		return
-	}
-
+	// Validate the password BEFORE consuming the setup token, so a mistyped
+	// password doesn't burn the one-time token.
 	password := r.FormValue("password")
 	confirmPassword := r.FormValue("confirm_password")
 
@@ -1198,7 +1234,27 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Atomically validate AND consume the one-time setup token (printed to the
+	// server logs) so an internet-exposed, not-yet-configured instance can't be
+	// claimed by an anonymous visitor who reaches /setup first — and so two
+	// concurrent setup POSTs can't both pass (compare-and-clear under one lock).
+	if !aa.consumeSetupToken(r.FormValue("setup_token")) {
+		clientIP := utils.GetClientIP(r)
+		LogAuditEvent(AuditLoginFailed, clientIP, r.Header.Get("User-Agent"), "Setup rejected: invalid setup token")
+		time.Sleep(500 * time.Millisecond)
+		newToken, err := aa.GenerateCSRFToken()
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		aa.renderSetupPage(w, "Invalid setup token. Find it in the server logs (e.g. `docker logs casadrop`).", newToken)
+		return
+	}
+
 	if err := aa.SetPassword(password); err != nil {
+		// The token was already consumed; mint a fresh one (logged again) so the
+		// operator can retry.
+		aa.regenerateSetupToken()
 		newToken, err := aa.GenerateCSRFToken()
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -1207,9 +1263,6 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		aa.renderSetupPage(w, "Failed to save password", newToken)
 		return
 	}
-
-	// Burn the one-time setup token now that the admin account exists.
-	aa.setupToken = ""
 
 	// Auto-login after setup
 	clientIP := utils.GetClientIP(r)
