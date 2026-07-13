@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -140,7 +141,8 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.storage.CreateUser(user); err != nil {
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		log.Printf("CreateUser failed for %s (role=%s): %v", req.Email, req.Role, err)
+		jsonError(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
 

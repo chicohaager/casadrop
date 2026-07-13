@@ -156,6 +156,21 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 		return err
 	}
 
+	// Local (non-OIDC) accounts used to store "" in the OIDC columns, which
+	// collides with UNIQUE(oidc_subject, oidc_issuer) as soon as a second local
+	// account is created (SQLite: NULLs are distinct, empty strings are not).
+	// Normalize the legacy rows so existing installs can add more local users.
+	if _, err := tx.Exec(
+		`UPDATE users SET oidc_subject = NULL WHERE oidc_subject = ''`,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`UPDATE users SET oidc_issuer = NULL WHERE oidc_issuer = ''`,
+	); err != nil {
+		return err
+	}
+
 	// Create indexes
 	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
 	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
