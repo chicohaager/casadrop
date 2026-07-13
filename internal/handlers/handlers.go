@@ -479,6 +479,15 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		IsSymlink:    req.UseSymlink,
 	}
 
+	// Attribute ownership like every other creation path. For a copy this is
+	// also what makes the bytes count toward the owner's quota — GetUserUsage
+	// sums by user_id, so an unowned copied share would never be charged and the
+	// quota preflight above would compare against a usage that never grows.
+	if user := middleware.GetUserFromContext(r.Context()); user != nil {
+		share.UserID = user.ID
+		share.UserEmail = user.Email
+	}
+
 	if err := h.storage.Save(share); err != nil {
 		os.Remove(destPath)
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
@@ -717,9 +726,11 @@ func (h *Handler) DeleteShare(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUserFromContext(r.Context())
 	share, ok := h.storage.Get(id)
 	if !ok {
-		// Still try to delete in case it's expired but exists
-		h.storage.Delete(id)
-		w.WriteHeader(http.StatusNoContent)
+		// Not visible (missing or already expired). Don't fall through to an
+		// unconditional delete — that skipped the ownership check below and let
+		// any authenticated user remove another user's expired share by ID.
+		// Expired rows are reaped by the hourly cleanup goroutine anyway.
+		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
 	}
 
@@ -1055,7 +1066,12 @@ func (c *TunnelConfig) GetAllowedExtensions() map[string]bool {
 
 // IsExtensionAllowed checks if a file extension is allowed based on config
 func (c *TunnelConfig) IsExtensionAllowed(filename string) (bool, string) {
-	ext := strings.ToLower(filepath.Ext(filename))
+	// Trim trailing dots and spaces from the NAME before extracting the ext.
+	// "evil.exe " → filepath.Ext = ".exe " and "evil.exe." → "." — neither
+	// matches the blocked key ".exe", so without this a trailing space/dot
+	// slips a blocked type past the blocklist (and Windows strips trailing
+	// dots, so "evil.exe." really is executable).
+	ext := strings.ToLower(filepath.Ext(strings.TrimRight(filename, ". ")))
 	if ext == "" {
 		return true, "" // Files without extension are allowed
 	}

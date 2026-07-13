@@ -179,6 +179,11 @@ func TestTunnelConfig_IsExtensionAllowed(t *testing.T) {
 		{"Whitelist allows only PDF", TunnelConfig{AllowedExtensions: "pdf"}, "doc.pdf", true},
 		{"Whitelist blocks JPG", TunnelConfig{AllowedExtensions: "pdf"}, "image.jpg", false},
 		{"Custom blocked", TunnelConfig{BlockedExtensions: "pdf"}, "doc.pdf", false},
+		// Blocklist-bypass regressions: a trailing space or dot must not sneak a
+		// blocked type past the check (Windows strips trailing dots too).
+		{"EXE with trailing space still blocked", TunnelConfig{}, "program.exe ", false},
+		{"EXE with trailing dot still blocked", TunnelConfig{}, "program.exe.", false},
+		{"EXE with trailing dot+space still blocked", TunnelConfig{}, "program.exe. ", false},
 	}
 
 	for _, tt := range tests {

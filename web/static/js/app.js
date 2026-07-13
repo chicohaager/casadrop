@@ -132,6 +132,8 @@
             'settings.name': 'Name',
             'settings.role': 'Role',
             'settings.userPassword': 'Password',
+            'settings.userPasswordHint': 'Optional — leave empty for SSO-only accounts (min. 8 characters if set)',
+            'settings.passwordTooShort': 'Password must be at least 8 characters',
             'settings.deleteUserConfirm': 'Delete this user?',
             'settings.userCreated': 'User created',
             'settings.userDeleted': 'User deleted',
@@ -302,6 +304,8 @@
             'settings.name': 'Name',
             'settings.role': 'Rolle',
             'settings.userPassword': 'Passwort',
+            'settings.userPasswordHint': 'Optional — für reine SSO-Konten leer lassen (min. 8 Zeichen, falls gesetzt)',
+            'settings.passwordTooShort': 'Passwort muss mindestens 8 Zeichen haben',
             'settings.deleteUserConfirm': 'Benutzer loeschen?',
             'settings.userCreated': 'Benutzer erstellt',
             'settings.userDeleted': 'Benutzer geloescht',
@@ -1540,11 +1544,20 @@
         return { label: ext ? ext.slice(0, 3).toUpperCase() : 'FIL', cls: 'file-icon-default' };
     }
 
+    // Escapes for BOTH element and attribute contexts. The browser's
+    // textContent→innerHTML trick does not escape quotes, so values placed into
+    // double-quoted attributes (title=, data-*=, value=) could break out and
+    // inject markup — e.g. an uploaded filename like  x" onmouseover="…  reaching
+    // the admin's shares list. Escaping quotes here is visually identical in text
+    // context and closes the attribute-injection across every interpolation site.
     function escapeHtml(str) {
         if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     async function api(path, opts = {}) {
@@ -3214,7 +3227,8 @@
                         </div>
                         <div class="form-group">
                             <label>${t('settings.userPassword')}</label>
-                            <input type="password" id="new-user-password" required>
+                            <input type="password" id="new-user-password" autocomplete="new-password">
+                            <small style="color:var(--text-muted);display:block;margin-top:4px">${t('settings.userPasswordHint')}</small>
                         </div>
                     </div>
                     <div class="form-row">
@@ -3263,8 +3277,14 @@
                 const password = document.getElementById('new-user-password').value;
                 const quotaGB = Math.max(0, parseInt(document.getElementById('new-user-quota')?.value || '0', 10));
 
-                if (!email || !name || !password) {
+                if (!email || !name) {
                     toast(t('settings.fillAll'), 'warning');
+                    return;
+                }
+                // Password is optional (SSO-only accounts have none); the backend
+                // enforces min. 8 chars only when one is set — mirror that here.
+                if (password && password.length < 8) {
+                    toast(t('settings.passwordTooShort'), 'warning');
                     return;
                 }
 

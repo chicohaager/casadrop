@@ -139,7 +139,10 @@ func (c *TunnelConfig) GetAllowedExtensions() map[string]bool {
 
 // IsExtensionAllowed checks if a file extension is allowed based on config
 func (c *TunnelConfig) IsExtensionAllowed(filename string) (bool, string) {
-	ext := strings.ToLower(filepath.Ext(filename))
+	// Trim trailing dots/spaces before extracting the ext so "evil.exe " and
+	// "evil.exe." can't slip a blocked type past the blocklist (Windows also
+	// strips trailing dots, so "evil.exe." is really executable).
+	ext := strings.ToLower(filepath.Ext(strings.TrimRight(filename, ". ")))
 	if ext == "" {
 		return true, "" // Files without extension are allowed
 	}
