@@ -5,6 +5,68 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security (multi-agent code + security review)
+- **X-Forwarded-For spoofing (CWE-348) defeated rate-limit and login lockout.**
+  Behind a trusted proxy, `GetClientIP` returned the *leftmost* XFF entry, which
+  a conforming proxy leaves fully client-controlled (it appends the real peer on
+  the right). A client could send `X-Forwarded-For: <rotating-fake>, <real>` to
+  get a fresh, attacker-chosen key on every request, bypassing per-IP login
+  lockout, the share-password limiter, and receive-upload limits. XFF is now read
+  right-to-left, skipping trusted-proxy hops, so the real client IP can't be
+  spoofed. Regression tests in `utils_test.go`.
+- **IDOR: any authenticated user could delete another user's *expired* share or
+  receive link by ID.** `DeleteShare`/`DeleteReceiveLink` fell through to an
+  unconditional delete when the resource was expired (the ownership check sat
+  behind a `Get` that filters expired rows). They now return 404 and leave
+  reaping to the background cleaner. Regression test
+  `TestDeleteExpiredShareRequiresOwnership`.
+- **Extension-blocklist bypass via a trailing space or dot.** `"evil.exe "` and
+  `"evil.exe."` slipped past the `.exe` block (and Windows strips trailing dots,
+  so the latter is really executable). The name is now trimmed before the
+  extension is extracted, in both `TunnelConfig` implementations. Regression
+  tests in `tunnel_test.go` and `extension_allow_test.go`.
+- **Data races on the admin config and setup token.** `config` and `setupToken`
+  were read/written without consistent locking (setup wizard racing with the
+  per-request auth checks, and with TOTP enable/disable). Both are now guarded by
+  a dedicated `configMu`, and the setup token is validated-and-consumed in one
+  atomic critical section so two concurrent setup POSTs can't both pass. Verified
+  clean under `go test -race`.
+- **Attribute-injection hardening (defense-in-depth).** The frontend `escapeHtml`
+  helper did not escape quotes, so a value placed into an HTML attribute (e.g. an
+  uploaded filename in the admin's shares list `title=`) could break out. It now
+  escapes quotes too; the strict CSP already prevented script execution, but this
+  closes the markup-injection. Verified in a real browser: a `x" onmouseover=…`
+  filename renders as an inert, fully-escaped `title` (no injected handler, canary
+  never fires).
+
+### Fixed
+- **Copy-mode "share from host" didn't attribute the copied bytes to the owner,**
+  so `GetUserUsage` never counted them and the storage quota could be exceeded by
+  repeated copies. The share now records `UserID`/`UserEmail` like every other
+  creation path (admin-only route, so low impact).
+- **Orphaned files on expiry cleanup.** `cleanupExpiredShares` /
+  `cleanupExpiredReceiveLinks` deleted DB rows with a re-evaluated `now()`
+  predicate, so a resource crossing the expiry boundary mid-cleanup was removed
+  from the DB while its file was never deleted. They now delete exactly the IDs
+  whose files were removed.
+- **Non-atomic received-file accounting.** `SaveReceivedFile` inserted the file
+  row and bumped `receive_links.total_size` (which feeds quota accounting) in two
+  separate statements; they're now one transaction, matching `DeleteReceivedFile`.
+- **Create-user UI required a password,** contradicting the backend which allows
+  passwordless (SSO-only) accounts. The field is now optional with an 8-char
+  minimum only when set, plus a hint. Verified in a real browser (DE locale).
+- **Silently swallowed errors** in the receive-link handlers: a DB error while
+  counting received files rendered as `files_count: 0` instead of surfacing. The
+  detail endpoint now returns 500 and both log the error.
+
+### Known limitation
+- Per-user quota enforcement is best-effort: two concurrent uploads by the same
+  owner can each pass the check before either writes, slightly overshooting the
+  limit. A fully atomic reservation needs a transactional counter across the
+  storage interface and is deferred.
+
 ## [2.4.0] - 2026-07-13 — Storage Quotas, Malware Scanning & Abuse Protection
 
 ### Added
