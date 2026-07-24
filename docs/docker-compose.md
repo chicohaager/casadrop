@@ -147,16 +147,24 @@ volumes:
 
 ## Health Check
 
-CasaDrop includes a built-in health check endpoint:
+CasaDrop includes built-in health check endpoints: `/healthz` (liveness) and
+`/readyz` (readiness — 200 only when the storage backend answers).
 
 ```yaml
 healthcheck:
-  test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/auth/status"]
+  test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
   interval: 30s
   timeout: 3s
   retries: 3
   start_period: 10s
 ```
+
+> **Do not use `wget --spider` for the health check.** The runtime image ships
+> **GNU wget**, whose `--spider` sends a `HEAD` request rather than a `GET`.
+> Use a plain `GET` as shown above. (CasaDrop ≥ 2.4.2 also answers `HEAD` on
+> `/healthz`, `/readyz` and `/api/auth/status`, so `--spider` no longer reports
+> a false failure — but a `GET` remains the check that actually exercises the
+> response.)
 
 ## Resource Limits
 
