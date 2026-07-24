@@ -100,6 +100,13 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 		log.Printf("Warning: Failed to create user indexes: %v", err)
 	}
 
+	// Correct mime_type rows written before the sniffer got extension-based
+	// disambiguation (FLAC/M4A/untagged MP3 stored as octet-stream and thus
+	// previewable nowhere; Matroska stored as video/webm).
+	if err := s.migrateMimeTypes(); err != nil {
+		log.Printf("Warning: MIME migration failed: %v", err)
+	}
+
 	// Start cleanup goroutine
 	go s.cleanupExpired()
 
