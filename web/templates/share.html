@@ -426,19 +426,29 @@
                     <img id="preview-image" {{if .HasPassword}}data-src{{else}}src{{end}}="/thumbnail/{{.ID}}" alt="{{.FileName}}" loading="lazy" style="cursor:zoom-in" title="Click for full resolution">
                     {{end}}
                     {{if .IsVideo}}
-                    <video controls preload="metadata">
-                        <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" type="{{.MimeType}}">
+                    <video id="media-preview" controls preload="metadata">
+                        <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}"{{if .SourceType}} type="{{.SourceType}}"{{end}}>
                         Your browser does not support video playback.
                     </video>
                     {{end}}
                     {{if .IsAudio}}
                     <div class="audio-preview">
-                        <audio controls preload="metadata" style="width:100%">
-                            <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" type="{{.MimeType}}">
+                        <audio id="media-preview" controls preload="metadata" style="width:100%">
+                            <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}"{{if .SourceType}} type="{{.SourceType}}"{{end}}>
                             Your browser does not support audio playback.
                         </audio>
                     </div>
                     {{end}}
+                    {{if .LimitedPlayback}}
+                    <p class="media-note">
+                        This is a Matroska (MKV) file. Browsers play these only partially —
+                        audio tracks in AC-3, E-AC-3 or DTS have no browser decoder, so the
+                        video may run silently. Download the file for full playback.
+                    </p>
+                    {{end}}
+                    <p class="media-note" id="media-error" style="display:none">
+                        Your browser cannot play this file. Use the download button instead.
+                    </p>
                     {{if .IsPDF}}
                     <iframe {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" title="PDF Preview"></iframe>
                     {{end}}
