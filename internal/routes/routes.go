@@ -49,15 +49,18 @@ func New(d Deps) *mux.Router {
 func registerPublic(r *mux.Router, d Deps) {
 	h := d.Handler
 
-	// Health probes (public, no auth) for container/tunnel orchestration
-	r.HandleFunc("/healthz", h.Healthz).Methods("GET")
-	r.HandleFunc("/readyz", h.Readyz).Methods("GET")
+	// Health probes (public, no auth) for container/tunnel orchestration.
+	// HEAD is matched explicitly: gorilla/mux does not imply it from GET, and
+	// probe tools that HEAD (GNU `wget --spider`, some LB health checks) would
+	// otherwise get a 404 from a perfectly healthy instance.
+	r.HandleFunc("/healthz", h.Healthz).Methods("GET", "HEAD")
+	r.HandleFunc("/readyz", h.Readyz).Methods("GET", "HEAD")
 
 	// Auth + OIDC (public by definition)
 	r.HandleFunc("/login", d.AdminAuth.LoginHandler).Methods("GET", "POST")
 	r.HandleFunc("/logout", d.AdminAuth.LogoutHandler).Methods("GET", "POST")
 	r.HandleFunc("/setup", d.AdminAuth.SetupHandler).Methods("GET", "POST")
-	r.HandleFunc("/api/auth/status", d.AdminAuth.AuthStatusHandler).Methods("GET")
+	r.HandleFunc("/api/auth/status", d.AdminAuth.AuthStatusHandler).Methods("GET", "HEAD")
 
 	r.HandleFunc("/auth/oidc/login", d.OIDC.LoginHandler).Methods("GET")
 	r.HandleFunc("/auth/oidc/callback", d.OIDC.CallbackHandler).Methods("GET")

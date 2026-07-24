@@ -5,6 +5,44 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Docker healthcheck reported a healthy container as failed.** The compose
+  healthchecks used `wget --no-verbose --tries=1 --spider …`, which failed with
+  `Remote file does not exist -- broken link!!!` (exit 8) even though the endpoint
+  answered normally to `wget -qO-`. Two causes, both fixed:
+  1. The alpine runtime image installs **GNU wget** (`apk add wget`), which
+     shadows BusyBox's applet at `/usr/bin/wget`. GNU `--spider` issues a **HEAD**
+     request (BusyBox's `--spider` uses GET — hence the confusing "BusyBox"
+     symptom). All shipped healthchecks now do a plain `GET`
+     (`wget -qO- … >/dev/null 2>&1 || exit 1`) against `/healthz`.
+  2. `/healthz`, `/readyz` and `/api/auth/status` were registered with
+     `.Methods("GET")` only, and gorilla/mux does not imply `HEAD` from `GET` —
+     so a HEAD probe got a **404** from a perfectly healthy server. They now
+     match `GET, HEAD`, so HEAD-based probes (`--spider`, some load balancers)
+     work too. Regression test `TestHealthProbesAnswerHEAD`.
+  - Touched: `Dockerfile`, `docker-compose.yaml`, `docker-compose.zimaos.yaml`,
+    `dist/casadrop-install-2.3.0/casadrop-zimaos-app.yaml`, `internal/routes/routes.go`,
+    `docs/docker-compose.md`, `docs/HOWTO.md`, `docs/zimaos.md`,
+    `docs/docker-compose.{traefik,caddy,authentik}.yml`. The image healthcheck also
+    moved from `/api/auth/status` to the purpose-built `/healthz`.
+- **`entrypoint.sh` used `grep -P`, which BusyBox grep does not support.** Local-IP
+  auto-detection printed a full grep usage dump into the container log on every
+  start and always fell through to the `hostname -i` fallback. Replaced with an
+  awk field scan; verified against BusyBox.
+
+### Added
+- **`docs/tailscale.md`** — HowTo for running CasaDrop behind Tailscale, covering
+  both wiring variants (host Tailscale with mounted CLI/socket vs. the bundled
+  `--profile tailscale` sidecar), `serve` vs. `funnel`, share-link host behaviour,
+  Taildrop, and troubleshooting. With screenshots.
+
+### Changed
+- The Tailscale sidecar now accepts **either** `TAILSCALE_AUTHKEY` or `TS_AUTHKEY`
+  in both `docker-compose.yaml` and `docker-compose.zimaos.yaml` — the two files
+  previously documented different names for the same variable.
+
 ## [2.4.1] - 2026-07-13 — Security review follow-ups
 
 ### Security (multi-agent code + security review)

@@ -34,7 +34,7 @@ services:
       - TZ=Europe/Berlin
       - SHARE_ALLOWED_PATHS=/DATA,/media
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/auth/status"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 3s
       retries: 3

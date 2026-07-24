@@ -9,6 +9,7 @@ Self-hosted file sharing for your homelab.
 | **[Complete HowTo](HOWTO.md)** | **Start here** — install, share, expose publicly, automate, harden |
 | [Docker Compose Setup](docker-compose.md) | Standard deployment guide |
 | [Reverse Proxy](reverse-proxy.md) | Nginx, Traefik, Caddy configurations |
+| [Tailscale](tailscale.md) | Host Tailscale or bundled sidecar, serve/Funnel, Taildrop |
 | [OIDC/SSO](oidc.md) | Authentik, Keycloak integration |
 | [API Reference](api.md) | REST API documentation |
 | [ZimaOS/CasaOS](zimaos.md) | ZimaOS-specific setup |
