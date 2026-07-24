@@ -100,6 +100,30 @@ func TestAuthFlow(t *testing.T) {
 	}
 }
 
+// TestHealthProbesAnswerHEAD guards the container healthcheck path.
+//
+// Regression: the alpine runtime image installs GNU wget (apk add wget), whose
+// --spider does a HEAD request. gorilla/mux only matches the methods a route
+// declares, so a GET-only /healthz answered HEAD with 404 and every
+// `wget --spider` healthcheck reported "Remote file does not exist" against a
+// perfectly healthy container.
+func TestHealthProbesAnswerHEAD(t *testing.T) {
+	srv, cleanup := newTestServer(t, "integration-test-pass-123!")
+	defer cleanup()
+
+	client := newClientWithJar(t, srv)
+
+	for _, path := range []string{"/healthz", "/readyz", "/api/auth/status"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			res := do(t, client, method, srv.URL+path, nil, nil)
+			res.Body.Close()
+			if res.StatusCode != http.StatusOK {
+				t.Errorf("%s %s: want 200, got %d", method, path, res.StatusCode)
+			}
+		}
+	}
+}
+
 // ---------------- helpers ----------------
 
 func newTestServer(t *testing.T, envPassword string) (*httptest.Server, func()) {
