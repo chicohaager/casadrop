@@ -5,9 +5,21 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.2] - 2026-07-24 — Healthcheck & media MIME fixes
 
 ### Fixed
+- **Existing shares with a wrong `mime_type` are corrected on startup.** The
+  detection fix below only applied to new uploads; rows written by older
+  versions kept their wrong type, so an already-shared FLAC still had no player.
+  A migration now re-runs the same disambiguation over the stored value — which
+  *is* the old sniff result, so no uploaded file has to be re-read. Only
+  non-committal values (`application/octet-stream`, `application/ogg`,
+  `video/webm`) are candidates; recognised types are never touched, so the
+  migration cannot promote anything into an active type. Covers `shares`,
+  `received_files` and `folder_contents`, is idempotent, and logs how many rows
+  it changed. Verified against a snapshot of a real instance: 3 of 9 shares
+  corrected (`.mkv` → `video/x-matroska`, `.flac` → `audio/flac`, `.mp3` →
+  `audio/mpeg`), the two genuine `.webm` shares left untouched.
 - **Audio files that Go's sniffer doesn't recognise got no player at all.** MIME
   type was derived purely from `http.DetectContentType`, which carries
   signatures for only a handful of media formats. Measured before/after against
