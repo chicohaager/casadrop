@@ -76,8 +76,18 @@ var safeMediaByExt = map[string]string{
 // ambiguousSniffs and the extension is one of the alternatives that sniff
 // identically — so it can never promote a file into an unrelated type.
 func DetectMimeType(content []byte, fileName string) string {
-	sniffed := http.DetectContentType(content)
+	return RefineMimeType(http.DetectContentType(content), fileName)
+}
 
+// RefineMimeType applies the same disambiguation to an *already sniffed* type.
+//
+// It exists so the stored-data migration can correct rows written by older
+// versions without re-reading every uploaded file: the value in the database is
+// exactly what http.DetectContentType returned back then, so feeding it back in
+// yields the same answer DetectMimeType would produce today. The safety
+// properties are identical — a row that sniffed as text/html is not
+// non-committal and can never be promoted.
+func RefineMimeType(sniffed, fileName string) string {
 	base := sniffed
 	if i := strings.IndexByte(base, ';'); i >= 0 {
 		base = strings.TrimSpace(base[:i])
