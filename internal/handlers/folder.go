@@ -634,5 +634,5 @@ func detectMimeType(path string) string {
 		return "application/octet-stream"
 	}
 
-	return http.DetectContentType(buffer[:n])
+	return utils.DetectMimeType(buffer[:n], path)
 }
