@@ -89,7 +89,9 @@ services:
     tmpfs:
       - /tmp
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/auth/status"]
+      # GET, not --spider: the runtime image ships GNU wget, whose --spider
+      # issues a HEAD request. Keep this a plain GET.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -132,7 +134,8 @@ services:
       # so the tun module need not be loaded from inside the container. If the
       # host lacks tun, `modprobe tun` on the host once instead.
     environment:
-      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      # Accept either spelling so both documented forms work.
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY:-${TS_AUTHKEY:-}}
       - TS_HOSTNAME=${TS_HOSTNAME:-casadrop}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false

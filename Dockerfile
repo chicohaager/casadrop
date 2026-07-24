@@ -53,7 +53,8 @@ FROM alpine:3.21
 # Minimal runtime utilities:
 #   ca-certificates → HTTPS (webhooks, OIDC)
 #   tzdata          → configurable TZ
-#   wget            → HEALTHCHECK
+#   wget            → HEALTHCHECK (GNU wget — note: its `--spider` sends HEAD,
+#                     so healthchecks must use a plain GET, see HEALTHCHECK below)
 #   iproute2        → LAN IP detection in entrypoint.sh
 #   su-exec         → drop privileges from root to casadrop user
 # We deliberately do NOT install bash, curl, git, or package managers —
@@ -88,7 +89,9 @@ ENV PORT=8080 \
 
 EXPOSE 8080
 
+# Plain GET against the liveness probe. Do NOT use `wget --spider` here: the
+# wget in this image is GNU wget, whose --spider issues a HEAD request.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:8080/api/auth/status >/dev/null 2>&1 || exit 1
+    CMD wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

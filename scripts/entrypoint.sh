@@ -10,7 +10,13 @@ mkdir -p "${DATA_DIR:-/data}/uploads" "${DATA_DIR:-/data}/thumbnails"
 
 # Auto-detect local IP if not set
 if [ -z "$LOCAL_IP" ]; then
-    LOCAL_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' || hostname -i 2>/dev/null | awk '{print $1}' || echo "")
+    # BusyBox grep has no -P (PCRE), so parse the `src <ip>` field with awk —
+    # `grep -oP 'src \K\S+'` printed a usage dump into the log on every start
+    # and always fell through to the hostname fallback.
+    LOCAL_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="src") {print $(i+1); exit}}')
+    if [ -z "$LOCAL_IP" ]; then
+        LOCAL_IP=$(hostname -i 2>/dev/null | awk '{print $1}')
+    fi
     if [ -n "$LOCAL_IP" ]; then
         export LOCAL_IP
         echo "Local IP: $LOCAL_IP"
