@@ -1821,3 +1821,18 @@ button.host-name:hover span { text-decoration: underline; }
     word-break: break-all;
 }
 .host-share-target svg { flex-shrink: 0; color: var(--accent-muted); }
+
+/* Note under a media preview: playback caveats (e.g. Matroska containers whose
+   AC-3/DTS audio no browser can decode) and decode failures. Muted rather than
+   alarming — the file is fine, only in-browser playback is limited. */
+.media-note {
+    margin: var(--space-3) 0 0;
+    padding: var(--space-3);
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--accent-muted);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    text-align: left;
+}

@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Audio files that Go's sniffer doesn't recognise got no player at all.** MIME
+  type was derived purely from `http.DetectContentType`, which carries
+  signatures for only a handful of media formats. Measured before/after against
+  two running builds:
+
+  | upload | was | player | now | player |
+  |---|---|---|---|---|
+  | `.mp3` without ID3 header | `application/octet-stream` | **none** | `audio/mpeg` | ✅ |
+  | `.flac` | `application/octet-stream` | **none** | `audio/flac` | ✅ |
+  | `.m4a` | `application/octet-stream` | **none** | `audio/mp4` | ✅ |
+  | `.opus` | `application/ogg` | **none** | `audio/ogg` | ✅ |
+  | `.mkv` | `video/webm` | ✅ | `video/x-matroska` | ✅ |
+
+  `getMediaType` classifies by MIME prefix, so `application/octet-stream` meant
+  `MediaTypeUnknown` and the share page rendered no `<audio>` element — the file
+  could only be downloaded.
+- **Matroska was labelled `video/webm`.** `.mkv` and `.webm` share the same EBML
+  magic bytes, so the sniffer cannot tell them apart. A 4K HEVC movie was served
+  as WebM, a container that only permits VP8/VP9/AV1 with Vorbis/Opus.
+- New `internal/utils.DetectMimeType` fixes both while keeping sniffing
+  authoritative: the file name — which the uploader controls — is consulted
+  **only** when the sniffer returned a non-committal answer, and then only to
+  promote into an allow-list of **inert media types**. It can never reach
+  `text/html`, `image/svg+xml` or `application/xml`, so this does not open
+  content-type confusion. Covered by tests including hostile cases (an HTML
+  payload named `song.flac` stays `text/html`; `evil.svg` stays
+  `application/octet-stream`). All six sniff sites now route through it
+  (`upload.go` ×3, `handlers.go`, `receive.go`, `folder.go`).
+
 - **Docker healthcheck reported a healthy container as failed.** The compose
   healthchecks used `wget --no-verbose --tries=1 --spider …`, which failed with
   `Remote file does not exist -- broken link!!!` (exit 8) even though the endpoint
@@ -33,6 +62,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   awk field scan; verified against BusyBox.
 
 ### Added
+- **Share page tells you when playback is limited instead of failing silently.**
+  A Matroska share now carries a note that browsers play these only partially —
+  AC-3/E-AC-3/DTS audio has no browser decoder, so the video runs silently. Plus
+  an error note wired to the media element's `error` event, since a `<video>`
+  that cannot decode otherwise shows a black rectangle and an `<audio>` stays
+  mute, which reads as "the file is broken".
+- `<source type="…">` is now omitted for containers a browser cannot evaluate
+  via `canPlayType()`, so the browser decides from the bytes rather than
+  skipping a source it could have played.
 - **`docs/tailscale.md`** — HowTo for running CasaDrop behind Tailscale, covering
   both wiring variants (host Tailscale with mounted CLI/socket vs. the bundled
   `--profile tailscale` sidecar), `serve` vs. `funnel`, share-link host behaviour,

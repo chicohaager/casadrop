@@ -185,7 +185,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	dest.Seek(0, 0)
 	buf := make([]byte, 512)
 	n, _ := dest.Read(buf)
-	mimeType := http.DetectContentType(buf[:n])
+	mimeType := utils.DetectMimeType(buf[:n], header.Filename)
 
 	// Hash password if provided
 	hashedPassword, err := auth.HashPassword(password)
@@ -507,7 +507,7 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 	if f, err := os.Open(destPath); err == nil {
 		buf := make([]byte, 512)
 		if n, _ := f.Read(buf); n > 0 {
-			mimeType = http.DetectContentType(buf[:n])
+			mimeType = utils.DetectMimeType(buf[:n], upload.FileName)
 		}
 		f.Close()
 	}
@@ -688,7 +688,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 		dest.Seek(0, 0)
 		buf := make([]byte, 512)
 		n, _ := dest.Read(buf)
-		detectedMime := http.DetectContentType(buf[:n])
+		detectedMime := utils.DetectMimeType(buf[:n], fileHeader.Filename)
 		dest.Close()
 
 		// Create share record

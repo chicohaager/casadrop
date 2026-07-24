@@ -91,6 +91,25 @@
         });
     }
 
+    // Media that cannot be decoded must say so. Left alone, <video> renders a
+    // black rectangle and <audio> stays silent — a failure the visitor can only
+    // interpret as "the file is broken". Both the element-level error and the
+    // <source>-level error are wired: the former fires when the media itself is
+    // undecodable, the latter when no listed source could be used at all.
+    function showMediaError() {
+        var note = document.getElementById('media-error');
+        if (note) note.style.display = '';
+    }
+
+    var media = document.getElementById('media-preview');
+    if (media) {
+        media.addEventListener('error', showMediaError);
+        var sources = media.getElementsByTagName('source');
+        for (var s = 0; s < sources.length; s++) {
+            sources[s].addEventListener('error', showMediaError);
+        }
+    }
+
     // QR toggle button + overlay.
     var qrBtn = document.getElementById('qr-toggle-btn');
     if (qrBtn) qrBtn.addEventListener('click', toggleQR);
