@@ -459,7 +459,7 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 		buffer := make([]byte, 512)
 		if n, err := file.Read(buffer); err == nil {
-			mimeType = http.DetectContentType(buffer[:n])
+			mimeType = utils.DetectMimeType(buffer[:n], fileName)
 		}
 	}
 
@@ -935,8 +935,14 @@ func (h *Handler) SharePage(w http.ResponseWriter, r *http.Request) {
 		"HasPassword": share.HasPassword,
 		"ExpiresAt":   share.ExpiresAt.Format("02.01.2006 15:04"),
 		"MimeType":    share.MimeType,
-		"MediaType":   string(mediaType),
-		"CanPreview":  canPreview,
+		// SourceType is "" for containers a browser cannot evaluate via
+		// canPlayType(). A <source> whose type the browser rejects is never
+		// fetched, so the attribute must be omitted rather than filled with a
+		// technically-correct-but-unrecognised type such as video/x-matroska.
+		"SourceType":      utils.SourceTypeAttr(share.MimeType),
+		"LimitedPlayback": utils.HasBrowserPlaybackCaveat(share.MimeType),
+		"MediaType":       string(mediaType),
+		"CanPreview":      canPreview,
 		"IsVideo":     mediaType == MediaTypeVideo,
 		"IsAudio":     mediaType == MediaTypeAudio,
 		"IsImage":     mediaType == MediaTypeImage,

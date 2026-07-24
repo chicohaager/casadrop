@@ -506,7 +506,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	dest.Seek(0, 0)
 	buffer := make([]byte, 512)
 	n, _ := dest.Read(buffer)
-	mimeType := http.DetectContentType(buffer[:n])
+	mimeType := utils.DetectMimeType(buffer[:n], header.Filename)
 
 	// Create received file record
 	receivedFile := &models.ReceivedFile{
