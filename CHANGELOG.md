@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   start and always fell through to the `hostname -i` fallback. Replaced with an
   awk field scan; verified against BusyBox.
 
+### Added
+- **`docs/tailscale.md`** — HowTo for running CasaDrop behind Tailscale, covering
+  both wiring variants (host Tailscale with mounted CLI/socket vs. the bundled
+  `--profile tailscale` sidecar), `serve` vs. `funnel`, share-link host behaviour,
+  Taildrop, and troubleshooting. With screenshots.
+
+### Changed
+- The Tailscale sidecar now accepts **either** `TAILSCALE_AUTHKEY` or `TS_AUTHKEY`
+  in both `docker-compose.yaml` and `docker-compose.zimaos.yaml` — the two files
+  previously documented different names for the same variable.
+
 ## [2.4.1] - 2026-07-13 — Security review follow-ups
 
 ### Security (multi-agent code + security review)

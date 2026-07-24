@@ -306,6 +306,7 @@ See [docs/api.md](docs/api.md) for full API documentation.
 - **[Complete HowTo](docs/HOWTO.md)** — install → first share → public access → automation → hardening
 - [Docker Compose Setup](docs/docker-compose.md)
 - [Reverse Proxy (Traefik/Caddy/nginx)](docs/reverse-proxy.md)
+- [Tailscale (serve, Funnel, Taildrop)](docs/tailscale.md)
 - [OIDC Configuration](docs/oidc.md)
 - [ZimaOS Setup](docs/zimaos.md)
 - [API Reference](docs/api.md)
