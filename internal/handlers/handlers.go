@@ -515,15 +515,8 @@ func (h *Handler) BrowseFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get allowed paths
-	allowedPaths := os.Getenv("SHARE_ALLOWED_PATHS")
-	if allowedPaths == "" {
-		allowedPaths = "/DATA,/media,/home"
-	}
-	allowedList := strings.Split(allowedPaths, ",")
-	for i := range allowedList {
-		allowedList[i] = strings.TrimSpace(allowedList[i])
-	}
+	// Get allowed paths (shared with /api/browse/thumbnail — see hostbrowse.go)
+	allowedList := allowedHostRoots()
 
 	// If path is root, return allowed base directories
 	if cleanPath == "/" || cleanPath == "" {
@@ -604,6 +597,10 @@ func (h *Handler) BrowseFiles(w http.ResponseWriter, r *http.Request) {
 		Path  string `json:"path"`
 		IsDir bool   `json:"is_dir"`
 		Size  int64  `json:"size"`
+		// IsImage tells the browse dialog which rows to request a preview for
+		// (GET /api/browse/thumbnail?path=…). Decided from the extension only —
+		// no file is opened here, a directory listing must stay cheap.
+		IsImage bool `json:"is_image"`
 	}
 
 	var entries []DirEntry
@@ -621,10 +618,11 @@ func (h *Handler) BrowseFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		entries = append(entries, DirEntry{
-			Name:  entry.Name(),
-			Path:  entryPath,
-			IsDir: entry.IsDir(),
-			Size:  size,
+			Name:    entry.Name(),
+			Path:    entryPath,
+			IsDir:   entry.IsDir(),
+			Size:    size,
+			IsImage: !entry.IsDir() && isThumbnailableFile(entry.Name()),
 		})
 	}
 

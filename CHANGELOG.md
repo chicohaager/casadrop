@@ -5,6 +5,39 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Thumbnails in the "share files and folders already on the server" dialog.**
+  Reported against 2.4.3: the host browser only ever rendered a file list. It had
+  nothing to render previews *from* — `/thumbnail/{id}` resolves a share ID, and
+  a file that has not been shared yet has none. New admin-only endpoint
+  `GET /api/browse/thumbnail?path=…` generates the preview from the host path
+  itself, behind the same `SHARE_ALLOWED_PATHS` + symlink-resolution check as
+  `/api/browse`, with a cache key over path + mtime + size so an edited file can
+  never serve its old thumbnail. `/api/browse` entries carry a new `is_image`
+  flag (extension-based — listing a directory still opens no files) so only
+  image rows request a preview, lazily.
+- **GIF, BMP and TIFF now thumbnail at all.** `internal/preview` only registered
+  the JPEG and PNG decoders, so `image.Decode` failed for every other format —
+  this also affected existing *share* thumbnails, not just the new browser.
+  `.webp` remains without a preview: there is no pure-Go WebP decoder in the
+  dependency set, so those rows keep a file icon instead of requesting a preview
+  that could only fail.
+
+### Fixed
+- **A failed upload no longer looks like a finished one.** On failure the row
+  jumped to `100%` and turned the bar red — no text — while the only explanation
+  lived in a toast that disappears after a few seconds. It now shows
+  "Upload fehlgeschlagen" in place of the percentage and keeps the reason under
+  the bar. Network failures say "Server nicht erreichbar" (14 locales) instead of
+  the browser's `Failed to fetch`/`Network error`, and an HTTP error with an
+  empty body carries its status code (`… (HTTP 413)`) rather than a bare
+  "Upload failed".
+- **`docs/api.md` described the browse response wrong** — it listed `isDir` and a
+  `modTime` field that the server has never sent. Corrected against the live
+  response (`is_dir`, `size`, `parent`, now `is_image`).
+
 ## [2.4.3] - 2026-07-27 — CI from zero, media MIME, review follow-ups, UI polish
 
 ### Added (CI, from zero)

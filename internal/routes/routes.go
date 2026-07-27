@@ -146,6 +146,8 @@ func registerAPIMisc(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Hand
 	api.HandleFunc("/stats", h.GetStats).Methods("GET")
 	// Filesystem browser is admin-only (see /share-from-path rationale).
 	api.Handle("/browse", aa.RequireAdmin()(http.HandlerFunc(h.BrowseFiles))).Methods("GET")
+	// Previews for the host browser — same admin gate, it reads host files.
+	api.Handle("/browse/thumbnail", aa.RequireAdmin()(http.HandlerFunc(h.HostThumbnail))).Methods("GET")
 	api.HandleFunc("/network", h.GetNetworkInfo).Methods("GET")
 	api.Handle("/metrics", aa.RequireAdmin()(promhttp.Handler())).Methods("GET")
 	api.Handle("/webhook", aa.RequireAdmin()(http.HandlerFunc(h.WebhookConfig))).Methods("GET", "POST")
