@@ -185,7 +185,13 @@ func (h *Handler) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Open and serve thumbnail
+	serveThumbnailFile(w, thumbPath, "public, max-age=86400") // Cache for 24 hours
+}
+
+// serveThumbnailFile streams a generated thumbnail from the cache directory.
+// Shared by /thumbnail/{id} (share previews) and /api/browse/thumbnail (host
+// file browser previews) so both send identical headers.
+func serveThumbnailFile(w http.ResponseWriter, thumbPath, cacheControl string) {
 	thumbFile, err := os.Open(thumbPath)
 	if err != nil {
 		http.Error(w, "Thumbnail not found", http.StatusNotFound)
@@ -203,7 +209,7 @@ func (h *Handler) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	// Set headers
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Content-Length", strconv.FormatInt(thumbInfo.Size(), 10))
-	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
+	w.Header().Set("Cache-Control", cacheControl)
 
 	if _, err := io.Copy(w, thumbFile); err != nil {
 		log.Printf("Error streaming thumbnail: %v", err)
