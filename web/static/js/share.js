@@ -7,6 +7,10 @@
     var shareId = root.dataset.shareId || '';
     var hasPassword = root.dataset.hasPassword === 'true';
 
+    // Whether a media `error` event may be believed yet — see showMediaError.
+    // Set where the media element is wired, and again by revealContent.
+    var mediaArmed = false;
+
     function getPassword() {
         var cookies = document.cookie.split(';');
         for (var i = 0; i < cookies.length; i++) {
@@ -31,6 +35,11 @@
                 deferred[i].src = deferred[i].getAttribute('data-src');
                 deferred[i].removeAttribute('data-src');
             }
+            // The deferred sources have just been given a real src. Clear any
+            // note the empty-source errors left behind, then arm the handler so
+            // a genuine decode failure from here on is still reported.
+            hideMediaError();
+            mediaArmed = true;
             var media = content.querySelectorAll('video, audio');
             for (var j = 0; j < media.length; j++) {
                 media[j].load();
@@ -96,13 +105,30 @@
     // interpret as "the file is broken". Both the element-level error and the
     // <source>-level error are wired: the former fires when the media itself is
     // undecodable, the latter when no listed source could be used at all.
+    //
+    // But on a password-protected share the <source> elements carry data-src and
+    // no src at all (see revealContent), and the browser fires `error` on such a
+    // source the moment it parses the media element — before the visitor has even
+    // seen the password prompt. That is not a decode failure, so the listener
+    // stays disarmed until the real sources are in place; otherwise every locked
+    // audio/video share showed "your browser cannot play this file" sitting above
+    // a player that was working perfectly.
     function showMediaError() {
+        if (!mediaArmed) return;
         var note = document.getElementById('media-error');
         if (note) note.style.display = '';
     }
 
+    function hideMediaError() {
+        var note = document.getElementById('media-error');
+        if (note) note.style.display = 'none';
+    }
+
     var media = document.getElementById('media-preview');
     if (media) {
+        // Armed right away when nothing is deferred (a share with no password
+        // already has real src attributes); revealContent arms it otherwise.
+        mediaArmed = media.querySelectorAll('source[data-src]').length === 0;
         media.addEventListener('error', showMediaError);
         var sources = media.getElementsByTagName('source');
         for (var s = 0; s < sources.length; s++) {
