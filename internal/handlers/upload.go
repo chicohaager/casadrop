@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -183,9 +184,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// Detect MIME type server-side (don't trust client-supplied Content-Type)
 	dest.Sync()
 	dest.Seek(0, 0)
-	buf := make([]byte, 512)
-	n, _ := dest.Read(buf)
-	mimeType := utils.DetectMimeType(buf[:n], header.Filename)
+	mimeType := detectMimeFromFile(dest, header.Filename)
 
 	// Hash password if provided
 	hashedPassword, err := auth.HashPassword(password)
@@ -503,13 +502,12 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Detect MIME type
-	mimeType := "application/octet-stream"
+	mimeType := utils.UndetectedMimeType
 	if f, err := os.Open(destPath); err == nil {
-		buf := make([]byte, 512)
-		if n, _ := f.Read(buf); n > 0 {
-			mimeType = utils.DetectMimeType(buf[:n], upload.FileName)
-		}
+		mimeType = detectMimeFromFile(f, upload.FileName)
 		f.Close()
+	} else {
+		log.Printf("MIME detection: cannot open %q: %v", destPath, err)
 	}
 
 	// Get user from context
@@ -686,9 +684,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 		// Detect MIME type server-side (don't trust client-supplied Content-Type)
 		dest.Sync()
 		dest.Seek(0, 0)
-		buf := make([]byte, 512)
-		n, _ := dest.Read(buf)
-		detectedMime := utils.DetectMimeType(buf[:n], fileHeader.Filename)
+		detectedMime := detectMimeFromFile(dest, fileHeader.Filename)
 		dest.Close()
 
 		// Create share record
@@ -732,4 +728,27 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// detectMimeFromFile reads the sniff window from an already-open file and
+// returns the refined type.
+//
+// When nothing could be read it returns utils.UndetectedMimeType and logs why,
+// instead of inventing a plausible value. Both former defaults were wrong in
+// their own way: "application/octet-stream" is *also* a genuine sniff result
+// ("I looked and recognised nothing"), so a row written that way is
+// indistinguishable from an examined one and the migration would later promote
+// it by file name alone; and http.DetectContentType(nil) cheerfully answers
+// "text/plain; charset=utf-8", recording a positive identification of a file
+// nobody managed to read.
+func detectMimeFromFile(f *os.File, fileName string) string {
+	buf := make([]byte, 512)
+	n, err := f.Read(buf)
+	if n == 0 {
+		if err != nil && !errors.Is(err, io.EOF) {
+			log.Printf("MIME detection: cannot read %q: %v", fileName, err)
+		}
+		return utils.UndetectedMimeType
+	}
+	return utils.DetectMimeType(buf[:n], fileName)
 }

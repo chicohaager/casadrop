@@ -950,6 +950,20 @@ input::placeholder { color: var(--text-muted); }
 .file-icon-code    { background: rgba(34, 197, 94, 0.08);  color: #22c55e; }
 .file-icon-default { background: var(--bg-tertiary);       color: var(--text-muted); }
 
+/* Real image thumbnail shown instead of the type badge for picture files, so
+   a folder full of photos can be checked before it is uploaded. Same box as
+   .file-item-icon so the rows stay aligned whether a row has a thumbnail or
+   a badge. */
+.file-item-thumb {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+}
+
 .file-item-name {
     font-size: var(--text-sm);
     white-space: nowrap;
@@ -1616,6 +1630,24 @@ input::placeholder { color: var(--text-muted); }
     margin-bottom: var(--space-4);
     font-size: var(--text-lg);
     font-weight: var(--weight-semibold);
+}
+
+/* The file a modal acts on. A long name without spaces (photo exports love
+   those) has no break opportunity, so it used to shoot straight out of the
+   modal and give it a horizontal scrollbar. `anywhere` lets it break mid-word;
+   the 3-line clamp keeps a 250-character name from pushing the buttons out of
+   view. The full name stays available via the title attribute. */
+.modal-subject {
+    margin-bottom: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .modal-actions {

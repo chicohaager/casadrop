@@ -5,6 +5,138 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — review follow-ups + UI feedback from daily use
+
+### Added (CI, from zero)
+- **There was no CI of any kind.** `.github/workflows/ci.yml` now builds, vets,
+  gofmt-checks and tests on every push and PR — and, more to the point, **builds
+  the image, runs it, and waits for Docker's own `HEALTHCHECK` verdict**. Twice
+  a bug has shipped that lived in the image rather than in the Go code (most
+  recently `wget --spider` sending HEAD at a GET-only route); every unit test
+  stayed green because nothing ever executed the `HEALTHCHECK` line. A second
+  container runs with `PORT=9000` to guard the fix below. Measured locally
+  before committing: the new image reaches `healthy` on both ports, the previous
+  one goes **`unhealthy` after 71 s** with `PORT=9000` while serving perfectly.
+- **`tests/entrypoint_localip_test.sh`** feeds real `ip -4 route get` output
+  through the `LOCAL_IP` parser — the thing that silently broke when BusyBox
+  grep turned out to have no `-P`. Writing it turned up a live edge case: an
+  interface named `src` made the parser return the literal string `src`, so it
+  now requires the captured token to look like an IPv4 address.
+
+### Fixed (media types, measured)
+- **`.m4a`/`.m4b` render as audio instead of a black video rectangle.** They
+  carry an `ftyp` box, so the sniffer commits to `video/mp4` — a *recognised*
+  type, which the refinement deliberately never overrode. These two extensions
+  are now listed as ambiguous with `video/mp4`, the same way `.mkv` is with
+  `video/webm`. The migration's candidate set was widened to match, so existing
+  shares are corrected too.
+- **`.weba` (WebM audio) rendered a `<video>` element.** It shares EBML magic
+  with `.webm`, so it sniffed as `video/webm`; it now resolves to `audio/webm`.
+- **WAV shares advertise `audio/wav`, not `audio/wave`.** Go's sniffer produces
+  the latter; measured in Chrome, `canPlayType("audio/wave")` returns the empty
+  string — a flat reject — while `audio/wav` returns `maybe`. Emitting the
+  sniffed spelling would have made the browser discard the source *without
+  fetching it*. Only the `<source type>` attribute is rewritten; the stored type
+  is untouched.
+- **`mime.TypeByExtension` is gone as a fallback.** It consulted the OS mime
+  database, which would happily answer `image/svg+xml` for an extension somebody
+  added to the ambiguous list without adding a resolution — turning the "inert
+  types only" safety property into a hope. A new test asserts every value in
+  both maps is an `audio/*` or `video/*` type and that every listed extension
+  has an explicit resolution.
+- **"Detection never ran" is no longer stored as `application/octet-stream`.**
+  Four writers used that string as a default when the file could not be opened
+  or read, which is indistinguishable from a genuine sniff result — so the
+  migration later promoted such rows by file name alone, flipping shares that
+  nobody had ever looked at from download-only to rendered inline. They now
+  store an empty value (excluded from the migration for free, since SQL `IN`
+  matches neither `''` nor NULL) and **log** the reason. Responses run the
+  stored value through `utils.ServingMimeType`, so an unset type still goes on
+  the wire as `application/octet-stream` rather than as an empty Content-Type.
+- **`/readyz` now reads.** `storage.Ping` called `db.Ping()`, which the modernc
+  driver answers with `select 1` — without looking at application data. It reads
+  a real row now, and the 503 path finally **logs** why. Its remaining limit is
+  recorded rather than glossed over: a database file clobbered underneath an
+  open connection is answered from SQLite's warm page cache and stays green.
+- **`/stream/{id}` was the one public share route with no rate limit**, and a
+  plain GET there increments the download counter — a short curl loop could
+  exhaust a `max_downloads: 1` share before its recipient opened the link. It is
+  throttled now, but only for the requests that count: Range requests, which a
+  video player issues in bursts while seeking, pass through untouched.
+- **The maintainer's personal username** no longer appears in the `author` and
+  `developer` fields of the two shipped compose files; they carry the project's
+  public handle instead.
+
+### Fixed (review follow-ups)
+- **A failed MIME migration is no longer indistinguishable from a clean one.**
+  `refineMimeColumn` returned `(0, nil)` for *any* query error, justified in a
+  comment by "a table may not exist yet on a fresh database". That cannot happen:
+  `initBaseSchema` creates all three tables and is fatal on failure, and it runs
+  first. So the catch-all could only ever hide real errors — and hid them
+  perfectly, because with `updated == 0` the summary log line is skipped too. The
+  error is now returned and logged. Two new tests pin it: one asserts the error
+  is reported for a missing table and a missing column, one drives the migration
+  through `NewSQLiteStorage` (the path production takes) with a row in each of
+  the three tables. Both were mutation-checked — they fail when the fix is
+  reverted or the startup call is removed.
+- **The "your browser cannot play this file" note no longer appears on
+  password-protected media shares that play perfectly.** On a locked share the
+  `<source>` elements carry `data-src` and no `src`, and the browser fires
+  `error` on such a source on its own (measured: an srcless `<source>` appended
+  to an `<audio>` fires once). The note was shown then and never hidden again, so
+  it sat above a working player. The handler now stays disarmed until
+  `revealContent` has installed the real sources, and clears any note left over.
+  Verified in both directions: while locked the event no longer shows the note,
+  and after unlocking a genuine media error still does.
+- **The container healthcheck follows `$PORT`.** It probed a hard-coded 8080, so
+  a container started with `PORT=9000` reported unhealthy forever while serving
+  correctly. Compose files that pin `PORT=8080` themselves were left as they are;
+  the three example stacks in `docs/` dropped their redundant override entirely,
+  since the image's own healthcheck now does the right thing. A compose-level
+  `${PORT}` would *not* work here — compose substitutes it from your shell while
+  parsing, not from the container's environment at check time.
+- **`docs/tailscale.md` described the Tailscale URL precedence backwards.** It
+  said the environment variable wins and the settings field lives in the
+  database. Both halves are wrong: `handlers.go` takes the stored value first and
+  falls back to `TAILSCALE_URL` only when it is empty, and the value is written
+  to `data/tunnel_config.json`, not the database.
+- **A LAN IP was visible in a shipped screenshot.** `docs/images/tailscale/01-…`
+  showed a private-range address in the field and again in the "Detected:" line.
+  Every text-based check passed, because the address lived in pixels. Replaced
+  with `192.168.x.x`. The other three screenshots were re-checked by eye and are
+  properly anonymised.
+
+### Added (UI feedback from daily use)
+- **Thumbnails for the pictures you picked, before they are uploaded.** The
+  selection list showed a coloured `IMG` badge for every image, which is no help
+  at all when you just dropped a folder of forty photos and want to check the
+  selection. Each raster image (`png`, `jpeg`, `gif`, `webp`, `bmp`, `avif`) now
+  renders its own thumbnail from a local object URL — nothing is uploaded to
+  produce it. SVG deliberately keeps the badge: rendering an untrusted SVG in
+  the admin page is an XSS surface. An image the browser cannot decode falls
+  back to the badge instead of leaving a broken-image icon. Object URLs are
+  revoked on every re-render, so picking and clearing a folder repeatedly does
+  not pin the files in memory (verified: 2 of 2 previous URLs revoked).
+
+### Fixed (UI feedback from daily use)
+- **"Unlimited" no longer shows a made-up expiry when editing a share.** Opening
+  a share created with *Never (unlimited)* showed the toggle switched on — and
+  right above it a greyed-out "24" in *Expires in (hours)*, which reads like the
+  share dies tomorrow. The field is now empty with `unlimited` as its
+  placeholder; the 24-hour default only appears once the toggle is switched off,
+  when a number is actually needed.
+- **Editing a share with an empty expiry no longer reports success without
+  changing anything.** With the toggle off and the field cleared, the dialog sent
+  a request that omitted the expiry entirely, closed, and toasted "updated" while
+  the share kept its old expiry. It now says what is wrong and stays open.
+  New translation key `shares.expiryRequired`, present in all 14 languages.
+- **Long file names no longer break out of the Edit / E-mail / Taildrop
+  dialogs.** The file name was rendered in a bare paragraph, so a name without
+  spaces — the kind photo exports produce — ran straight past the right edge and
+  gave the dialog a horizontal scrollbar. It now breaks mid-word, is clamped to
+  three lines so the buttons stay reachable, and keeps the full name in a
+  tooltip. The shares list and the public share page already handled this.
+
 ## [2.4.2] - 2026-07-24 — Healthcheck & media MIME fixes
 
 ### Fixed
@@ -29,9 +161,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   |---|---|---|---|---|
   | `.mp3` without ID3 header | `application/octet-stream` | **none** | `audio/mpeg` | ✅ |
   | `.flac` | `application/octet-stream` | **none** | `audio/flac` | ✅ |
-  | `.m4a` | `application/octet-stream` | **none** | `audio/mp4` | ✅ |
   | `.opus` | `application/ogg` | **none** | `audio/ogg` | ✅ |
   | `.mkv` | `video/webm` | ✅ | `video/x-matroska` | ✅ |
+
+  **Correction (2026-07-26): `.m4a` was listed here as fixed and is not.** The row
+  claimed `application/octet-stream` → `audio/mp4`; both halves are wrong. Measured
+  against this build: an M4A carries an `ftyp` box, so the sniffer recognises it
+  and returns `video/mp4` — for both iTunes-style (`ftypM4A …M4A mp42isom`) and
+  ffmpeg-style (`ftypisom…iso2mp41`) headers. `video/mp4` is a committal answer,
+  so `RefineMimeType` leaves it alone by design, and `getMediaType` classifies the
+  file as **video**: an M4A renders as a black `<video>` rectangle rather than an
+  audio player. Correcting it means letting the extension override a *recognised*
+  type, which is exactly the promotion this release deliberately forbids, so it
+  needs its own change with its own safety argument. Tracked, not fixed here.
 
   `getMediaType` classifies by MIME prefix, so `application/octet-stream` meant
   `MediaTypeUnknown` and the share page rendered no `<audio>` element — the file

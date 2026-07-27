@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -394,7 +395,7 @@ func (h *Handler) DownloadFolderFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(fileInfo.Name())))
 	// Detect MIME from the validated, symlink-resolved path — not the raw
 	// input path, which could be swapped to escape the share dir (TOCTOU).
-	w.Header().Set("Content-Type", detectMimeType(fullPathAbs))
+	w.Header().Set("Content-Type", utils.ServingMimeType(detectMimeType(fullPathAbs)))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
 
@@ -620,18 +621,31 @@ func copyFileToZip(path string, writer io.Writer, buffer []byte) error {
 	return err
 }
 
-// detectMimeType tries to detect MIME type from file
+// detectMimeType tries to detect the MIME type from the file's content.
+//
+// On failure it returns utils.UndetectedMimeType ("") rather than the plausible
+// -looking "application/octet-stream": that value is indistinguishable from a
+// real sniff result, and the stored-data migration would later promote such a
+// row by file name alone even though nothing ever read the bytes. The error is
+// logged instead of vanishing — an unreadable file in a shared folder is worth
+// knowing about. Callers that put the value on the wire pass it through
+// utils.ServingMimeType.
 func detectMimeType(path string) string {
 	file, err := os.Open(path)
 	if err != nil {
-		return "application/octet-stream"
+		log.Printf("MIME detection: cannot open %q: %v", path, err)
+		return utils.UndetectedMimeType
 	}
 	defer file.Close()
 
 	buffer := make([]byte, 512)
 	n, err := file.Read(buffer)
-	if err != nil {
-		return "application/octet-stream"
+	if err != nil && n == 0 {
+		// io.EOF on an empty file is not worth a line; anything else is.
+		if !errors.Is(err, io.EOF) {
+			log.Printf("MIME detection: cannot read %q: %v", path, err)
+		}
+		return utils.UndetectedMimeType
 	}
 
 	return utils.DetectMimeType(buffer[:n], path)

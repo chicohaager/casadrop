@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,12 +114,39 @@ func TestHealthProbesAnswerHEAD(t *testing.T) {
 
 	client := newClientWithJar(t, srv)
 
+	// Bodies are read, not discarded: a 200 carrying nothing would have passed
+	// the old status-only assertion, and "answers with the right status" is a
+	// weaker claim than "answers". HEAD legitimately has no body, so only GET
+	// is checked for content.
+	wantBody := map[string]string{
+		"/healthz": "ok",
+		"/readyz":  "ready",
+	}
+
 	for _, path := range []string{"/healthz", "/readyz", "/api/auth/status"} {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			res := do(t, client, method, srv.URL+path, nil, nil)
+			body, err := io.ReadAll(res.Body)
 			res.Body.Close()
+			if err != nil {
+				t.Errorf("%s %s: reading body: %v", method, path, err)
+				continue
+			}
 			if res.StatusCode != http.StatusOK {
 				t.Errorf("%s %s: want 200, got %d", method, path, res.StatusCode)
+				continue
+			}
+			if method != http.MethodGet {
+				continue
+			}
+			if want, ok := wantBody[path]; ok {
+				if got := strings.TrimSpace(string(body)); got != want {
+					t.Errorf("GET %s: body = %q, want %q", path, got, want)
+				}
+				continue
+			}
+			if len(body) == 0 {
+				t.Errorf("GET %s: 200 with an empty body", path)
 			}
 		}
 	}
