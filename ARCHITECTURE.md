@@ -76,12 +76,17 @@ zima-share/                          ← module name (legacy; binary is "casadro
 │   ├── routes/                      ← HTTP router — single source of truth for URL mapping
 │   │   ├── routes.go                ← routes.New(Deps) → *mux.Router
 │   │   └── routes_test.go           ← TestAuthFlow integration test
+│   ├── pow/                         ← Proof-of-work challenge for receive uploads
+│   ├── scan/                        ← clamd INSTREAM client (malware scanning)
 │   ├── storage/                     ← Persistence layer
 │   │   ├── interface.go             ← StorageBackend interface
 │   │   ├── sqlite.go                ← SQLiteStorage impl (modernc.org/sqlite)
 │   │   ├── storage.go               ← Public Storage wrapper
-│   │   └── migrate_users.go         ← v2.1 schema migration
+│   │   ├── migrate_users.go         ← v2.1 schema migration
+│   │   └── migrate_mime.go          ← v2.4.2 mime_type backfill (runs at startup)
+│   ├── totp/                        ← RFC 6238 TOTP for the admin second factor
 │   ├── utils/                       ← Cross-cutting helpers (URL/IP, filename sanitise)
+│   │   └── mime.go                  ← MIME policy: what may override a sniff, and never into an active type
 │   └── webhook/                     ← Outbound webhook dispatcher + HMAC signing
 ├── web/
 │   ├── static/                      ← CSS, JS, i18n assets
@@ -117,6 +122,11 @@ zima-share/                          ← module name (legacy; binary is "casadro
         └─────────────────────┘
 ```
 
+- `internal/storage` imports `internal/utils` (new in 2.4.2): the startup
+  MIME backfill reuses the same `RefineMimeType` policy the upload path
+  applies, so stored rows and fresh uploads cannot drift apart. The edge is
+  safe because `internal/utils` is a stdlib-only leaf with no imports of its
+  own — there is no cycle, and no layering inversion.
 - `internal/middleware/auth.go` deliberately does **not** import
   `internal/auth` to avoid an import cycle. It duplicates the bcrypt
   cost constant (12) inline and documents why.
@@ -414,7 +424,20 @@ don't will need their config adjusted.
 | Unit | `internal/auth/oidc_test.go` | OIDC parseScopes, generateRandomString, config handling |
 | Unit | `internal/middleware/*_test.go` | Rate limiter, security headers, max body middleware |
 | Unit | `internal/handlers/handlers_test.go` | Individual handler shape (webhook config, receive link CRUD) |
+| Unit | `internal/utils/mime_test.go` | MIME policy: promotion is inert-only, ambiguous containers, `audio/wave` → `audio/wav` alias |
+| Unit | `internal/storage/migrate_mime_test.go` | Backfill correctness, idempotency, **and** that it runs via `NewSQLiteStorage` |
+| Unit | `internal/handlers/health_test.go` | `/readyz` 503 path and that liveness does not follow readiness down |
+| Render | `internal/handlers/share_page_test.go` | The **real** `share.html` — `<source type>`, audio vs. video element, playback caveat, persisted upload MIME |
 | Integration | `internal/routes/routes_test.go::TestAuthFlow` | Full router: status → login → protected → logout → denied |
+| Integration | `internal/routes/ratelimit_internal_test.go` | `/stream` throttles counting requests but never Range requests |
+
+**Why a render test exists at all.** Every other handler test in this repo runs
+against the stub templates in `createTestTemplates` (`share.html` renders
+`Share: {{.Share.ID}}`). That made the entire user-visible payload of the media
+work untestable: reverting `SourceType` to the raw stored type — the exact bug
+2.4.2 was released to fix — left the whole suite green. `share_page_test.go`
+points the handler at `web/templates/` instead, so assertions are about what a
+visitor receives.
 
 The integration test is the **regression gate** for middleware-layer
 changes. If it goes red, something in the auth chain, session
@@ -476,3 +499,41 @@ If you're looking for a clean starter task: **#3 (OIDC integration
 test)** is the highest-leverage item for test coverage, and **#5
 (porting entrypoint.sh to Go)** is the highest-leverage item for
 infrastructure cleanup.
+
+---
+
+## 11. Decisions recorded on purpose
+
+These look like omissions and are not. Each was weighed, and the cost of the
+other option is written down so a future reader can reopen the question with
+the same information rather than "fixing" it by accident.
+
+**The container `HEALTHCHECK` points at `/healthz`, not `/readyz`.**
+`/readyz` is the only probe with a dependency check, so pointing the container
+healthcheck at it is tempting. The cost is a restart loop: SQLite's
+`busy_timeout` is 5 s, a transient `SQLITE_BUSY` under load would flip the
+container to unhealthy, and any orchestrator that restarts on unhealthy turns a
+slow moment into an outage — under exactly the load that caused the lock.
+Liveness therefore stays a liveness probe. Operators who want the stricter
+signal point their own load balancer at `/readyz`; it is documented for that.
+
+**The MIME backfill is deliberately not gated behind a schema-version marker.**
+It re-runs on every boot. The upside of gating — the on-disk data stops being
+coupled to a mutable in-code map, and an ordinary code change stops being an
+unannounced data migration — is real. The cost is that rows written wrong by a
+*current* release stay wrong forever unless someone remembers to bump the
+marker, and at the time of writing there were known-wrong rows in the field.
+Ungated, each allow-list correction heals history for free. **Revisit this once
+the allow-lists have settled**; the sequencing matters more than the choice.
+
+**The public share page (`share.html`) is English-only, by decision.** The admin
+UI is fully translated (14 languages, `data-i18n` throughout `index.html`); the
+recipient-facing page is not, and has no i18n scaffolding at all. Translating it
+is a template-wide change, not a two-string change. Recorded here so the gap
+reads as a decision with a price rather than as something nobody noticed.
+
+**`internal/storage.DropSharesTableForTest` exists only for a test.** It is on
+the `StorageBackend` interface, which is otherwise production-only surface. It
+earns its place: without it, nothing could prove that `Ping()` reads application
+data instead of answering a constant — and that exact confusion is what made
+`/readyz` a proxy signal in the first place.
