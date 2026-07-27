@@ -78,6 +78,7 @@
             'shares.expired': 'expired',
             'shares.never': 'never',
             'shares.unlimited': 'unlimited',
+            'shares.expiryRequired': 'Please enter an expiry in hours, or switch "unlimited" on.',
             'shares.deleteConfirm': 'Delete this share?',
             'shares.copied': 'Link copied!',
             'shares.size': 'size',
@@ -250,6 +251,7 @@
             'shares.expired': 'abgelaufen',
             'shares.never': 'nie',
             'shares.unlimited': 'unbegrenzt',
+            'shares.expiryRequired': 'Bitte eine Ablaufzeit in Stunden eintragen oder "Unbegrenzt" einschalten.',
             'shares.deleteConfirm': 'Freigabe loeschen?',
             'shares.copied': 'Link kopiert!',
             'shares.size': 'Groesse',
@@ -400,6 +402,7 @@
             'shares.expired': 'expiré',
             'shares.never': 'jamais',
             'shares.unlimited': 'illimité',
+            'shares.expiryRequired': 'Saisissez une durée en heures ou activez « illimité ».',
             'shares.deleteConfirm': 'Supprimer ce partage ?',
             'shares.copied': 'Lien copié !',
             'shares.size': 'taille',
@@ -487,6 +490,7 @@
             'shares.expired': 'expirado',
             'shares.never': 'nunca',
             'shares.unlimited': 'ilimitado',
+            'shares.expiryRequired': 'Introduce una caducidad en horas o activa «ilimitado».',
             'shares.deleteConfirm': '¿Eliminar este compartido?',
             'shares.copied': '¡Enlace copiado!',
             'shares.size': 'tamaño',
@@ -574,6 +578,7 @@
             'shares.expired': 'scaduto',
             'shares.never': 'mai',
             'shares.unlimited': 'illimitato',
+            'shares.expiryRequired': 'Inserisci una scadenza in ore oppure attiva "illimitato".',
             'shares.deleteConfirm': 'Eliminare questa condivisione?',
             'shares.copied': 'Link copiato!',
             'shares.size': 'dimensione',
@@ -661,6 +666,7 @@
             'shares.expired': 'expirado',
             'shares.never': 'nunca',
             'shares.unlimited': 'ilimitado',
+            'shares.expiryRequired': 'Indique um prazo em horas ou ative "ilimitado".',
             'shares.deleteConfirm': 'Excluir este compartilhamento?',
             'shares.copied': 'Link copiado!',
             'shares.size': 'tamanho',
@@ -748,6 +754,7 @@
             'shares.expired': 'verlopen',
             'shares.never': 'nooit',
             'shares.unlimited': 'onbeperkt',
+            'shares.expiryRequired': 'Voer een vervaltijd in uren in of zet "onbeperkt" aan.',
             'shares.deleteConfirm': 'Deze deling verwijderen?',
             'shares.copied': 'Link gekopieerd!',
             'shares.size': 'grootte',
@@ -835,6 +842,7 @@
             'shares.expired': 'wygasło',
             'shares.never': 'nigdy',
             'shares.unlimited': 'bez limitu',
+            'shares.expiryRequired': 'Podaj czas wygasania w godzinach lub włącz „bez limitu”.',
             'shares.deleteConfirm': 'Usunąć to udostępnienie?',
             'shares.copied': 'Link skopiowany!',
             'shares.size': 'rozmiar',
@@ -922,6 +930,7 @@
             'shares.expired': 'истёк',
             'shares.never': 'никогда',
             'shares.unlimited': 'без ограничений',
+            'shares.expiryRequired': 'Укажите срок в часах или включите «без ограничений».',
             'shares.deleteConfirm': 'Удалить эту ссылку?',
             'shares.copied': 'Ссылка скопирована!',
             'shares.size': 'размер',
@@ -1009,6 +1018,7 @@
             'shares.expired': '期限切れ',
             'shares.never': 'なし',
             'shares.unlimited': '無制限',
+            'shares.expiryRequired': '有効期限を時間で入力するか、「無制限」をオンにしてください。',
             'shares.deleteConfirm': 'この共有を削除しますか？',
             'shares.copied': 'リンクをコピーしました！',
             'shares.size': 'サイズ',
@@ -1096,6 +1106,7 @@
             'shares.expired': '已过期',
             'shares.never': '永不',
             'shares.unlimited': '不限',
+            'shares.expiryRequired': '请输入以小时为单位的有效期，或开启“不限”。',
             'shares.deleteConfirm': '确定删除此共享？',
             'shares.copied': '链接已复制！',
             'shares.size': '大小',
@@ -1183,6 +1194,7 @@
             'shares.expired': '만료됨',
             'shares.never': '없음',
             'shares.unlimited': '무제한',
+            'shares.expiryRequired': '만료 시간을 시간 단위로 입력하거나 "무제한"을 켜세요.',
             'shares.deleteConfirm': '이 공유를 삭제하시겠습니까?',
             'shares.copied': '링크가 복사되었습니다!',
             'shares.size': '크기',
@@ -1270,6 +1282,7 @@
             'shares.expired': 'sona erdi',
             'shares.never': 'asla',
             'shares.unlimited': 'sınırsız',
+            'shares.expiryRequired': 'Süreyi saat olarak girin veya "sınırsız" seçeneğini açın.',
             'shares.deleteConfirm': 'Bu paylaşımı silmek istiyor musunuz?',
             'shares.copied': 'Bağlantı kopyalandı!',
             'shares.size': 'boyut',
@@ -1359,6 +1372,7 @@
             'shares.expired': 'منتهية',
             'shares.never': 'أبدًا',
             'shares.unlimited': 'غير محدود',
+            'shares.expiryRequired': 'أدخل مدة الصلاحية بالساعات أو فعّل "غير محدود".',
             'shares.deleteConfirm': 'هل تريد حذف هذه المشاركة؟',
             'shares.copied': 'تم نسخ الرابط!',
             'shares.size': 'الحجم',
@@ -1948,14 +1962,43 @@
         }
     }
 
+    // Object URLs handed to the preview <img> elements. They pin the blob until
+    // revoked, so every re-render releases the previous batch — otherwise
+    // picking and unpicking a folder of photos a few times leaks all of them.
+    let previewUrls = [];
+
+    function releasePreviewUrls() {
+        previewUrls.forEach(URL.revokeObjectURL);
+        previewUrls = [];
+    }
+
+    // Only real raster images get a thumbnail. SVG is deliberately excluded:
+    // rendering an untrusted SVG in the admin page is an XSS surface, and the
+    // type badge is the honest fallback.
+    function isPreviewableImage(file) {
+        return /^image\/(png|jpeg|gif|webp|bmp|avif)$/.test(file.type);
+    }
+
     function renderFileList() {
         const container = document.getElementById('file-list');
+        releasePreviewUrls();
         container.innerHTML = selectedFiles.map((f, i) => {
             const info = fileTypeInfo(f.name);
+            let visual;
+            if (isPreviewableImage(f)) {
+                const url = URL.createObjectURL(f);
+                previewUrls.push(url);
+                // data-fallback carries the badge markup for the error handler
+                // below; no inline handler, the CSP forbids it.
+                visual = `<img class="file-item-thumb" src="${url}" alt="" loading="lazy"
+                               data-fallback-cls="${info.cls}" data-fallback-label="${escapeHtml(info.label)}">`;
+            } else {
+                visual = `<div class="file-item-icon ${info.cls}">${info.label}</div>`;
+            }
             return `
             <div class="file-item">
                 <div class="file-item-info">
-                    <div class="file-item-icon ${info.cls}">${info.label}</div>
+                    ${visual}
                     <span class="file-item-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
                 </div>
                 <span class="file-item-size">${formatSize(f.size)}</span>
@@ -1964,6 +2007,17 @@
                 </button>
             </div>`;
         }).join('');
+
+        // A file the browser cannot decode (corrupt, or a mislabelled type)
+        // falls back to the type badge rather than leaving a broken-image icon.
+        container.querySelectorAll('.file-item-thumb').forEach(img => {
+            img.addEventListener('error', () => {
+                const badge = document.createElement('div');
+                badge.className = 'file-item-icon ' + img.dataset.fallbackCls;
+                badge.textContent = img.dataset.fallbackLabel;
+                img.replaceWith(badge);
+            });
+        });
 
         container.querySelectorAll('.file-item-remove').forEach(btn => {
             btn.addEventListener('click', () => removeFile(parseInt(btn.dataset.index)));
@@ -2564,14 +2618,19 @@
         // relativeExpiry). Detect it so an already-unlimited share opens with
         // the toggle on instead of an astronomically large hour count.
         const isUnlimited = new Date(share.expires_at).getFullYear() > 9000;
-        const remaining = isUnlimited ? 24 : Math.max(1, Math.ceil((new Date(share.expires_at) - Date.now()) / 3600000));
+        // An unlimited share has no hour count. Showing one anyway ("24") in a
+        // greyed-out field reads like a real expiry and made people think the
+        // share would die tomorrow. Leave it empty and say "unbegrenzt" in the
+        // placeholder; the default only appears once the toggle is switched off.
+        const remaining = isUnlimited ? '' : Math.max(1, Math.ceil((new Date(share.expires_at) - Date.now()) / 3600000));
+        const shareName = share.original_name || share.file_name || share.id;
 
         const html = `
             <h3>${t('shares.edit')}</h3>
-            <p style="color:var(--text-secondary);margin-bottom:16px;font-size:0.9rem">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
+            <p class="modal-subject" title="${escapeHtml(shareName)}">${escapeHtml(shareName)}</p>
             <div class="form-group">
                 <label>${t('upload.expiry')} (${t('upload.expiry.hours')})</label>
-                <input type="number" id="edit-expiry" value="${remaining}" min="1" max="8760"${isUnlimited ? ' disabled' : ''}>
+                <input type="number" id="edit-expiry" value="${remaining}" min="1" max="8760" placeholder="${escapeHtml(t('shares.unlimited'))}"${isUnlimited ? ' disabled' : ''}>
                 <label class="toggle-label" style="margin-top:10px">
                     <input type="checkbox" id="edit-unlimited"${isUnlimited ? ' checked' : ''}>
                     <span class="toggle-switch"></span>
@@ -2602,6 +2661,13 @@
         const expiryEl = document.getElementById('edit-expiry');
         unlimitedEl.addEventListener('change', () => {
             expiryEl.disabled = unlimitedEl.checked;
+            if (unlimitedEl.checked) {
+                expiryEl.value = '';
+            } else if (expiryEl.value === '') {
+                // Switching the toggle off needs a number to edit; 24h is the
+                // same default the upload form offers.
+                expiryEl.value = '24';
+            }
         });
 
         document.getElementById('save-edit-btn').onclick = async () => {
@@ -2609,8 +2675,15 @@
             if (unlimitedEl.checked) {
                 body.expires_in_hours = 0; // unbegrenzt
             } else {
-                const expiry = parseInt(expiryEl.value);
-                if (expiry > 0) body.expires_in_hours = expiry;
+                const expiry = parseInt(expiryEl.value, 10);
+                if (!(expiry > 0)) {
+                    // Silently omitting the field would leave the share exactly
+                    // as it was while the dialog reported success — say so
+                    // instead of pretending the edit landed.
+                    toast(t('shares.expiryRequired'), 'error');
+                    return;
+                }
+                body.expires_in_hours = expiry;
             }
             const maxDl = parseInt(document.getElementById('edit-max-downloads').value);
             if (!isNaN(maxDl)) body.max_downloads = maxDl;
@@ -2642,7 +2715,7 @@
 
         const html = `
             <h3>${t('shares.sendEmail')}</h3>
-            <p style="color:var(--text-secondary);margin-bottom:16px;font-size:var(--text-sm)">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
+            <p class="modal-subject" title="${escapeHtml(share.original_name || share.file_name || share.id)}">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
             <div class="form-group">
                 <label>${t('email.recipientEmail')}</label>
                 <input type="email" id="email-recipient" required placeholder="name@example.com">
@@ -2700,7 +2773,7 @@
 
         showModal(`
             <h3>${t('taildrop.title')}</h3>
-            <p style="color:var(--text-secondary);margin-bottom:16px;font-size:var(--text-sm)">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
+            <p class="modal-subject" title="${escapeHtml(share.original_name || share.file_name || share.id)}">${escapeHtml(share.original_name || share.file_name || share.id)}</p>
             ${body}
             <div class="modal-actions">
                 <button class="btn btn-ghost" id="taildrop-cancel-btn">${t('receive.cancel')}</button>
