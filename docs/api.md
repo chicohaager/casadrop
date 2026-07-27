@@ -242,34 +242,60 @@ password: optional-password
 
 ## File Browser
 
+Both endpoints below are **admin-only** — they read the host filesystem under
+`SHARE_ALLOWED_PATHS`.
+
 ### Browse Server Files
 
 ```bash
 GET /api/browse?path=/media
 ```
 
-Response:
+Response (field names as sent by the server — snake_case, no `modTime`):
 ```json
 {
   "path": "/media",
+  "parent": "/",
   "entries": [
     {
       "name": "movies",
       "path": "/media/movies",
-      "isDir": true,
-      "size": 0,
-      "modTime": "2025-01-10T10:00:00Z"
+      "is_dir": true,
+      "size": 4096,
+      "is_image": false
     },
     {
       "name": "photo.jpg",
       "path": "/media/photo.jpg",
-      "isDir": false,
+      "is_dir": false,
       "size": 2048576,
-      "modTime": "2025-01-12T15:30:00Z"
+      "is_image": true
     }
   ]
 }
 ```
+
+`is_image` marks the entries the preview endpoint below can render. It is
+decided from the extension (`.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.tif`,
+`.tiff`) so that listing a directory never opens a file.
+
+### Preview a Server File
+
+```bash
+GET /api/browse/thumbnail?path=/media/photo.jpg
+```
+
+Returns a JPEG thumbnail (max 300×300, cached under `data/thumbnails/`) for a
+file that is already on the host — the browse dialog uses it to show previews
+instead of a plain file list. `/thumbnail/{id}` only covers files that exist as
+a share.
+
+| Status | Meaning |
+|--------|---------|
+| 200 | `image/jpeg` thumbnail, `Cache-Control: private, max-age=60` |
+| 400 | Path invalid, not absolute, or not a regular file |
+| 403 | Path outside `SHARE_ALLOWED_PATHS` (checked after symlink resolution) |
+| 415 | Extension not supported, or the file does not decode (e.g. `.webp` — no pure-Go decoder available) |
 
 ## Network & Configuration
 

@@ -1040,6 +1040,15 @@ input::placeholder { color: var(--text-muted); }
 .progress-bar-inner.complete::after { animation: none; }
 .progress-bar-inner.error { background: var(--danger); }
 .progress-bar-inner.error::after { animation: none; }
+/* Failure state: the label replaces the percentage and the reason stays put,
+   so a failed upload can never be mistaken for a finished one. */
+.progress-percent.error { color: var(--danger); }
+.progress-error {
+    margin-top: var(--space-1);
+    color: var(--danger);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+}
 
 /* === UPLOAD RESULTS === */
 .result-card {
@@ -1839,6 +1848,18 @@ button.host-name { cursor: pointer; }
 button.host-name:hover span { text-decoration: underline; }
 .host-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .host-name svg { flex-shrink: 0; color: var(--accent-muted); }
+/* Image preview in the host browser. It is taller than the 18px icon it
+   replaces, so the name cell carries a matching min-height — otherwise rows
+   with a photo would stand taller than rows with an icon in the same list. */
+.host-name { min-height: 32px; }
+.host-thumb {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+}
 .host-meta { color: var(--text-muted); font-size: var(--text-sm); flex-shrink: 0; }
 
 .host-share-target {
