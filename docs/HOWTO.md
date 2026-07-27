@@ -110,11 +110,9 @@ services:
     # Sensible container hardening. CasaDrop runs as uid 10001 internally.
     security_opt:
       - no-new-privileges:true
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # No healthcheck needed: the image ships one against /healthz that follows
+    # $PORT. Add your own only if you want different timings (see
+    # docs/docker-compose.md).
 ```
 
 Start it:
