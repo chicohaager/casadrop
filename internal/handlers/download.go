@@ -179,7 +179,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	// Set headers for download
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(share.OriginalName)))
-	w.Header().Set("Content-Type", share.MimeType)
+	w.Header().Set("Content-Type", utils.ServingMimeType(share.MimeType))
 	w.Header().Set("Content-Length", strconv.FormatInt(share.FileSize, 10))
 
 	if _, err := io.Copy(w, file); err != nil {

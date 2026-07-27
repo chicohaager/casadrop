@@ -275,3 +275,10 @@ func (s *Storage) DeleteAPIKey(id string) error {
 func (s *Storage) UpdateAPIKeyLastUsed(id string) {
 	s.backend.UpdateAPIKeyLastUsed(id)
 }
+
+// DropSharesTableForTest removes the table the readiness probe reads. It exists
+// so a test can prove Ping() actually queries application data instead of
+// answering `select 1`; there is no production caller.
+func (s *Storage) DropSharesTableForTest() error {
+	return s.backend.DropSharesTableForTest()
+}

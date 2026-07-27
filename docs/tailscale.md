@@ -277,8 +277,13 @@ services:
 
 …or by typing it into **Settings → Network Configuration → Tailscale Funnel**
 (tick the checkbox first, then fill the field and **Save**). Both places accept
-the same value; the environment variable wins at startup, the settings field
-persists in the database.
+the same value, but they are not equal partners: **the settings field wins, and
+`TAILSCALE_URL` is only the fallback used when that field is empty.** So once you
+have saved a URL in Settings, changing the environment variable has no effect
+until you clear the field again. The saved value is written to
+`data/tunnel_config.json` — a file in your data volume, not a row in the
+database — so it survives restarts and is what you edit or delete to hand
+control back to the environment variable.
 
 ---
 

@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Test
+        run: CGO_ENABLED=0 go test ./... -count=1
+
+  # The point of this job. Twice now a bug has shipped that lived in the IMAGE
+  # rather than in the Go code — most recently a healthcheck using
+  # `wget --spider`, which sends HEAD, against a GET-only route. Every unit test
+  # stayed green because nothing ever executed the HEALTHCHECK line. Reading the
+  # Dockerfile cannot catch that class; running the container can.
+  image:
+    name: Container healthcheck actually passes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t casadrop:ci .
+
+      - name: Run container
+        run: |
+          docker run -d --name casadrop-ci -p 18080:8080 \
+            -e ADMIN_PASSWORD=ci-test-password-123 \
+            casadrop:ci
+
+      - name: Wait for Docker's own health status to become healthy
+        run: |
+          # Docker executes the image's HEALTHCHECK — this asserts the real
+          # command in the real image, not a curl we wrote ourselves.
+          for i in $(seq 1 60); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' casadrop-ci 2>/dev/null || echo missing)"
+            echo "attempt $i: $status"
+            case "$status" in
+              healthy) exit 0 ;;
+              unhealthy)
+                echo "::error::container reported unhealthy"
+                docker inspect -f '{{json .State.Health}}' casadrop-ci
+                docker logs casadrop-ci
+                exit 1 ;;
+              missing)
+                echo "::error::no health status — the image declares no HEALTHCHECK"
+                exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::still not healthy after 120s"
+          docker inspect -f '{{json .State.Health}}' casadrop-ci
+          docker logs casadrop-ci
+          exit 1
+
+      - name: Probes answer both GET and HEAD from outside the container
+        run: |
+          fail=0
+          # HEAD is issued with `-I`, never with `-X HEAD`. The latter leaves
+          # curl in GET mode: it reads the status line, then blocks waiting for
+          # the Content-Length bytes a HEAD response is never going to carry,
+          # and dies at --max-time with exit 28 — a red step for a server that
+          # answered 200 correctly. Measured against this very image: `-X HEAD`
+          # prints 200 and exits 28, `-I` prints 200 and exits 0.
+          for path in /healthz /readyz; do
+            for method in GET HEAD; do
+              # `rc=0 || rc=$?` keeps a failing curl from tripping `bash -e`
+              # before the message below can name what went wrong.
+              case "$method" in
+                GET)  code="$(curl -s  -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:18080$path")" && rc=0 || rc=$? ;;
+                HEAD) code="$(curl -sI -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:18080$path")" && rc=0 || rc=$? ;;
+              esac
+              echo "$method $path -> $code (curl exit $rc)"
+              { [ "$rc" = "0" ] && [ "$code" = "200" ]; } || { echo "::error::$method $path returned $code (curl exit $rc)"; fail=1; }
+            done
+          done
+          # Payload, not just status: a 200 with an empty body would pass a
+          # status-only check while telling the operator nothing.
+          body="$(curl -s --max-time 5 http://localhost:18080/healthz)"
+          [ "$body" = "ok" ] || { echo "::error::/healthz body was '$body', expected 'ok'"; fail=1; }
+          exit $fail
+
+      - name: Healthcheck honours a non-default PORT
+        run: |
+          # Regression guard: the HEALTHCHECK used to probe a hard-coded 8080,
+          # so a container started with PORT=9000 served perfectly and reported
+          # unhealthy forever.
+          docker run -d --name casadrop-ci-port -e PORT=9000 \
+            -e ADMIN_PASSWORD=ci-test-password-123 casadrop:ci
+          for i in $(seq 1 60); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' casadrop-ci-port 2>/dev/null || echo missing)"
+            echo "attempt $i: $status"
+            [ "$status" = "healthy" ] && exit 0
+            [ "$status" = "unhealthy" ] && {
+              echo "::error::unhealthy with PORT=9000 — the probe is not following \$PORT"
+              docker inspect -f '{{json .State.Health}}' casadrop-ci-port
+              exit 1
+            }
+            sleep 2
+          done
+          echo "::error::never became healthy with PORT=9000"
+          docker inspect -f '{{json .State.Health}}' casadrop-ci-port
+          exit 1
+
+      - name: Container logs (always)
+        if: always()
+        run: |
+          docker logs casadrop-ci 2>&1 | tail -50 || true
+          docker logs casadrop-ci-port 2>&1 | tail -20 || true
+
+  entrypoint:
+    name: entrypoint.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck scripts/entrypoint.sh start.sh scripts/tunnel-wrapper.sh || true
+
+      - name: LOCAL_IP parser handles real `ip route get` output
+        run: bash tests/entrypoint_localip_test.sh

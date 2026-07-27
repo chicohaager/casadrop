@@ -453,14 +453,14 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detect MIME type
-	mimeType := "application/octet-stream"
+	// Detect MIME type. An unreadable file records "not detected" rather than a
+	// plausible default — see detectMimeFromFile.
+	mimeType := utils.UndetectedMimeType
 	if file, err := os.Open(destPath); err == nil {
 		defer file.Close()
-		buffer := make([]byte, 512)
-		if n, err := file.Read(buffer); err == nil {
-			mimeType = utils.DetectMimeType(buffer[:n], fileName)
-		}
+		mimeType = detectMimeFromFile(file, fileName)
+	} else {
+		log.Printf("MIME detection: cannot open %q: %v", destPath, err)
 	}
 
 	// Create share record
@@ -943,12 +943,12 @@ func (h *Handler) SharePage(w http.ResponseWriter, r *http.Request) {
 		"LimitedPlayback": utils.HasBrowserPlaybackCaveat(share.MimeType),
 		"MediaType":       string(mediaType),
 		"CanPreview":      canPreview,
-		"IsVideo":     mediaType == MediaTypeVideo,
-		"IsAudio":     mediaType == MediaTypeAudio,
-		"IsImage":     mediaType == MediaTypeImage,
-		"IsPDF":       mediaType == MediaTypePDF,
-		"IsText":      mediaType == MediaTypeText,
-		"FileExt":     ext,
+		"IsVideo":         mediaType == MediaTypeVideo,
+		"IsAudio":         mediaType == MediaTypeAudio,
+		"IsImage":         mediaType == MediaTypeImage,
+		"IsPDF":           mediaType == MediaTypePDF,
+		"IsText":          mediaType == MediaTypeText,
+		"FileExt":         ext,
 	}
 
 	h.templates.ExecuteTemplate(w, "share.html", data)

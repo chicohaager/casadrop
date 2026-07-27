@@ -18,13 +18,9 @@ services:
       - TZ=Europe/Berlin
       - EXTERNAL_PORT=443
       # - ADMIN_PASSWORD=your-secure-password
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
-
+    # No healthcheck override here: the image ships its own HEALTHCHECK,
+    # and it follows $PORT. Repeating it with a hard-coded port would
+    # silently drift the moment someone changes PORT.
   caddy:
     image: caddy:2-alpine
     container_name: casadrop-caddy

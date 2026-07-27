@@ -160,12 +160,12 @@ x-casaos:
     - arm64
     - arm
   main: casadrop
-  author: holgi
+  author: chicohaager
   category: Utilities
   description:
     de_de: Einfaches und sicheres File-Sharing für Homelab. Teilen Sie Dateien per Link mit optionalem Passwortschutz und Ablaufdatum. Inklusive Cloudflare Tunnel für öffentlichen Zugang.
     en_us: Simple and secure file sharing for Homelab. Share files via link with optional password protection and expiration date. Includes Cloudflare Tunnel for public access.
-  developer: holgi
+  developer: chicohaager
   icon: https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/files.svg
   tagline:
     de_de: Sicheres File-Sharing
