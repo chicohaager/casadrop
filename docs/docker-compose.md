@@ -150,14 +150,26 @@ volumes:
 CasaDrop includes built-in health check endpoints: `/healthz` (liveness) and
 `/readyz` (readiness — 200 only when the storage backend answers).
 
+**The image already ships a `HEALTHCHECK`** against `/healthz`, and it follows
+`$PORT`, so you normally need nothing in your compose file at all. Add your own
+block only if you want different timings — and then mind the port:
+
 ```yaml
 healthcheck:
+  # 8080 is the port *inside* the container. Correct as written only because
+  # this file also sets PORT=8080; if you change PORT, change it here too, or
+  # drop this block and let the image's own healthcheck do the work.
   test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
   interval: 30s
   timeout: 3s
   retries: 3
   start_period: 10s
 ```
+
+A compose-level `${PORT}` would not help here: compose substitutes it from *your
+shell* while parsing the file, not from the container's environment at check
+time. That is why the image's own healthcheck, which is expanded by the
+container's shell, is the better place for it.
 
 > **Do not use `wget --spider` for the health check.** The runtime image ships
 > **GNU wget**, whose `--spider` sends a `HEAD` request rather than a `GET`.

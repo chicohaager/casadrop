@@ -91,7 +91,14 @@ EXPOSE 8080
 
 # Plain GET against the liveness probe. Do NOT use `wget --spider` here: the
 # wget in this image is GNU wget, whose --spider issues a HEAD request.
+#
+# The port follows $PORT rather than a hard-coded 8080. PORT is a documented
+# knob (ENV above is only the default), and a container started with PORT=9000
+# used to report unhealthy forever while serving perfectly — the probe was
+# knocking on a port nothing listened on. HEALTHCHECK in shell form is not
+# subject to build-time variable substitution, so ${PORT:-8080} is expanded by
+# the container's shell at check time, against the container's own environment.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1
+    CMD wget -qO- "http://localhost:${PORT:-8080}/healthz" >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
