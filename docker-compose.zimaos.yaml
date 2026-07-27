@@ -172,7 +172,7 @@ x-casaos:
     - arm64
     - arm
   main: casadrop
-  author: holgi
+  author: chicohaager
   category: Utilities
   description:
     de_de: |
@@ -219,7 +219,7 @@ x-casaos:
       - Tailscale Funnel
       - Cloudflare Tunnel
       - Custom URL (WireGuard, Reverse Proxy)
-  developer: holgi
+  developer: chicohaager
   icon: https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/files.svg
   tagline:
     de_de: Sicheres File-Sharing mit Multi-Netzwerk-Support
