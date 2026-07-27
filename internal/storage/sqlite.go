@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -291,8 +293,33 @@ func (s *SQLiteStorage) UploadsDir() string {
 }
 
 // Ping verifies the database connection is alive (used by readiness checks).
+// Ping verifies the database is actually readable, not merely that a
+// connection object exists.
+//
+// It used to call db.Ping(), which on the modernc driver issues `select 1` — a
+// statement the SQL engine answers without ever looking at application data, so
+// it stayed green for a database whose schema was gone. Reading a row from a
+// real table exercises the pool, the schema and the b-tree; an empty table is
+// fine and is not an error. The short context stops a locked database from
+// hanging the probe until the caller gives up.
+//
+// What this still cannot see, measured rather than assumed: a database file
+// clobbered *underneath* an open connection. SQLite answers from its warm page
+// cache, so overwriting shares.db with garbage leaves this check green until
+// something forces an uncached read. Detecting that would mean reopening the
+// file on every probe, which is not a reasonable thing to do every 30 seconds.
+// The limitation is pinned in TestReadyzQueriesTheRealTable so nobody has to
+// rediscover it.
 func (s *SQLiteStorage) Ping() error {
-	return s.db.Ping()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM shares LIMIT 1`).Scan(&id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	return nil
 }
 
 // Close stops the background cleanup goroutine and closes the database.
@@ -1677,4 +1704,10 @@ func (s *SQLiteStorage) fixDateTimeFormats() {
 	if err != nil {
 		log.Printf("Warning: Failed to fix datetime formats in receive_links: %v", err)
 	}
+}
+
+// DropSharesTableForTest — see Storage.DropSharesTableForTest.
+func (s *SQLiteStorage) DropSharesTableForTest() error {
+	_, err := s.db.Exec(`DROP TABLE shares`)
+	return err
 }

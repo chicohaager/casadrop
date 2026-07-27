@@ -70,6 +70,10 @@ type StorageBackend interface {
 	UploadsDir() string
 	Ping() error
 	Close() error
+
+	// DropSharesTableForTest exists solely so a test can prove Ping() reads
+	// application data rather than answering a constant. No production caller.
+	DropSharesTableForTest() error
 }
 
 // StorageStats contains storage statistics
