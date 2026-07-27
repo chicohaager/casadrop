@@ -741,7 +741,7 @@ func (h *Handler) DownloadReceivedFile(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(targetFile.OriginalName)))
-	w.Header().Set("Content-Type", targetFile.MimeType)
+	w.Header().Set("Content-Type", utils.ServingMimeType(targetFile.MimeType))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", strconv.FormatInt(targetFile.FileSize, 10))
 
