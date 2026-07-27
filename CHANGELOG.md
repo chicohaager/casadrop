@@ -5,7 +5,7 @@ All notable changes to CasaDrop will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — review follow-ups + UI feedback from daily use
+## [2.4.3] - 2026-07-27 — CI from zero, media MIME, review follow-ups, UI polish
 
 ### Added (CI, from zero)
 - **There was no CI of any kind.** `.github/workflows/ci.yml` now builds, vets,
