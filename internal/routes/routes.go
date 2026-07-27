@@ -70,7 +70,7 @@ func registerPublic(r *mux.Router, d Deps) {
 	// Share landing / download (rate-limited)
 	r.HandleFunc("/s/{id}", h.SharePage).Methods("GET")
 	r.HandleFunc("/d/{id}", rateLimitDownload(h.DownloadFile, d.DownloadLimiter)).Methods("GET", "HEAD")
-	r.HandleFunc("/stream/{id}", h.StreamFile).Methods("GET", "HEAD", "OPTIONS")
+	r.HandleFunc("/stream/{id}", rateLimitStream(h.StreamFile, d.DownloadLimiter)).Methods("GET", "HEAD", "OPTIONS")
 	r.HandleFunc("/qr/{id}", h.QRCode).Methods("GET")
 	r.HandleFunc("/thumbnail/{id}", h.GetThumbnail).Methods("GET")
 
@@ -219,6 +219,33 @@ func rateLimitDownload(handler http.HandlerFunc, limiter *middleware.RateLimiter
 		if !limiter.Allow(clientIP) {
 			http.Error(w, "Zu viele Anfragen. Bitte warten.", http.StatusTooManyRequests)
 			return
+		}
+		handler(w, r)
+	}
+}
+
+// rateLimitStream throttles only those /stream requests that can actually burn
+// a share's download budget.
+//
+// /stream was the one public share route with no limit at all, and a plain GET
+// there increments the counter — so a short curl loop could exhaust a
+// `max_downloads: 1` share before its intended recipient ever opened the link.
+// Wrapping it in the ordinary download limiter is not an option: it allows
+// 10 requests per minute, while a video player issues a burst of Range requests
+// while the viewer scrubs, and seeking would start failing.
+//
+// Range requests do not increment the counter (see StreamFile), so they are not
+// the abuse vector. Limiting exactly the counting requests leaves playback
+// untouched and closes the hole. OPTIONS is a CORS preflight and carries no
+// payload, so it is exempt too.
+func rateLimitStream(handler http.HandlerFunc, limiter *middleware.RateLimiter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodOptions && r.Header.Get("Range") == "" {
+			clientIP := utils.GetClientIP(r)
+			if !limiter.Allow(clientIP) {
+				http.Error(w, "Zu viele Anfragen. Bitte warten.", http.StatusTooManyRequests)
+				return
+			}
 		}
 		handler(w, r)
 	}
