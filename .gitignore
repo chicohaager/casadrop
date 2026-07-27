@@ -49,5 +49,8 @@ SESSION_NOTES.md
 DESIGN_SPEC.md
 REFACTORING.md
 
+# Internal review artefacts (findings, verdicts) — not part of the release
+.forge/
+
 # Junk
 /1
