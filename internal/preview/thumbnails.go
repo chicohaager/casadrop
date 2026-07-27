@@ -6,6 +6,15 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+
+	// Decoders registered for image.Decode/DecodeConfig. JPEG and PNG are
+	// decoded explicitly below; GIF, BMP and TIFF only work through the
+	// registry, so a .gif/.bmp/.tiff would otherwise fail to thumbnail.
+	_ "image/gif"
+
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+
 	"os"
 	"path/filepath"
 	"strings"

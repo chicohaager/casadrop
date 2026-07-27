@@ -70,6 +70,7 @@
             'upload.uploading': 'Uploading...',
             'upload.complete': 'Upload complete',
             'upload.error': 'Upload failed',
+            'upload.networkError': 'Server unreachable',
             'upload.another': 'Upload More',
             'shares.title': 'Active Shares',
             'shares.empty': 'No active shares yet',
@@ -243,6 +244,7 @@
             'upload.uploading': 'Wird hochgeladen...',
             'upload.complete': 'Upload abgeschlossen',
             'upload.error': 'Upload fehlgeschlagen',
+            'upload.networkError': 'Server nicht erreichbar',
             'upload.another': 'Weitere hochladen',
             'shares.title': 'Aktive Freigaben',
             'shares.empty': 'Noch keine Freigaben',
@@ -394,6 +396,7 @@
             'upload.uploading': 'Envoi en cours...',
             'upload.complete': 'Envoi terminé',
             'upload.error': 'Échec de l\'envoi',
+            'upload.networkError': 'Serveur injoignable',
             'upload.another': 'Envoyer d\'autres fichiers',
             'shares.title': 'Partages actifs',
             'shares.empty': 'Aucun partage actif',
@@ -482,6 +485,7 @@
             'upload.uploading': 'Subiendo...',
             'upload.complete': 'Subida completada',
             'upload.error': 'Error al subir',
+            'upload.networkError': 'Servidor inaccesible',
             'upload.another': 'Subir más',
             'shares.title': 'Compartidos activos',
             'shares.empty': 'Aún no hay compartidos',
@@ -570,6 +574,7 @@
             'upload.uploading': 'Caricamento in corso...',
             'upload.complete': 'Caricamento completato',
             'upload.error': 'Caricamento fallito',
+            'upload.networkError': 'Server irraggiungibile',
             'upload.another': 'Carica altri file',
             'shares.title': 'Condivisioni attive',
             'shares.empty': 'Nessuna condivisione attiva',
@@ -658,6 +663,7 @@
             'upload.uploading': 'Enviando...',
             'upload.complete': 'Envio concluído',
             'upload.error': 'Falha no envio',
+            'upload.networkError': 'Servidor inacessível',
             'upload.another': 'Enviar mais',
             'shares.title': 'Compartilhamentos ativos',
             'shares.empty': 'Nenhum compartilhamento ativo',
@@ -746,6 +752,7 @@
             'upload.uploading': 'Bezig met uploaden...',
             'upload.complete': 'Upload voltooid',
             'upload.error': 'Upload mislukt',
+            'upload.networkError': 'Server niet bereikbaar',
             'upload.another': 'Meer uploaden',
             'shares.title': 'Actieve delingen',
             'shares.empty': 'Nog geen delingen',
@@ -834,6 +841,7 @@
             'upload.uploading': 'Wysyłanie...',
             'upload.complete': 'Wysyłanie zakończone',
             'upload.error': 'Wysyłanie nie powiodło się',
+            'upload.networkError': 'Serwer niedostępny',
             'upload.another': 'Wyślij więcej',
             'shares.title': 'Aktywne udostępnienia',
             'shares.empty': 'Brak aktywnych udostępnień',
@@ -922,6 +930,7 @@
             'upload.uploading': 'Загрузка...',
             'upload.complete': 'Загрузка завершена',
             'upload.error': 'Ошибка загрузки',
+            'upload.networkError': 'Сервер недоступен',
             'upload.another': 'Загрузить ещё',
             'shares.title': 'Активные ссылки',
             'shares.empty': 'Пока нет общих файлов',
@@ -1010,6 +1019,7 @@
             'upload.uploading': 'アップロード中...',
             'upload.complete': 'アップロード完了',
             'upload.error': 'アップロード失敗',
+            'upload.networkError': 'サーバーに接続できません',
             'upload.another': '追加アップロード',
             'shares.title': '有効な共有',
             'shares.empty': '共有はまだありません',
@@ -1098,6 +1108,7 @@
             'upload.uploading': '正在上传...',
             'upload.complete': '上传完成',
             'upload.error': '上传失败',
+            'upload.networkError': '无法连接服务器',
             'upload.another': '继续上传',
             'shares.title': '活跃共享',
             'shares.empty': '暂无共享',
@@ -1186,6 +1197,7 @@
             'upload.uploading': '업로드 중...',
             'upload.complete': '업로드 완료',
             'upload.error': '업로드 실패',
+            'upload.networkError': '서버에 연결할 수 없습니다',
             'upload.another': '추가 업로드',
             'shares.title': '활성 공유',
             'shares.empty': '공유가 아직 없습니다',
@@ -1274,6 +1286,7 @@
             'upload.uploading': 'Yükleniyor...',
             'upload.complete': 'Yükleme tamamlandı',
             'upload.error': 'Yükleme başarısız',
+            'upload.networkError': 'Sunucuya ulaşılamıyor',
             'upload.another': 'Daha fazla yükle',
             'shares.title': 'Aktif Paylaşımlar',
             'shares.empty': 'Henüz paylaşım yok',
@@ -1364,6 +1377,7 @@
             'upload.uploading': 'جارٍ الرفع...',
             'upload.complete': 'اكتمل الرفع',
             'upload.error': 'فشل الرفع',
+            'upload.networkError': 'تعذّر الوصول إلى الخادم',
             'upload.another': 'رفع المزيد',
             'shares.title': 'المشاركات النشطة',
             'shares.empty': 'لا توجد مشاركات بعد',
@@ -2069,8 +2083,14 @@
                 updateProgress(progressId, 100, true);
                 renderUploadResult(resultsDiv, result, file);
             } catch (err) {
-                updateProgress(progressId, 100, false, true);
-                toast(`${file.name}: ${err.message}`, 'error');
+                // A dead/unreachable server surfaces as a TypeError from fetch
+                // ("Failed to fetch") — useless to a user, so name the actual
+                // condition instead.
+                const msg = (err instanceof TypeError)
+                    ? t('upload.networkError')
+                    : (err.message || t('upload.error'));
+                updateProgress(progressId, 100, false, true, msg);
+                toast(`${file.name}: ${msg}`, 'error');
             }
         }
 
@@ -2081,7 +2101,10 @@
         uploadBtn.textContent = t('upload.submit');
     }
 
-    function updateProgress(id, percent, complete = false, error = false) {
+    // A failed upload must say so. Showing "100%" next to a red bar reads as
+    // "finished" or "stuck" — the toast that carried the reason is gone seconds
+    // later, so the reason is written into the progress row and stays there.
+    function updateProgress(id, percent, complete = false, error = false, message = '') {
         const wrapper = document.getElementById(id);
         if (!wrapper) return;
         const bar = wrapper.querySelector('.progress-bar-inner');
@@ -2089,7 +2112,19 @@
         bar.style.width = percent + '%';
         pct.textContent = Math.round(percent) + '%';
         if (complete) bar.classList.add('complete');
-        if (error) bar.classList.add('error');
+        if (error) {
+            bar.classList.add('error');
+            pct.textContent = t('upload.error');
+            pct.classList.add('error');
+            let detail = wrapper.querySelector('.progress-error');
+            if (!detail) {
+                detail = document.createElement('div');
+                detail.className = 'progress-error';
+                wrapper.appendChild(detail);
+            }
+            // textContent: the message can be a raw server response body.
+            detail.textContent = message || t('upload.error');
+        }
     }
 
     async function uploadSimple(file, password, expiresIn, maxDownloads, progressId) {
@@ -2118,11 +2153,14 @@
                         resolve({ url: xhr.responseText.trim() });
                     }
                 } else {
-                    reject(new Error(xhr.responseText || 'Upload failed'));
+                    // Keep the status code when the body is empty — "failed"
+                    // alone tells nobody whether it was 413, 401 or 500.
+                    reject(new Error(xhr.responseText.trim() || `${t('upload.error')} (HTTP ${xhr.status})`));
                 }
             });
 
-            xhr.addEventListener('error', () => reject(new Error('Network error')));
+            xhr.addEventListener('error', () => reject(new Error(t('upload.networkError'))));
+            xhr.addEventListener('abort', () => reject(new Error(t('upload.networkError'))));
             xhr.send(formData);
         });
     }
@@ -2242,7 +2280,15 @@
         }
 
         listEl.innerHTML = entries.map(e => {
-            const icon = e.is_dir ? ICON_FOLDER : ICON_FILE;
+            // Image files get a real preview instead of the generic file icon.
+            // The server marks them with is_image (only formats it can decode),
+            // and serves the preview admin-gated from the host path itself.
+            // loading="lazy": a photo folder must not fire hundreds of requests.
+            const icon = e.is_dir
+                ? ICON_FOLDER
+                : (e.is_image
+                    ? `<img class="host-thumb" src="/api/browse/thumbnail?path=${encodeURIComponent(e.path)}" alt="" loading="lazy" data-host-thumb>`
+                    : ICON_FILE);
             const meta = e.is_dir ? t('hostshare.folder') : formatSize(e.size || 0);
             // Folders: clicking the name navigates in. Both files and folders get a Share button.
             const nameCell = e.is_dir
@@ -2260,7 +2306,24 @@
                             data-i18n="hostshare.share">Share</button>
                 </div>`;
         }).join('');
+        attachHostThumbFallbacks(listEl);
         applyI18n();
+    }
+
+    // A preview can fail for a file the extension promised was an image
+    // (truncated, mislabelled, unreadable). Swap the <img> for the file icon
+    // rather than leaving a broken-image box. Replaces only the <img> itself —
+    // the row's name and buttons must survive.
+    //
+    // No inline onerror: the strict CSP (script-src 'self') blocks it.
+    function attachHostThumbFallbacks(root) {
+        root.querySelectorAll('img[data-host-thumb]').forEach(img => {
+            img.addEventListener('error', () => {
+                const span = document.createElement('span');
+                span.innerHTML = ICON_FILE;
+                img.replaceWith(span.firstElementChild || span);
+            }, { once: true });
+        });
     }
 
     // A host path is browsable if it is the virtual root ("/", which lists the
