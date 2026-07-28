@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.4] - 2026-07-28 — Thumbnails in the host browser
+
 ### Added
 - **Thumbnails in the "share files and folders already on the server" dialog.**
   Reported against 2.4.3: the host browser only ever rendered a file list. It had
@@ -724,6 +726,7 @@ review and their resolution status.
 - Cloudflare Tunnel integration
 - ZimaOS/CasaOS support
 
-[Unreleased]: https://github.com/chicohaager/casadrop/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/chicohaager/casadrop/compare/v2.4.4...HEAD
+[2.4.4]: https://github.com/chicohaager/casadrop/compare/v2.4.3...v2.4.4
 [2.0.0]: https://github.com/chicohaager/casadrop/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/chicohaager/casadrop/releases/tag/v1.0.0
