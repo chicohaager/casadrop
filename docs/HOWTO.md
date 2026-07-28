@@ -42,7 +42,7 @@ No external database, no CGO, no Redis, no Node runtime. It gives you:
 
 ### Version note (please read)
 
-This guide describes **2.4.0**, the current release. The image is published for
+This guide describes **2.4.4**, the current release. The image is published for
 **linux/amd64 and linux/arm64**, so it runs on a normal x86 box as well as on a
 Raspberry Pi 4+ or an ARM NAS. Tags:
 [hub.docker.com/r/chicohaager/casadrop/tags](https://hub.docker.com/r/chicohaager/casadrop/tags).
