@@ -137,7 +137,7 @@ func TestSessionManagement(t *testing.T) {
 	}
 
 	// Session should be valid
-	if !auth.validSession(token) {
+	if auth.getSession(token) == nil {
 		t.Error("New session should be valid")
 	}
 
@@ -149,7 +149,7 @@ func TestSessionManagement(t *testing.T) {
 
 	// Invalidate session
 	auth.InvalidateSession(token)
-	if auth.validSession(token) {
+	if auth.getSession(token) != nil {
 		t.Error("Session should be invalid after invalidation")
 	}
 }
@@ -385,7 +385,7 @@ func TestLogoutHandler(t *testing.T) {
 	}
 
 	// Session should be invalid
-	if auth.validSession(token) {
+	if auth.getSession(token) != nil {
 		t.Error("Session should be invalid after logout")
 	}
 }

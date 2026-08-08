@@ -3,6 +3,8 @@ package middleware
 import (
 	"net/http"
 	"strings"
+
+	"casadrop/internal/utils"
 )
 
 // SecurityHeaders fügt wichtige Security-Header hinzu
@@ -24,7 +26,10 @@ func SecurityHeaders(next http.Handler) http.Handler {
 
 		// HSTS: only emit over HTTPS (direct TLS or via a TLS-terminating proxy)
 		// so we never pin HTTP-only LAN deployments into an unreachable state.
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		// IsRequestSecure honors X-Forwarded-Proto only from a TRUSTED_PROXY peer
+		// — the same fail-closed rule as the Secure cookie flag, instead of the
+		// previous trust-anyone header check.
+		if utils.IsRequestSecure(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 

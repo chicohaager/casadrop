@@ -463,7 +463,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	uploadsDir := filepath.Join(h.storage.UploadsDir(), "received", id)
 	destPath := filepath.Join(uploadsDir, storedName)
 
-	dest, err := os.Create(destPath)
+	dest, err := createShareFile(destPath)
 	if err != nil {
 		log.Printf("Failed to create file %s: %v", destPath, err)
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
@@ -532,7 +532,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("AutoShare: failed to open source file: %v", err)
 		} else {
-			destFile, err := os.Create(sharePath)
+			destFile, err := createShareFile(sharePath)
 			if err != nil {
 				srcFile.Close()
 				log.Printf("AutoShare: failed to create share file: %v", err)
