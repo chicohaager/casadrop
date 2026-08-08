@@ -39,6 +39,9 @@ var (
 )
 
 // allowedHostRoots returns the configured SHARE_ALLOWED_PATHS roots.
+// Each root is Clean()ed: a trailing slash in the env value ("/DATA/") would
+// otherwise make both the equality check and the prefix check ("/DATA//…")
+// fail and silently deny every path under that root.
 func allowedHostRoots() []string {
 	allowedPaths := os.Getenv("SHARE_ALLOWED_PATHS")
 	if allowedPaths == "" {
@@ -48,10 +51,23 @@ func allowedHostRoots() []string {
 	out := roots[:0]
 	for _, r := range roots {
 		if r = strings.TrimSpace(r); r != "" {
-			out = append(out, r)
+			out = append(out, filepath.Clean(r))
 		}
 	}
 	return out
+}
+
+// hostPathAllowed reports whether an already symlink-resolved path sits at or
+// below one of the SHARE_ALLOWED_PATHS roots. Shared by every handler that
+// opens host paths (browse, thumbnail, share-from-path, share-folder) so the
+// rule can't drift between them.
+func hostPathAllowed(resolved string) bool {
+	for _, allowed := range allowedHostRoots() {
+		if resolved == allowed || strings.HasPrefix(resolved, allowed+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveAllowedHostPath cleans and symlink-resolves a caller-supplied host
@@ -69,10 +85,8 @@ func resolveAllowedHostPath(requested string) (string, error) {
 	if err != nil {
 		return "", errHostPathInvalid
 	}
-	for _, allowed := range allowedHostRoots() {
-		if resolved == allowed || strings.HasPrefix(resolved, allowed+string(filepath.Separator)) {
-			return resolved, nil
-		}
+	if hostPathAllowed(resolved) {
+		return resolved, nil
 	}
 	return "", errHostPathDenied
 }

@@ -56,6 +56,8 @@ type Handler struct {
 type sharePasswordRateLimiter struct {
 	attempts map[string]*shareAttempts // key: shareID:IP
 	mu       sync.RWMutex
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 type shareAttempts struct {
@@ -71,16 +73,31 @@ const (
 func newSharePasswordRateLimiter() *sharePasswordRateLimiter {
 	limiter := &sharePasswordRateLimiter{
 		attempts: make(map[string]*shareAttempts),
+		stop:     make(chan struct{}),
 	}
-	// Cleanup goroutine
+	// Cleanup goroutine. Exits on Stop() — every long-lived goroutine must be
+	// drainable on graceful shutdown (and tests that build multiple Handlers
+	// must not accumulate tickers).
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			limiter.cleanup()
+		for {
+			select {
+			case <-ticker.C:
+				limiter.cleanup()
+			case <-limiter.stop:
+				return
+			}
 		}
 	}()
 	return limiter
+}
+
+// Stop terminates the cleanup goroutine. Safe to call multiple times.
+func (l *sharePasswordRateLimiter) Stop() {
+	l.stopOnce.Do(func() {
+		close(l.stop)
+	})
 }
 
 func (l *sharePasswordRateLimiter) cleanup() {
@@ -203,6 +220,9 @@ func (h *Handler) Stop() {
 	}
 	if h.pow != nil {
 		h.pow.Stop()
+	}
+	if h.sharePassLimiter != nil {
+		h.sharePassLimiter.Stop()
 	}
 }
 
@@ -342,22 +362,8 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check allowed base paths from environment (comma-separated)
-	allowedPaths := os.Getenv("SHARE_ALLOWED_PATHS")
-	if allowedPaths == "" {
-		allowedPaths = "/DATA,/media,/home" // Default allowed paths for ZimaOS
-	}
-
-	pathAllowed := false
-	for _, allowed := range strings.Split(allowedPaths, ",") {
-		allowed = strings.TrimSpace(allowed)
-		if strings.HasPrefix(resolvedPath, allowed+string(filepath.Separator)) || resolvedPath == allowed {
-			pathAllowed = true
-			break
-		}
-	}
-
-	if !pathAllowed {
+	// Check allowed base paths (SHARE_ALLOWED_PATHS, shared with /api/browse)
+	if !hostPathAllowed(resolvedPath) {
 		http.Error(w, "Path not in allowed directories", http.StatusForbidden)
 		return
 	}
@@ -425,7 +431,7 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		}
 		defer srcFile.Close()
 
-		destFile, err := os.Create(destPath)
+		destFile, err := createShareFile(destPath)
 		if err != nil {
 			http.Error(w, "Failed to create destination file", http.StatusInternalServerError)
 			return
@@ -556,15 +562,7 @@ func (h *Handler) BrowseFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if path is within allowed directories
-	pathAllowed := false
-	for _, allowed := range allowedList {
-		if strings.HasPrefix(resolvedPath, allowed+string(filepath.Separator)) || resolvedPath == allowed {
-			pathAllowed = true
-			break
-		}
-	}
-
-	if !pathAllowed {
+	if !hostPathAllowed(resolvedPath) {
 		http.Error(w, "Path not in allowed directories", http.StatusForbidden)
 		return
 	}

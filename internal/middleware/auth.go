@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -829,17 +830,6 @@ func (aa *AdminAuth) RequireCanCreateShares() func(http.Handler) http.Handler {
 	return aa.RequireRole(models.RoleAdmin, models.RoleUser)
 }
 
-func (aa *AdminAuth) validSession(token string) bool {
-	aa.mu.RLock()
-	defer aa.mu.RUnlock()
-
-	session, exists := aa.sessions[hashToken(token)]
-	if !exists {
-		return false
-	}
-	return time.Now().Before(session.ExpiresAt)
-}
-
 func (aa *AdminAuth) extendSession(token string) {
 	aa.mu.Lock()
 	defer aa.mu.Unlock()
@@ -853,9 +843,18 @@ func (aa *AdminAuth) extendSession(token string) {
 				newExpiry = cap
 			}
 		}
+		// Persist at most about once per minute per session. The expiry only
+		// advances by the time elapsed since the last extension, so rewriting
+		// sessions.json on EVERY authenticated request bought nothing but a
+		// full-map serialization + disk write while holding the write lock.
+		// Worst case after a crash the persisted expiry lags by under a minute
+		// on a 24h idle TTL — irrelevant.
+		persist := newExpiry.Sub(session.ExpiresAt) > time.Minute
 		session.ExpiresAt = newExpiry
 		aa.sessions[h] = session
-		aa.saveSessions()
+		if persist {
+			aa.saveSessions()
+		}
 	}
 }
 
@@ -876,7 +875,7 @@ func (aa *AdminAuth) CreateSessionForUser(ip, userAgent, userID, userEmail strin
 	aa.mu.Lock()
 	aa.sessions[h] = Session{
 		Token:     h, // store the hash, never the raw token
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().Add(SessionIdleTTL),
 		IP:        ip,
 		UserAgent: userAgent,
 		CreatedAt: time.Now(),
@@ -901,8 +900,10 @@ func (aa *AdminAuth) InvalidateSession(token string) {
 
 // LoginHandler handles login requests
 func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	// Handle AJAX login
-	if r.Header.Get("Content-Type") == "application/json" {
+	// Handle AJAX login. Prefix match: a legitimate client sending
+	// "application/json; charset=utf-8" must not fall through to the form
+	// parser (which would render the HTML login page to an API caller).
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		aa.handleJSONLogin(w, r)
 		return
 	}
@@ -1173,14 +1174,10 @@ func (aa *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 
 // SetupHandler handles initial password setup
 func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
-	// Don't allow setup if env password is set
-	if aa.envPassword != "" {
-		http.Redirect(w, r, "/login", http.StatusFound)
-		return
-	}
-
-	// Don't allow setup if already done
-	if aa.config != nil && aa.config.SetupDone {
+	// Setup is only reachable while it is actually needed (no env password,
+	// wizard not completed). NeedsSetup reads aa.config under configMu — the
+	// previous inline check read it unlocked and raced with SetPassword.
+	if !aa.NeedsSetup() {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
