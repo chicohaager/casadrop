@@ -190,9 +190,14 @@ func TestStateManagement(t *testing.T) {
 
 // Mock SessionCreator for testing handlers
 type mockSessionCreator struct {
-	lastIP        string
-	lastUserAgent string
-	token         string
+	lastIP          string
+	lastUserAgent   string
+	token           string
+	invalidatedWith string // raw token passed to InvalidateSession
+}
+
+func (m *mockSessionCreator) InvalidateSession(token string) {
+	m.invalidatedWith = token
 }
 
 func (m *mockSessionCreator) CreateSession(ip, userAgent string) (string, error) {

@@ -23,6 +23,10 @@ const oidcStateCookie = "casadrop_oidc_state"
 type SessionCreator interface {
 	CreateSession(ip, userAgent string) (string, error)
 	CreateSessionForUser(ip, userAgent, userID, userEmail string, role models.Role) (string, error)
+	// InvalidateSession revokes the server-side session for a raw cookie token.
+	// The OIDC logout must call this: clearing only the cookie leaves the token
+	// replayable until its TTL expires.
+	InvalidateSession(token string)
 }
 
 // Handlers provides HTTP handlers for OIDC authentication.
@@ -212,7 +216,14 @@ func (h *Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	isHTTPS := utils.IsRequestSecure(r)
 
-	// Clear session cookie first (match creation flags so browsers honour it)
+	// Revoke the server-side session, not just the cookie. Without this the
+	// bearer token stayed valid (sessions map + sessions.json) until its TTL,
+	// so a captured token could be replayed after an "OIDC logout".
+	if cookie, err := r.Cookie("casadrop_session"); err == nil {
+		h.sessionCreator.InvalidateSession(cookie.Value)
+	}
+
+	// Clear session cookie (match creation flags so browsers honour it)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "casadrop_session",
 		Value:    "",
@@ -223,8 +234,10 @@ func (h *Handlers) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 	})
 
-	// If OIDC is enabled, redirect to provider's logout endpoint
-	if h.provider.IsEnabled() {
+	// If OIDC is enabled, redirect to provider's logout endpoint. The nil check
+	// matters: when provider initialization failed at boot (e.g. unreachable
+	// issuer), h.provider is nil and calling IsEnabled() would panic.
+	if h.provider != nil && h.provider.IsEnabled() {
 		// Build post-logout redirect URI.
 		//
 		// We deliberately use r.Host (the server's Host header) and NOT

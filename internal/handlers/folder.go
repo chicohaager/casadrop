@@ -60,22 +60,8 @@ func (h *Handler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check allowed paths
-	allowedPaths := os.Getenv("SHARE_ALLOWED_PATHS")
-	if allowedPaths == "" {
-		allowedPaths = "/DATA,/media,/home"
-	}
-
-	pathAllowed := false
-	for _, allowed := range strings.Split(allowedPaths, ",") {
-		allowed = strings.TrimSpace(allowed)
-		if strings.HasPrefix(resolvedPath, allowed+string(filepath.Separator)) || resolvedPath == allowed {
-			pathAllowed = true
-			break
-		}
-	}
-
-	if !pathAllowed {
+	// Check allowed paths (SHARE_ALLOWED_PATHS, shared with /api/browse)
+	if !hostPathAllowed(resolvedPath) {
 		http.Error(w, "Path not in allowed directories", http.StatusForbidden)
 		return
 	}
@@ -517,17 +503,19 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		// Enforce byte budget (checked per entry, before we stream data)
-		if !info.IsDir() && maxZipBytes > 0 && streamedBytes+info.Size() > maxZipBytes {
-			return errZipBudgetExceeded
-		}
-
-		// Skip hidden files
+		// Skip hidden files — before the byte budget: a hidden file never
+		// enters the archive, so it must not be able to abort the ZIP by
+		// tripping the budget check either.
 		if strings.HasPrefix(info.Name(), ".") && path != share.SourcePath {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+
+		// Enforce byte budget (checked per entry, before we stream data)
+		if !info.IsDir() && maxZipBytes > 0 && streamedBytes+info.Size() > maxZipBytes {
+			return errZipBudgetExceeded
 		}
 
 		// Calculate relative path for ZIP
