@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **`GET /auth/oidc/logout` now revokes the server-side session.** It only
+  cleared the cookie: the bearer token stayed valid in the session store (and
+  `sessions.json`) until its TTL, so a captured token was replayable after an
+  "OIDC logout". The documented endpoint now invalidates the session exactly
+  like `/logout` always did. (The web UI's logout button always used `/logout`
+  and was never affected.)
+- **HSTS is now emitted under the same fail-closed rule as the Secure cookie
+  flag.** `SecurityHeaders` trusted `X-Forwarded-Proto: https` from *any* peer;
+  it now goes through `utils.IsRequestSecure`, which honors the header only
+  from a `TRUSTED_PROXY` peer. (Browsers ignore HSTS over plain HTTP, so this
+  was an inconsistency rather than an exploitable hole.)
+
+### Fixed
+- **Deleting a folder share could delete the uploads directory.** Folder shares
+  store `FileName=""`; `storage.Delete` joined that to the uploads dir itself
+  and `os.Remove`d it — which succeeds when the dir happens to be empty (fresh
+  instance, folder share as first action), breaking every subsequent upload
+  with ENOENT. Folder shares now skip file deletion entirely.
+- **A masked OIDC client secret can no longer overwrite the real one.**
+  `GET /api/auth/oidc/config` masks the secret as `********`; a `POST` that
+  round-tripped that mask (or omitted the field) stored the mask as the actual
+  credential and silently broke OIDC. Both now mean "keep the stored secret".
+- **`/auth/oidc/logout` no longer panics when OIDC failed to initialize at
+  boot** (e.g. unreachable issuer): the handler called `IsEnabled()` on a nil
+  provider.
+- **Share/receive file creation refuses to overwrite an existing file**
+  (`O_EXCL`). Share IDs are truncated UUIDs (32 bits); on a collision,
+  `os.Create` silently truncated *another share's* bytes on disk. A collision
+  now fails loudly instead of losing data.
+- **`SHARE_ALLOWED_PATHS` entries with a trailing slash** (`/DATA/`) denied
+  every path under that root (prefix check built `/DATA//…`). Roots are now
+  normalized with `filepath.Clean`, and the allow-check is one shared helper
+  (`hostPathAllowed`) instead of three drifting copies across browse,
+  share-from-path and share-folder.
+- **JSON logins with `Content-Type: application/json; charset=utf-8`** fell
+  through to the form parser and got the HTML login page back; the check is a
+  prefix match now.
+- **Setup wizard config read raced with `SetPassword`** — `SetupHandler` read
+  `aa.config` without the lock; it now goes through `NeedsSetup()`.
+- **Folder-ZIP byte budget no longer counts hidden files** it was about to
+  skip anyway — a large hidden file could abort an otherwise within-budget ZIP.
+
+### Changed
+- **`sessions.json` is written at most about once per minute per session**
+  instead of on every authenticated request (the rolling 24h idle TTL advanced
+  the expiry by milliseconds each time, at the cost of a full-map JSON
+  serialization + disk write under the session write lock).
+- The share-password rate limiter's cleanup goroutine now has a `Stop()` and is
+  drained on graceful shutdown, matching every other background worker.
+- Removed the dead `validSession` helper (weaker than `getSession`: it ignored
+  the absolute session-lifetime cap).
+
 ## [2.4.4] - 2026-07-28 — Thumbnails in the host browser
 
 ### Added

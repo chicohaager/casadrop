@@ -81,6 +81,12 @@ const (
 	CleanupInterval = 5 * time.Minute
 )
 
+// maskedSecret is what GetConfig returns in place of the real client secret.
+// SaveConfig recognizes it (and the empty string) as "keep the stored secret",
+// so an admin round-tripping a GET response can't brick OIDC by overwriting
+// the real secret with the mask.
+const maskedSecret = "********"
+
 // NewProvider creates a new OIDC provider from environment variables.
 func NewProvider(dataDir string) (*Provider, error) {
 	config := loadConfigFromEnv()
@@ -174,6 +180,13 @@ func (p *Provider) loadConfig() error {
 func (p *Provider) SaveConfig(config *Config) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// GET /api/auth/oidc/config masks the secret; a POST that carries the mask
+	// (or omits the field) means "unchanged" — never store the mask as the
+	// actual credential.
+	if config.ClientSecret == "" || config.ClientSecret == maskedSecret {
+		config.ClientSecret = p.config.ClientSecret
+	}
 
 	p.config = config
 
@@ -297,7 +310,7 @@ func (p *Provider) GetConfig() Config {
 	config := *p.config
 	// Mask client secret for API responses
 	if config.ClientSecret != "" {
-		config.ClientSecret = "********"
+		config.ClientSecret = maskedSecret
 	}
 	return config
 }

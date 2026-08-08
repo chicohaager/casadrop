@@ -475,9 +475,14 @@ func (s *SQLiteStorage) Delete(id string) error {
 		return err
 	}
 
-	// Delete the file
-	filePath := filepath.Join(s.uploadsDir, share.FileName)
-	os.Remove(filePath)
+	// Delete the file. Folder shares store FileName="" (they reference
+	// SourcePath in place) — filepath.Join(uploadsDir, "") is the uploads
+	// directory itself, and os.Remove would delete it when it happens to be
+	// empty, breaking every subsequent upload with ENOENT.
+	if share.FileName != "" {
+		filePath := filepath.Join(s.uploadsDir, share.FileName)
+		os.Remove(filePath)
+	}
 
 	// Delete from database
 	_, err := s.db.Exec("DELETE FROM shares WHERE id = ?", id)

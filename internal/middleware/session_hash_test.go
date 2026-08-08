@@ -21,9 +21,6 @@ func TestSessionTokenHashedAtRest(t *testing.T) {
 	if aa.getSession(raw) == nil {
 		t.Fatal("getSession(raw) returned nil — hashed lookup broken")
 	}
-	if !aa.validSession(raw) {
-		t.Fatal("validSession(raw) false")
-	}
 
 	// The map must be keyed by the hash, not the raw token.
 	if _, ok := aa.sessions[raw]; ok {

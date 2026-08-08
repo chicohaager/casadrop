@@ -28,6 +28,16 @@ import (
 // time.Now() so this naturally falls out of the expiry sweep.
 var neverExpires = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 
+// createShareFile creates the destination file for a new share/received file.
+// O_EXCL: share IDs are truncated UUIDs (32 bits), so a collision is unlikely
+// but possible — os.Create would then silently truncate ANOTHER share's bytes
+// on disk. Refusing to overwrite turns that data loss into a loud error.
+// O_RDWR because several callers re-read the head of the file for MIME
+// sniffing after writing it.
+func createShareFile(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0644)
+}
+
 // expiresAtFromHours converts a UI-supplied hour count to a concrete
 // ExpiresAt. expires_in <= 0 means "unbegrenzt" (no expiration); any
 // positive value is treated as hours from now.
@@ -165,7 +175,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	// Save file
 	destPath := filepath.Join(h.storage.UploadsDir(), storedName)
-	dest, err := os.Create(destPath)
+	dest, err := createShareFile(destPath)
 	if err != nil {
 		log.Printf("Failed to create file %s: %v", destPath, err)
 		http.Error(w, "Failed to save file. Please check server disk space.", http.StatusInternalServerError)
@@ -439,7 +449,7 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 	destPath := filepath.Join(h.storage.UploadsDir(), storedName)
 
 	// Create destination file
-	destFile, err := os.Create(destPath)
+	destFile, err := createShareFile(destPath)
 	if err != nil {
 		os.RemoveAll(upload.TempDir)
 		http.Error(w, "Failed to create file", http.StatusInternalServerError)
@@ -662,7 +672,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 		destPath := filepath.Join(h.storage.UploadsDir(), storedName)
 
 		// Save file
-		dest, err := os.Create(destPath)
+		dest, err := createShareFile(destPath)
 		if err != nil {
 			file.Close()
 			errors = append(errors, fmt.Sprintf("%s: failed to save", fileHeader.Filename))
