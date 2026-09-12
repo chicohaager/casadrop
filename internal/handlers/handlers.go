@@ -160,6 +160,14 @@ func New(s *storage.Storage, templatesDir string) (*Handler, error) {
 	}
 	webhookSvc := webhook.New(dataDir)
 
+	// Wire the "expire" webhook event to its only producer: the storage layer's
+	// hourly expiry cleanup. Until this existed, webhook.NotifyExpire had no
+	// caller anywhere in the tree, so on_expire was a config flag that could be
+	// set to true and never did anything.
+	if !s.SetExpiryNotifier(webhookSvc.NotifyExpire) {
+		log.Printf("Webhook: storage backend reports no expiry cleanup; the expire event will not fire")
+	}
+
 	// Initialize thumbnail service
 	thumbSvc, err := preview.NewThumbnailService(dataDir)
 	if err != nil {
@@ -297,7 +305,16 @@ func (h *Handler) getPrimaryBaseURL(r *http.Request) string {
 			return strings.TrimSuffix(customURL, "/")
 		}
 	case "local":
-		localIP := os.Getenv("LOCAL_IP")
+		// Settings first, env as fallback — the same precedence every other
+		// network uses. Reading only LOCAL_IP made the Settings field
+		// display-only: the panel echoed the address the admin typed while
+		// links were built from the env var (in bridged Docker the entrypoint
+		// detects the container's own 172.x address, which no LAN client can
+		// reach). Covered by TestGetPrimaryBaseURLLocalPrefersConfig.
+		localIP := tunnelCfg.LocalIP
+		if localIP == "" {
+			localIP = os.Getenv("LOCAL_IP")
+		}
 		if localIP != "" {
 			return fmt.Sprintf("http://%s:%s", localIP, port)
 		}
