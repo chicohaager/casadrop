@@ -54,8 +54,8 @@ func TestGetClientIP(t *testing.T) {
 		{
 			name:       "RemoteAddr fallback",
 			headers:    map[string]string{},
-			remoteAddr: "192.168.1.1:54321",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:54321",
+			expected:   "192.168.10.1",
 		},
 		{
 			name:       "X-Forwarded-For takes precedence over X-Real-IP",
@@ -265,7 +265,7 @@ func TestTruncateString(t *testing.T) {
 }
 
 func TestIsLocalHostname(t *testing.T) {
-	local := []string{"localhost", "127.0.0.1", "192.168.1.50", "10.0.0.5", "172.16.0.1", "zimaos.local", ""}
+	local := []string{"localhost", "127.0.0.1", "192.168.10.50", "10.0.0.5", "172.16.0.1", "zimaos.local", ""}
 	public := []string{"casadrop.example.com", "node.example.ts.net", "example.com", "8.8.8.8"}
 	for _, h := range local {
 		if !IsLocalHostname(h) {
@@ -294,7 +294,7 @@ func TestPreferredPublicBaseURL(t *testing.T) {
 		t.Errorf("public XFH: got %q", got)
 	}
 	// Local/LAN host → empty (caller falls back to primary network).
-	r2 := httptest.NewRequest("GET", "http://192.168.1.50:8086/", nil)
+	r2 := httptest.NewRequest("GET", "http://192.168.10.50:8086/", nil)
 	if got := PreferredPublicBaseURL(r2); got != "" {
 		t.Errorf("LAN host: got %q, want empty", got)
 	}

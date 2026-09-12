@@ -106,8 +106,8 @@ services:
       
       # ============= NETWORK (Optional) =============
       # Set manually if auto-detection doesn't work
-      # - LOCAL_IP=192.168.1.100
-      # - EASYTIER_IP=10.147.20.50
+      # - LOCAL_IP=192.168.10.100
+      # - EASYTIER_IP=10.147.99.50
       # - TAILSCALE_URL=https://zima.tail1234.ts.net
       # Pangolin/Newt needs no variable — share links automatically
       # follow the X-Forwarded-Host/Host header.
@@ -426,8 +426,8 @@ Otherwise set manually:
 
 ```yaml
 environment:
-  - LOCAL_IP=192.168.1.100
-  - EASYTIER_IP=10.147.20.50
+  - LOCAL_IP=192.168.10.100
+  - EASYTIER_IP=10.147.99.50
 ```
 
 ### Database Errors

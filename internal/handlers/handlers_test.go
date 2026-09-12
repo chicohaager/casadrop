@@ -114,7 +114,7 @@ func TestSharePasswordRateLimiter(t *testing.T) {
 	limiter := newSharePasswordRateLimiter()
 
 	shareID := "test-share"
-	ip := "192.168.1.1"
+	ip := "192.168.10.1"
 
 	// Initially not blocked
 	if limiter.isBlocked(shareID, ip) {
@@ -890,22 +890,22 @@ func TestGetClientIP(t *testing.T) {
 	}{
 		{
 			name:       "RemoteAddr with port",
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 		{
 			// Fail-closed: no TRUSTED_PROXY configured → forwarded headers from
 			// an untrusted peer are ignored, real socket peer is used.
 			name:       "X-Forwarded-For ignored from untrusted peer",
 			headers:    map[string]string{"X-Forwarded-For": "10.0.0.1, 10.0.0.2"},
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 		{
 			name:       "X-Real-IP ignored from untrusted peer",
 			headers:    map[string]string{"X-Real-IP": "172.16.0.1"},
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 	}
 

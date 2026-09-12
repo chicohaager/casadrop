@@ -187,7 +187,7 @@ func TestRateLimiting(t *testing.T) {
 	auth, cleanup := setupTestAdminAuth(t)
 	defer cleanup()
 
-	ip := "192.168.1.100"
+	ip := "192.168.10.100"
 
 	// Should allow initial requests
 	for i := 0; i < 5; i++ {
@@ -206,7 +206,7 @@ func TestAccountLockout(t *testing.T) {
 	auth, cleanup := setupTestAdminAuth(t)
 	defer cleanup()
 
-	ip := "192.168.1.200"
+	ip := "192.168.10.200"
 
 	// Should not be locked out initially
 	if auth.IsLockedOut(ip) {
@@ -498,26 +498,26 @@ func TestGetClientIPViaUtils(t *testing.T) {
 	}{
 		{
 			name:       "RemoteAddr only",
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 		{
 			name:       "X-Forwarded-For ignored from untrusted peer",
 			headers:    map[string]string{"X-Forwarded-For": "10.0.0.1"},
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 		{
 			name:       "X-Forwarded-For chain ignored from untrusted peer",
 			headers:    map[string]string{"X-Forwarded-For": "10.0.0.1, 10.0.0.2, 10.0.0.3"},
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 		{
 			name:       "X-Real-IP ignored from untrusted peer",
 			headers:    map[string]string{"X-Real-IP": "172.16.0.1"},
-			remoteAddr: "192.168.1.1:12345",
-			expected:   "192.168.1.1",
+			remoteAddr: "192.168.10.1:12345",
+			expected:   "192.168.10.1",
 		},
 	}
 

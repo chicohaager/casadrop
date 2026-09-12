@@ -106,8 +106,8 @@ services:
       
       # ============= NETZWERK (Optional) =============
       # Manuell setzen falls Auto-Erkennung nicht funktioniert
-      # - LOCAL_IP=192.168.1.100
-      # - EASYTIER_IP=10.147.20.50
+      # - LOCAL_IP=192.168.10.100
+      # - EASYTIER_IP=10.147.99.50
       # - TAILSCALE_URL=https://zima.tail1234.ts.net
       # Pangolin/Newt braucht keine Variable — Share-Links folgen
       # automatisch dem X-Forwarded-Host/Host-Header.
@@ -427,8 +427,8 @@ Sonst manuell setzen:
 
 ```yaml
 environment:
-  - LOCAL_IP=192.168.1.100
-  - EASYTIER_IP=10.147.20.50
+  - LOCAL_IP=192.168.10.100
+  - EASYTIER_IP=10.147.99.50
 ```
 
 ### Datenbank-Fehler

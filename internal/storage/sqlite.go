@@ -27,6 +27,27 @@ type SQLiteStorage struct {
 
 	stopCleanup chan struct{}
 	stopOnce    sync.Once
+
+	// expiryNotify is invoked once per share that the hourly cleanup actually
+	// deleted. It is the only producer of the "expire" webhook event; without
+	// it the on_expire config flag has no effect at all.
+	expiryMu     sync.RWMutex
+	expiryNotify func(*models.Share)
+}
+
+// SetExpiryNotifier registers a callback invoked for every share removed by the
+// expiry cleanup, after the row has been deleted. Pass nil to unregister.
+// The callback runs on the cleanup goroutine, so it must not block.
+func (s *SQLiteStorage) SetExpiryNotifier(fn func(*models.Share)) {
+	s.expiryMu.Lock()
+	s.expiryNotify = fn
+	s.expiryMu.Unlock()
+}
+
+func (s *SQLiteStorage) expiryNotifier() func(*models.Share) {
+	s.expiryMu.RLock()
+	defer s.expiryMu.RUnlock()
+	return s.expiryNotify
 }
 
 // NewSQLiteStorage creates a new SQLite storage backend
@@ -1331,10 +1352,20 @@ func (s *SQLiteStorage) cleanupExpired() {
 	}
 }
 
+// RunExpiryCleanup runs one expiry sweep immediately instead of waiting for the
+// hourly ticker. Exported so the wiring from cleanup to the expire webhook can
+// be exercised end to end rather than one half at a time.
+func (s *SQLiteStorage) RunExpiryCleanup() {
+	s.cleanupExpiredShares()
+	s.cleanupExpiredReceiveLinks()
+}
+
 func (s *SQLiteStorage) cleanupExpiredShares() {
-	// Get expired shares to delete files
+	// Get expired shares to delete files. original_name and downloads are
+	// selected only to populate the expiry webhook payload.
 	rows, err := s.db.Query(`
-		SELECT id, file_name, is_directory FROM shares WHERE datetime(substr(expires_at, 1, 19)) <= datetime('now')
+		SELECT id, file_name, is_directory, COALESCE(original_name, ''), COALESCE(downloads, 0)
+		FROM shares WHERE datetime(substr(expires_at, 1, 19)) <= datetime('now')
 	`)
 	if err != nil {
 		log.Printf("Error querying expired shares: %v", err)
@@ -1343,10 +1374,12 @@ func (s *SQLiteStorage) cleanupExpiredShares() {
 	defer rows.Close()
 
 	var expiredIDs []string
+	var expired []*models.Share
 	for rows.Next() {
-		var id, fileName string
+		var id, fileName, originalName string
 		var isDirectory bool
-		if err := rows.Scan(&id, &fileName, &isDirectory); err != nil {
+		var downloads int
+		if err := rows.Scan(&id, &fileName, &isDirectory, &originalName, &downloads); err != nil {
 			continue
 		}
 
@@ -1358,6 +1391,12 @@ func (s *SQLiteStorage) cleanupExpiredShares() {
 			os.Remove(filePath)
 		}
 		expiredIDs = append(expiredIDs, id)
+		expired = append(expired, &models.Share{
+			ID:           id,
+			FileName:     fileName,
+			OriginalName: originalName,
+			Downloads:    downloads,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		log.Printf("Error iterating expired shares: %v", err)
@@ -1376,6 +1415,14 @@ func (s *SQLiteStorage) cleanupExpiredShares() {
 			log.Printf("Error deleting expired shares: %v", err)
 		} else {
 			log.Printf("Cleaned up %d expired shares", len(expiredIDs))
+			// Announce only what was really removed: notifying before the
+			// DELETE would fire "expire" for shares still in the database if
+			// the statement failed.
+			if notify := s.expiryNotifier(); notify != nil {
+				for _, share := range expired {
+					notify(share)
+				}
+			}
 		}
 	}
 }

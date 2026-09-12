@@ -20,7 +20,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from a `TRUSTED_PROXY` peer. (Browsers ignore HSTS over plain HTTP, so this
   was an inconsistency rather than an exploitable hole.)
 
+### Documentation
+- **`docs/api.md` corrected against a running instance.** Most documented field
+  names were wrong, and the request-side ones failed *silently*: `expires` /
+  `maxDownloads` are really `expires_in` (integer hours) / `max_downloads`, so a
+  request using the documented names was accepted and the download limit
+  quietly became 0; `files[]` on `/api/upload/multi` is rejected with 400 (the
+  field is `files`). Response shapes: `/api/shares` and `/api/receive-links`
+  return bare arrays, not `{"shares": [...]}`; upload responses are snake_case
+  (`file_name`, `file_size`, `share_url`, …); `/api/stats` has
+  `protected_shares`/`expiring_soon`, never `activeShares`; `/api/network` uses
+  `localIp`/`easytierIp`/`maxFileSizeGB` plus a `networks` map, and has no
+  `zerotierIP` or `pangolinURL`; `/api/tunnel` wraps its GET in `config`;
+  `/api/webhook` has per-event booleans, not an `events` array; Prometheus
+  metrics carry the `zima_` prefix, so none of the five documented
+  `casadrop_*` names exist. Added `tests/verify-api-md.py`, which replays the
+  documented shapes against a live server (24 checks) so this cannot drift
+  unnoticed again.
+
 ### Fixed
+- **The Settings → Webhook card could not switch a webhook on — and erased the
+  signing secret.** The form posted only `{url, secret}`, which decoded into a
+  zero-valued config (`enabled:false`, `on_download:false`), so saving it
+  silently disarmed the webhook it was meant to configure and **Test Webhook**
+  then answered `400 Webhook not configured`. Because the `GET` deliberately
+  withholds the stored secret, the always-blank Secret field was written back on
+  every save, wiping a configured HMAC key and breaking receivers' signature
+  checks with no message anywhere. The card now carries the master switch and a
+  checkbox per event; `POST /api/webhook` merges — an omitted field keeps its
+  stored value, an omitted `secret` keeps the stored secret, and an explicit
+  `""` clears it. `GET` reports `secret_set` instead of a blank `secret`, and
+  arming a webhook with an empty URL is refused (400) rather than accepted and
+  silently dropped.
+- **The `expire` webhook event never fired.** `on_expire` could be set to
+  `true`, and `webhook.NotifyExpire` existed and was unit-tested, but nothing in
+  the tree ever called it — the hourly expiry cleanup had no connection to the
+  webhook service. The cleanup now reports what it deleted
+  (`storage.SetExpiryNotifier`), wired to the webhook service at startup.
+- **The Local Network address in Settings was display-only.** With
+  `primaryNetwork=local`, link generation read the `LOCAL_IP` environment
+  variable and never the configured value, so `/api/network` echoed the address
+  the admin typed while every share link carried the env one — in bridged Docker
+  that is the container's own `172.x` address, unreachable from the LAN. Settings
+  now wins, with `LOCAL_IP` as the fallback (same precedence as every other
+  network). Applies to both `Handler` and `EmailHandler`.
 - **Deleting a folder share could delete the uploads directory.** Folder shares
   store `FileName=""`; `storage.Delete` joined that to the uploads dir itself
   and `os.Remove`d it — which succeeds when the dir happens to be empty (fresh

@@ -48,6 +48,43 @@ func (s *Storage) Close() error {
 	return s.backend.Close()
 }
 
+// expiryNotifierBackend is implemented by backends that run their own expiry
+// cleanup and can report what they removed. Kept out of StorageBackend so a
+// backend without a cleanup loop is not forced to stub it.
+type expiryNotifierBackend interface {
+	SetExpiryNotifier(func(*models.Share))
+}
+
+// expiryRunnerBackend is implemented by backends with an expiry sweep that can
+// be run on demand.
+type expiryRunnerBackend interface {
+	RunExpiryCleanup()
+}
+
+// RunExpiryCleanup runs one expiry sweep now, if the backend supports it.
+// Reports whether a sweep actually ran.
+func (s *Storage) RunExpiryCleanup() bool {
+	b, ok := s.backend.(expiryRunnerBackend)
+	if !ok {
+		return false
+	}
+	b.RunExpiryCleanup()
+	return true
+}
+
+// SetExpiryNotifier registers a callback invoked for every share the backend's
+// expiry cleanup deletes. No-op for backends that do not support it — the
+// return value says whether the callback was actually registered, so a caller
+// can tell "wired" from "silently dropped".
+func (s *Storage) SetExpiryNotifier(fn func(*models.Share)) bool {
+	b, ok := s.backend.(expiryNotifierBackend)
+	if !ok {
+		return false
+	}
+	b.SetExpiryNotifier(fn)
+	return true
+}
+
 // ============= Share Operations =============
 
 // Save saves or updates a share

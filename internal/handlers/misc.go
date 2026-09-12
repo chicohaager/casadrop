@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -20,13 +21,66 @@ import (
 	"casadrop/internal/utils"
 )
 
+// webhookConfigRequest is the wire form of a webhook config write.
+//
+// Every field is a pointer so an omitted key means "leave this alone" rather
+// than "set it to the zero value". That distinction is the whole point: the
+// settings form used to POST only {url, secret}, which decoded into a
+// zero-valued WebhookConfig — enabled:false, on_download:false — so saving the
+// form silently DISABLED the webhook it was meant to configure, and the Test
+// button then answered "Webhook not configured". Omitting `secret` likewise
+// used to blank a stored HMAC key, because the GET that fills the form
+// deliberately withholds it.
+type webhookConfigRequest struct {
+	Enabled        *bool   `json:"enabled"`
+	URL            *string `json:"url"`
+	OnDownload     *bool   `json:"on_download"`
+	OnExpire       *bool   `json:"on_expire"`
+	OnLimitReached *bool   `json:"on_limit_reached"`
+	Secret         *string `json:"secret"`
+}
+
+// webhookConfigResponse is the read form. It never carries the secret, only
+// whether one is stored, so the UI can say "unchanged" instead of rendering an
+// empty field that looks like "no secret set".
+type webhookConfigResponse struct {
+	Enabled        bool   `json:"enabled"`
+	URL            string `json:"url"`
+	OnDownload     bool   `json:"on_download"`
+	OnExpire       bool   `json:"on_expire"`
+	OnLimitReached bool   `json:"on_limit_reached"`
+	SecretSet      bool   `json:"secret_set"`
+}
+
 // WebhookConfig handles GET and POST for webhook configuration
 func (h *Handler) WebhookConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		var config models.WebhookConfig
-		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		var req webhookConfigRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
+		}
+
+		// Start from what is stored and apply only the fields actually sent.
+		config := h.webhook.GetConfig()
+		if req.Enabled != nil {
+			config.Enabled = *req.Enabled
+		}
+		if req.URL != nil {
+			config.URL = strings.TrimSpace(*req.URL)
+		}
+		if req.OnDownload != nil {
+			config.OnDownload = *req.OnDownload
+		}
+		if req.OnExpire != nil {
+			config.OnExpire = *req.OnExpire
+		}
+		if req.OnLimitReached != nil {
+			config.OnLimitReached = *req.OnLimitReached
+		}
+		if req.Secret != nil {
+			// Sent explicitly: honour it, including "" to clear the secret.
+			config.Secret = *req.Secret
 		}
 
 		// Validate URL; default fail-closed against loopback/private/link-local
@@ -43,6 +97,13 @@ func (h *Handler) WebhookConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Refuse an armed webhook with nowhere to deliver: it would report
+		// "saved" and then drop every event without a word.
+		if config.Enabled && config.URL == "" {
+			http.Error(w, "Webhook is enabled but no URL is set", http.StatusBadRequest)
+			return
+		}
+
 		if err := h.webhook.SaveConfig(config); err != nil {
 			http.Error(w, "Failed to save webhook config", http.StatusInternalServerError)
 			return
@@ -53,12 +114,17 @@ func (h *Handler) WebhookConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GET - return current config (without secret)
+	// GET - current config; the secret is reported as present/absent, never sent
 	config := h.webhook.GetConfig()
-	config.Secret = "" // Don't expose secret in API response
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(config)
+	json.NewEncoder(w).Encode(webhookConfigResponse{
+		Enabled:        config.Enabled,
+		URL:            config.URL,
+		OnDownload:     config.OnDownload,
+		OnExpire:       config.OnExpire,
+		OnLimitReached: config.OnLimitReached,
+		SecretSet:      config.Secret != "",
+	})
 }
 
 // TestWebhook sends a test webhook notification
