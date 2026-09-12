@@ -54,3 +54,7 @@ REFACTORING.md
 
 # Junk
 /1
+
+# Python bytecode (tests/verify-api-md.py)
+__pycache__/
+*.pyc
