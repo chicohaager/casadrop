@@ -1,0 +1,1289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CasaDrop — Network &amp; Webhooks</title>
+<meta name="description" content="How CasaDrop builds share links across local network, Cloudflare, Tailscale, EasyTier and a custom domain, and how to configure and verify webhook notifications. Written for CasaDrop 2.4.4.">
+<style>
+/*
+ * Palette and type stacks taken from the ZFW firewall design system
+ * (zfw/raw/usr/share/casaos/www/modules/zfw/styles.css): warm off-white page,
+ * white cards on soft shadow with 18px corners, forest-green accent, pill
+ * badges on tinted backgrounds, Fira Sans / Fira Code.
+ *
+ * No webfont import, for the same reason ZFW gives: the page must render
+ * self-contained, offline, without calling a third party on load.
+ */
+:root{
+  --page-bg:#F5F4EE;
+  --card-bg:#FFFFFF;
+  --card-bg-accent:#234B3E;
+  --card-border:#ECE9DF;
+  --card-radius:18px;
+  --card-radius-sm:12px;
+  --card-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(15,23,42,.05);
+  --text:#0F1F1A;
+  --text-muted:#6B7280;
+  --text-on-accent:#FFFFFF;
+  --accent:#234B3E;
+  --accent-hover:#1A3A2F;
+  --accent-tint:#DCEFE5;
+  --accent-ring:rgba(35,75,62,.18);
+  --success:#166534;
+  --success-tint:#DCFCE7;
+  --warn:#B45309;
+  --warn-tint:#FEF3C7;
+  --danger:#B91C1C;
+  --danger-tint:#FEE2E2;
+  --neutral-tint:#F1F5F9;
+  --font-sans:"Fira Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"Fira Code",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--page-bg)}
+body{
+  font-family:var(--font-sans);color:var(--text);
+  font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased;
+  padding:40px 24px 80px;
+}
+.wrap{max-width:940px;margin:0 auto}
+
+header.doc{margin-bottom:28px}
+.eyebrow{
+  display:inline-block;background:var(--accent-tint);color:var(--accent);
+  border-radius:999px;padding:3px 12px;font-size:12px;font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase;margin-bottom:14px;
+}
+h1{font-size:34px;line-height:1.18;letter-spacing:-.02em;font-weight:700}
+.lede{color:var(--text-muted);font-size:17px;margin-top:10px;max-width:64ch}
+.meta-row{
+  display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;
+  font-size:12.5px;color:var(--text-muted);
+}
+.meta-row span{
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-radius:999px;padding:3px 11px;
+}
+
+.card{
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-radius:var(--card-radius);box-shadow:var(--card-shadow);
+  padding:26px 28px;margin-bottom:20px;
+}
+.card.accent{background:var(--card-bg-accent);border-color:var(--card-bg-accent);color:var(--text-on-accent)}
+.card.accent h2,.card.accent h3,.card.accent a{color:var(--text-on-accent)}
+.card.accent p,.card.accent li{color:rgba(255,255,255,.86)}
+.card.accent code{background:rgba(255,255,255,.13);color:#fff;border-color:rgba(255,255,255,.2)}
+
+section{scroll-margin-top:20px}
+h2{
+  font-size:22px;letter-spacing:-.01em;font-weight:700;margin-bottom:4px;
+  display:flex;align-items:baseline;gap:10px;
+}
+h2 .num{
+  font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-tint);
+  border-radius:999px;padding:2px 9px;letter-spacing:.02em;flex:none;
+}
+h3{font-size:16.5px;font-weight:650;margin:22px 0 8px}
+h3:first-of-type{margin-top:16px}
+h4{font-size:14px;font-weight:650;margin:16px 0 6px;color:var(--text-muted);
+   text-transform:uppercase;letter-spacing:.05em}
+p{margin:9px 0}
+p.sub{color:var(--text-muted);margin-top:2px}
+a{color:var(--accent);text-decoration-color:var(--accent-ring);text-underline-offset:2px}
+a:hover{color:var(--accent-hover)}
+hr{border:0;border-top:1px solid var(--card-border);margin:22px 0}
+
+ul,ol{margin:10px 0 10px 22px}
+li{margin:5px 0}
+ol.steps{list-style:none;margin-left:0;counter-reset:step}
+ol.steps>li{
+  counter-increment:step;position:relative;padding-left:38px;margin:14px 0;
+}
+ol.steps>li::before{
+  content:counter(step);position:absolute;left:0;top:1px;
+  width:25px;height:25px;border-radius:999px;
+  background:var(--accent);color:#fff;
+  font-size:12.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+ul.plain{list-style:none;margin-left:0}
+ul.plain>li{padding-left:20px;position:relative}
+ul.plain>li::before{
+  content:"";position:absolute;left:4px;top:10px;width:6px;height:6px;
+  border-radius:999px;background:var(--accent);
+}
+
+code{
+  font-family:var(--font-mono);font-size:.88em;
+  background:var(--neutral-tint);border:1px solid var(--card-border);
+  border-radius:6px;padding:1px 5px;
+}
+pre{
+  font-family:var(--font-mono);font-size:13px;line-height:1.55;
+  background:#0F1F1A;color:#E6EDE9;border-radius:var(--card-radius-sm);
+  padding:15px 17px;margin:12px 0;overflow-x:auto;
+}
+pre code{background:none;border:0;padding:0;color:inherit;font-size:inherit}
+kbd{
+  font-family:var(--font-sans);font-size:12.5px;font-weight:600;
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-bottom-width:2px;border-radius:6px;padding:1px 7px;
+}
+
+.table-scroll{overflow-x:auto;margin:14px 0;
+  border:1px solid var(--card-border);border-radius:var(--card-radius-sm)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--card-border);
+      vertical-align:top}
+th{background:var(--neutral-tint);font-weight:650;font-size:12.5px;
+   text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+.yes{color:var(--success);font-weight:650}
+.no{color:var(--text-muted)}
+
+.badge{
+  display:inline-block;border-radius:999px;padding:1px 9px;
+  font-size:12px;font-weight:650;line-height:1.5;white-space:nowrap;
+}
+.b-accent{background:var(--accent-tint);color:var(--accent)}
+.b-success{background:var(--success-tint);color:var(--success)}
+.b-warn{background:var(--warn-tint);color:var(--warn)}
+.b-danger{background:var(--danger-tint);color:var(--danger)}
+.b-neutral{background:var(--neutral-tint);color:var(--text-muted)}
+
+.note{
+  border-radius:var(--card-radius-sm);padding:13px 16px;margin:14px 0;
+  font-size:14.2px;border-left:3px solid var(--accent);background:var(--accent-tint);
+}
+.note.warn{border-left-color:var(--warn);background:var(--warn-tint)}
+.note.danger{border-left-color:var(--danger);background:var(--danger-tint)}
+.note.ok{border-left-color:var(--success);background:var(--success-tint)}
+.note strong{font-weight:650}
+.note p:first-child{margin-top:0}
+.note p:last-child{margin-bottom:0}
+
+.toc ol{list-style:none;margin:0;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:2px 22px}
+.toc li{margin:0}
+.toc a{
+  display:flex;gap:10px;align-items:baseline;
+  padding:7px 9px;border-radius:9px;text-decoration:none;color:var(--text);
+  font-size:14.3px;
+}
+.toc a:hover{background:var(--neutral-tint)}
+.toc .n{color:var(--accent);font-weight:700;font-size:12px;min-width:17px}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.mini{
+  border:1px solid var(--card-border);border-radius:var(--card-radius-sm);
+  padding:15px 17px;background:var(--card-bg);
+}
+.mini h4{margin-top:0}
+.screen{
+  font-family:var(--font-mono);font-size:12.5px;line-height:1.7;
+  background:var(--neutral-tint);border:1px solid var(--card-border);
+  border-radius:var(--card-radius-sm);padding:14px 16px;margin:12px 0;
+  color:var(--text);white-space:pre;overflow-x:auto;
+}
+.flow{
+  display:flex;flex-direction:column;gap:0;margin:16px 0;
+  border:1px solid var(--card-border);border-radius:var(--card-radius-sm);
+  overflow:hidden;
+}
+.flow .step{padding:12px 16px;border-bottom:1px solid var(--card-border);background:var(--card-bg)}
+.flow .step:last-child{border-bottom:0}
+.flow .q{font-weight:650;font-size:14px}
+.flow .a{color:var(--text-muted);font-size:13.5px;margin-top:2px}
+footer.doc{
+  margin-top:30px;padding-top:20px;border-top:1px solid var(--card-border);
+  font-size:13px;color:var(--text-muted);
+}
+
+@media (max-width:640px){
+  body{padding:26px 14px 60px;font-size:14.5px}
+  .card{padding:20px 18px}
+  h1{font-size:27px}
+}
+
+@media print{
+  body{background:#fff;padding:0;font-size:11pt}
+  .card{box-shadow:none;border:1px solid #D8D5CB;break-inside:avoid;
+        padding:16px 18px;margin-bottom:14px}
+  .card.accent{background:#fff;color:#000;border-color:#D8D5CB}
+  .card.accent h2,.card.accent h3{color:#000}
+  .card.accent p,.card.accent li{color:#333}
+  .toc{display:none}
+  pre{background:#F4F4F0;color:#111;border:1px solid #D8D5CB}
+  h2{break-after:avoid}
+  table{font-size:10pt}
+  a{text-decoration:none;color:#000}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="eyebrow">Configuration Guide</div>
+  <h1>CasaDrop — Network configuration &amp; webhooks</h1>
+  <p class="lede">Two things decide whether CasaDrop is actually useful: whether the
+  link you hand someone opens on <em>their</em> device, and whether your other systems
+  find out when a file moves. This guide covers both — the Network panel and its five
+  access paths, and webhook notifications end to end, with every claim measured
+  against a running build.</p>
+  <div class="meta-row">
+    <span>Version 2.4.5</span>
+    <span>7 September 2026</span>
+    <span>Audience: administrators of a CasaDrop instance</span>
+    <span>Everything below was measured against a running build</span>
+  </div>
+</header>
+
+<div class="card toc">
+  <h2 style="margin-bottom:12px">Contents</h2>
+  <ol>
+    <li><a href="#s1"><span class="n">1</span> Before you start</a></li>
+    <li><a href="#s2"><span class="n">2</span> How a share link is built</a></li>
+    <li><a href="#s3"><span class="n">3</span> The Network panel</a></li>
+    <li><a href="#s4"><span class="n">4</span> Local network</a></li>
+    <li><a href="#s5"><span class="n">5</span> Cloudflare Tunnel</a></li>
+    <li><a href="#s6"><span class="n">6</span> Tailscale Funnel</a></li>
+    <li><a href="#s7"><span class="n">7</span> EasyTier</a></li>
+    <li><a href="#s8"><span class="n">8</span> Custom domain &amp; reverse proxies</a></li>
+    <li><a href="#s9"><span class="n">9</span> Network environment variables</a></li>
+    <li><a href="#s10"><span class="n">10</span> Network troubleshooting</a></li>
+    <li><a href="#s11"><span class="n">11</span> Webhooks — what they are</a></li>
+    <li><a href="#s12"><span class="n">12</span> Setting up the global webhook</a></li>
+    <li><a href="#s13"><span class="n">13</span> Verifying the signature</a></li>
+    <li><a href="#s14"><span class="n">14</span> Receive-link webhooks</a></li>
+    <li><a href="#s15"><span class="n">15</span> The SSRF guard</a></li>
+    <li><a href="#s16"><span class="n">16</span> Webhook troubleshooting</a></li>
+    <li><a href="#s17"><span class="n">17</span> Quick reference</a></li>
+  </ol>
+</div>
+
+<!-- ===================================================== 1 -->
+<section id="s1" class="card">
+  <h2><span class="num">1</span> Before you start</h2>
+
+  <p>Both areas in this guide live behind <strong>Settings</strong>, and Settings is
+  <strong>admin only</strong>. A user with the <span class="badge b-neutral">User</span>
+  or <span class="badge b-neutral">Viewer</span> role does not see the Settings tab at
+  all, and the underlying endpoints (<code>/api/tunnel</code>, <code>/api/webhook</code>,
+  <code>/api/webhook/test</code>) reject them.</p>
+
+  <p>You will need shell access to the host for some of this. A few settings exist
+  <em>only</em> as environment variables and cannot be changed from the interface —
+  which ones is called out at each point rather than left for you to discover.</p>
+
+  <div class="note warn">
+    <p><strong>If you are still on 2.4.4, four things behave differently from what
+    is described here.</strong> All four were silent — a wrong result with no error
+    message — and all four are fixed in 2.4.5. Upgrade, or read the marked
+    "On 2.4.4" notes as you go:</p>
+    <ul class="plain" style="margin-top:8px">
+      <li>The <strong>Webhook</strong> form in Settings could not arm a webhook at
+          all (§12).</li>
+      <li>Saving that form <strong>erased a stored signing secret</strong> (§12).</li>
+      <li>The <strong>expire</strong> event never fired, in any configuration
+          (§11).</li>
+      <li>The <strong>Local Network</strong> address typed in Settings was displayed
+          back but was <strong>not</strong> the one baked into share links (§4).</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===================================================== 2 -->
+<section id="s2" class="card">
+  <h2><span class="num">2</span> How a share link is built</h2>
+  <p class="sub">Read this section first. Almost every "the link doesn't work" report
+  is explained here.</p>
+
+  <p>When CasaDrop creates a share, it has to decide what hostname to put in front of
+  <code>/s/&lt;id&gt;</code>. It does not simply use your Primary network selection. It
+  asks two questions, in this order:</p>
+
+  <div class="flow">
+    <div class="step">
+      <div class="q">1. Was this request made through a public-looking hostname?</div>
+      <div class="a">If the address in the admin's browser bar is anything other than
+      <code>localhost</code>, a <code>.local</code> name, a loopback address or a
+      private-range IP, <strong>that hostname wins</strong> and the Primary network
+      selection is ignored entirely.</div>
+    </div>
+    <div class="step">
+      <div class="q">2. Otherwise: what is the Primary network?</div>
+      <div class="a">The radio button you selected in Settings decides, using that
+      network's URL.</div>
+    </div>
+    <div class="step">
+      <div class="q">3. Otherwise: the address the request came in on.</div>
+      <div class="a">Fallback when the selected network has no URL configured.</div>
+    </div>
+  </div>
+
+  <p>Measured against a running instance with <em>Cloudflare</em> selected as the
+  primary network:</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Admin browsing via</th><th>Link that gets generated</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><code>127.0.0.1:8080</code></td><td><code>https://demo.trycloudflare.com/s/…</code></td><td>loopback → primary network decides</td></tr>
+      <tr><td><code>192.168.10.20:8080</code></td><td><code>https://demo.trycloudflare.com/s/…</code></td><td>private IP → primary network decides</td></tr>
+      <tr><td><code>nas.local:8080</code></td><td><code>https://demo.trycloudflare.com/s/…</code></td><td><code>.local</code> → primary network decides</td></tr>
+      <tr><td><code>files.example.com</code></td><td><code>http://files.example.com/s/…</code></td><td>public name → <strong>overrides</strong> the primary network</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Rule 1 is deliberate and usually what you want: if you reached CasaDrop through
+  your reverse proxy, the links you create should also go through your reverse proxy.
+  It only surprises you when you did not realise the name you are using counts as
+  public.</p>
+
+  <div class="note">
+    <p><strong>A <code>.lan</code> name counts as public; a <code>.local</code> name
+    does not.</strong> Only <code>localhost</code>, <code>*.local</code> and literal
+    private/loopback/link-local IP addresses are treated as internal. Any other DNS
+    name — <code>nas.lan</code>, <code>casadrop.home.arpa</code>, an internal Active
+    Directory name — is treated as a public hostname and takes over link generation.</p>
+  </div>
+
+  <div class="note warn">
+    <p><strong>Note the <code>http://</code> in the last row.</strong> Even when the
+    proxy in front of CasaDrop terminates TLS, the generated link stays
+    <code>http://</code> until you set <code>TRUSTED_PROXY</code>. See §8.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 3 -->
+<section id="s3" class="card">
+  <h2><span class="num">3</span> The Network panel</h2>
+
+  <p><strong>Settings → Network Configuration.</strong> Five cards, one per access
+  path. Each card has three controls:</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Control</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Checkbox</strong> (left of the name)</td>
+          <td>Enables the network. Unchecking it greys the card out, stops the value
+              being offered anywhere, and skips auto-detection for it.</td></tr>
+      <tr><td><strong>Primary</strong> (radio)</td>
+          <td>Exactly one network is primary. It supplies the hostname for every new
+              share link, receive link and QR code — subject to the override in §2.
+              The radio is disabled while the card is unchecked.</td></tr>
+      <tr><td><strong>Text field</strong></td>
+          <td>The URL or IP. Pre-filled with the auto-detected value where one exists;
+              anything you type overrides detection permanently.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Below the field, a card shows <em>Detected: …</em> when CasaDrop found a value on
+  its own, plus a <strong>Use detected</strong> button when your typed value differs
+  from it. Under the cards sits <strong>Max file size</strong> (1–100 GB; values
+  outside that are clamped, and 0 falls back to the default of 10 GB).</p>
+
+  <p>Nothing takes effect until you press <strong>Save</strong>. One save writes all
+  five cards plus the size limit at once.</p>
+
+  <div class="note">
+    <p><strong>Where it is stored.</strong> <code>&lt;DATA_DIR&gt;/tunnel_config.json</code>.
+    The file is cached in memory for 30 seconds, so a value edited on disk by hand can
+    take up to half a minute to appear.</p>
+  </div>
+
+  <h3>Validation on save</h3>
+  <p>The save is rejected as a whole (HTTP 400) if any field fails:</p>
+  <ul class="plain">
+    <li><strong>Cloudflare</strong> and <strong>Tailscale</strong> must be
+        <code>https://</code>. Plain <code>http://</code> is refused.</li>
+    <li><strong>Custom Domain</strong> accepts <code>http://</code> or
+        <code>https://</code>, so a LAN reverse proxy without TLS still works.</li>
+    <li><strong>EasyTier</strong> must be a bare IP address — no scheme, no port.</li>
+    <li>Every URL needs a host part; a bare path is refused.</li>
+  </ul>
+</section>
+
+<!-- ===================================================== 4 -->
+<section id="s4" class="card">
+  <h2><span class="num">4</span> Local network</h2>
+  <p class="sub">Sharing inside your own LAN. The default primary network.</p>
+
+  <p>The field expects a bare IPv4 address — no scheme, no port. CasaDrop appends
+  <code>http://</code> and the external port itself, producing
+  <code>http://192.168.10.20:8080/s/&lt;id&gt;</code>.</p>
+
+  <h3>Auto-detection</h3>
+  <p>Two independent detectors run, and it matters which one wins:</p>
+  <ul class="plain">
+    <li>The container entrypoint reads <code>ip -4 route get 1.1.1.1</code> and exports
+        the result as <code>LOCAL_IP</code>. It falls back to <code>hostname -i</code>.</li>
+    <li>The application separately walks the network interfaces, skipping loopback,
+        <code>tailscale*</code>, <code>tun*</code>, <code>easytier*</code> and anything
+        in <code>172.*</code>. This is the value shown as <em>Detected</em> in the
+        panel.</li>
+  </ul>
+
+  <p>The address you type here wins over auto-detection and over the
+  <code>LOCAL_IP</code> environment variable, which remains the fallback when the
+  field is empty. That ordering matters in bridged Docker, where the entrypoint's
+  detection returns the <em>container's</em> own <code>172.x</code> address — a value
+  nobody on your LAN can reach. Typing the host's real address in Settings is enough
+  to correct it.</p>
+
+  <div class="note warn">
+    <p><strong>On 2.4.4 this field was display-only.</strong> Link generation read the
+    <code>LOCAL_IP</code> environment variable and never the typed value, so the panel
+    reported one address while every link carried another:</p>
+    <div class="screen">Settings panel shows   primaryUrl = http://192.168.10.20:8080
+Actual link handed out  http://172.18.0.5:8080/s/44e506f2</div>
+    <p>On 2.4.4, set <code>LOCAL_IP</code> in the environment as shown below; from
+    2.4.5 either place works, with Settings taking precedence.</p>
+  </div>
+
+  <h4>Setting it in the environment instead</h4>
+  <p>Still useful when you would rather pin it outside the interface:</p>
+<pre><code># docker-compose.yaml, casadrop service
+environment:
+  - LOCAL_IP=192.168.10.20        # your host's real LAN address
+  - EXTERNAL_PORT=8080            # the published port, if not 8080</code></pre>
+  <p>Then <code>docker compose up -d</code>. A <code>docker compose restart</code> is
+  not enough — it does not re-read the environment block.</p>
+
+  <div class="note">
+    <p><strong><code>EXTERNAL_PORT</code>, not <code>PORT</code>.</strong>
+    <code>PORT</code> is the port inside the container; <code>EXTERNAL_PORT</code> is
+    the one that goes into links. If you publish CasaDrop on host port 8085, set
+    <code>EXTERNAL_PORT=8085</code> or every local link will point at the wrong
+    port.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 5 -->
+<section id="s5" class="card">
+  <h2><span class="num">5</span> Cloudflare Tunnel</h2>
+  <p class="sub">Public HTTPS from behind NAT, no port forwarding, no fixed IP.</p>
+
+  <p>There are two modes and they behave very differently.</p>
+
+  <div class="grid2">
+    <div class="mini">
+      <h4>Quick tunnel</h4>
+      <p>No Cloudflare account. <code>cloudflared</code> mints a random
+      <code>https://&lt;words&gt;.trycloudflare.com</code> address. Free, instant, and
+      <strong>gone when the container restarts</strong>. For handing someone a file
+      this afternoon.</p>
+      <pre style="font-size:12px"><code>docker compose --profile tunnel up -d</code></pre>
+    </div>
+    <div class="mini">
+      <h4>Named (token) tunnel</h4>
+      <p>Needs a Cloudflare account and a tunnel token. The hostname is fixed in the
+      Cloudflare dashboard and survives restarts. For a link that has to keep
+      working.</p>
+      <pre style="font-size:12px"><code>CLOUDFLARE_TUNNEL_TOKEN=xxx \
+  docker compose --profile tunnel up -d</code></pre>
+    </div>
+  </div>
+
+  <h3>How the URL reaches CasaDrop</h3>
+  <p>The tunnel runs in its own container. It shares the <code>/data</code> volume with
+  the app and writes the address it obtained to
+  <code>&lt;DATA_DIR&gt;/tunnel_url.txt</code>; CasaDrop reads that file. For a token
+  tunnel the wrapper writes the literal word <code>token</code> instead, which CasaDrop
+  recognises and ignores — you supply the real hostname yourself, via the
+  <strong>Cloudflare Tunnel</strong> field or <code>TUNNEL_URL</code>.</p>
+
+  <p>Precedence when CasaDrop resolves the Cloudflare address:</p>
+  <ol class="steps">
+    <li>What you typed in the Settings field.</li>
+    <li><code>tunnel_url.txt</code>, written by the tunnel container.</li>
+    <li>The <code>TUNNEL_URL</code> environment variable.</li>
+  </ol>
+
+  <h3>Selecting Cloudflare mints a fresh URL</h3>
+  <p>This is intentional and worth understanding before you trip over it. When you
+  switch the primary network <em>to</em> Cloudflare — only on that transition — CasaDrop
+  asks the tunnel container to throw away the current quick-tunnel address and mint a
+  new one. The design goal is a throwaway link per errand.</p>
+
+  <div class="note danger">
+    <p><strong>Every rotation kills the previously shared link.</strong> If you handed
+    out a <code>trycloudflare.com</code> address an hour ago and then re-select
+    Cloudflare, that address stops working. For links that must survive, use a named
+    token tunnel, Tailscale, or your own domain.</p>
+  </div>
+
+  <p>Measured behaviour of the trigger:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Action</th><th>Rotation</th></tr></thead>
+    <tbody>
+      <tr><td>Primary changes from anything → Cloudflare</td><td class="yes">Yes — response carries <code>cloudflareRotating: true</code></td></tr>
+      <tr><td>Save again while Cloudflare is already primary</td><td class="no">No — an unrelated settings save never kills a live link</td></tr>
+      <tr><td>Token tunnel active (<code>tunnel_url.txt</code> = <code>token</code>)</td><td class="no">No — a fixed hostname has nothing to rotate</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>While rotating, the interface shows <em>"Generating a fresh Cloudflare share
+  URL…"</em> and polls for up to about 60 seconds. If no tunnel container is running you
+  get <em>"No new Cloudflare URL appeared — is the tunnel container running?"</em>, which
+  is exactly what it sounds like.</p>
+</section>
+
+<!-- ===================================================== 6 -->
+<section id="s6" class="card">
+  <h2><span class="num">6</span> Tailscale Funnel</h2>
+  <p class="sub">A stable public HTTPS name, no Cloudflare account, no rotation.</p>
+
+  <p>The field takes the full HTTPS URL of your node, e.g.
+  <code>https://casadrop.tailnet-example.ts.net</code>. It must be
+  <code>https://</code>.</p>
+
+  <h3>Auto-detection</h3>
+  <p>Three sources, first hit wins:</p>
+  <ol class="steps">
+    <li><code>&lt;DATA_DIR&gt;/tailscale_url.txt</code>, if present.</li>
+    <li><code>tailscale status --json</code>, if the <code>tailscale</code> binary is on
+        <code>PATH</code> inside the container. CasaDrop reads <code>Self.DNSName</code>,
+        strips the trailing dot and prefixes <code>https://</code>. It only accepts the
+        value when the node reports itself online.</li>
+    <li>The <code>TAILSCALE_URL</code> environment variable.</li>
+  </ol>
+
+  <h3>Two ways to run it</h3>
+  <p><strong>Sidecar container.</strong> The bundled profile shares the app's network
+  namespace, so <code>localhost:8080</code> inside the sidecar is CasaDrop:</p>
+<pre><code>TAILSCALE_AUTHKEY=tskey-xxx TAILSCALE_HOSTNAME=casadrop \
+  docker compose --profile tailscale up -d
+
+# then enable the funnel once
+docker exec casadrop-tailscale tailscale funnel --bg 8080</code></pre>
+
+  <p><strong>An existing Tailscale container.</strong> If your host already runs one,
+  point its funnel at CasaDrop's published port and set the URL by hand:</p>
+<pre><code>docker exec &lt;your-tailscale-container&gt; \
+  tailscale funnel --bg --https=443 http://localhost:8085
+
+# then in CasaDrop:
+TAILSCALE_URL=https://&lt;host&gt;.&lt;tailnet&gt;.ts.net</code></pre>
+
+  <div class="note warn">
+    <p><strong>Funnel must be enabled for the node in the Tailscale admin console
+    first.</strong> The <code>tailscale funnel</code> command fails without it, and
+    CasaDrop's detection will simply report nothing rather than explaining why.</p>
+  </div>
+
+  <div class="note">
+    <p><strong>Funnel is public; the tailnet address is not.</strong> Funnel exposes
+    CasaDrop to the open internet. If you only want your own devices to reach it, skip
+    Funnel and use the node's plain tailnet name or its <code>100.x</code> address in
+    the <strong>Custom Domain / URL</strong> field instead.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 7 -->
+<section id="s7" class="card">
+  <h2><span class="num">7</span> EasyTier</h2>
+  <p class="sub">Mesh VPN. Replaced ZeroTier as the mesh option on ZimaOS.</p>
+
+  <p>The field takes a bare IPv4 address of your node on the mesh — no scheme, no port.
+  CasaDrop builds <code>http://&lt;ip&gt;:&lt;EXTERNAL_PORT&gt;/s/&lt;id&gt;</code>,
+  the same shape as the local network. A value that is not a parseable IP address is
+  rejected on save.</p>
+
+  <h3>Auto-detection</h3>
+  <p>Four attempts, in order:</p>
+  <ol class="steps">
+    <li><code>easytier-cli peer list</code> — first line mentioning <em>local</em> or
+        <em>self</em>, first parseable IP on it.</li>
+    <li><code>easytier-cli connector list</code> — first non-loopback IPv4 found.</li>
+    <li>Interface scan for names starting <code>tun</code> or <code>easytier</code>.</li>
+    <li>The <code>EASYTIER_IP</code> environment variable.</li>
+  </ol>
+
+  <div class="note warn">
+    <p><strong>None of the first three work in a default bridged container.</strong>
+    The <code>easytier-cli</code> binary is not in the image and the mesh interface
+    belongs to the host, not the container. Either give the container the host network
+    (<code>network_mode: host</code>), bind-mount <code>easytier-cli</code> read-only,
+    or simply set <code>EASYTIER_IP</code> and skip detection entirely. The last option
+    is the least trouble.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 8 -->
+<section id="s8" class="card">
+  <h2><span class="num">8</span> Custom domain &amp; reverse proxies</h2>
+  <p class="sub">Your own hostname: nginx, Caddy, Traefik, Pangolin/Newt, WireGuard.</p>
+
+  <p>This card is a free-text field and is <strong>never auto-detected</strong>. Put in
+  the full public base URL, with scheme, no trailing path:
+  <code>https://files.example.com</code>. Both <code>http://</code> and
+  <code>https://</code> are accepted, so an internal proxy without TLS works too.</p>
+
+  <h3>Set <code>TRUSTED_PROXY</code> — this is not optional</h3>
+  <p>CasaDrop ignores <code>X-Forwarded-For</code>, <code>X-Forwarded-Host</code> and
+  <code>X-Forwarded-Proto</code> unless the peer that sent them is listed in
+  <code>TRUSTED_PROXY</code>. That default is deliberate: without it, any client could
+  forge those headers and control the hostname baked into your share links, or evade
+  the per-IP rate limits and account lockout.</p>
+
+  <p>The cost of leaving it unset behind a proxy, measured:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Configuration</th><th>Generated link</th></tr></thead>
+    <tbody>
+      <tr><td><code>TRUSTED_PROXY</code> unset, proxy sends <code>X-Forwarded-Proto: https</code></td>
+          <td><code>http://files.example.com/s/…</code> <span class="badge b-warn">wrong scheme</span></td></tr>
+      <tr><td><code>TRUSTED_PROXY=127.0.0.1/32</code>, same request</td>
+          <td><code>https://files.example.com/s/…</code> <span class="badge b-success">correct</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Set it to the address your proxy connects <em>from</em>, as seen by CasaDrop —
+  comma-separated CIDRs or plain IPs:</p>
+<pre><code>environment:
+  - TRUSTED_PROXY=172.18.0.0/16      # the Docker bridge the proxy sits on
+  # or
+  - TRUSTED_PROXY=192.168.10.5,10.10.0.0/24</code></pre>
+
+  <div class="note danger">
+    <p><strong>Do not set <code>TRUSTED_PROXY</code> to <code>0.0.0.0/0</code>.</strong>
+    That trusts every client to declare its own IP address and hostname, which restores
+    exactly the spoofing the setting exists to prevent — including bypassing brute-force
+    lockout by rotating a header.</p>
+  </div>
+
+  <h3>Pangolin / Newt</h3>
+  <p>Pangolin needs no dedicated setting. Links follow the incoming
+  <code>Host</code>/<code>X-Forwarded-Host</code> header (§2), so as long as you reach
+  CasaDrop through the Pangolin hostname, the links match. Set
+  <code>TRUSTED_PROXY</code> so the scheme comes out as <code>https</code>.</p>
+
+  <h3>Minimum proxy configuration</h3>
+<pre><code># nginx
+proxy_set_header Host              $host;
+proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+client_max_body_size 0;          # CasaDrop enforces its own limit
+proxy_request_buffering off;     # stream large uploads instead of spooling</code></pre>
+  <p>Ready-made compose files for Caddy, Traefik and Authentik ship in
+  <code>docs/</code>.</p>
+</section>
+
+<!-- ===================================================== 9 -->
+<section id="s9" class="card">
+  <h2><span class="num">9</span> Network environment variables</h2>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>PORT</code></td><td><code>8080</code></td><td>Port inside the container.</td></tr>
+      <tr><td><code>EXTERNAL_PORT</code></td><td><code>8080</code></td><td>Port written into links. Set this when you publish on a different host port.</td></tr>
+      <tr><td><code>LOCAL_IP</code></td><td>auto</td><td><strong>The value used for local-network links.</strong> The Settings field does not replace it (§4).</td></tr>
+      <tr><td><code>TUNNEL_URL</code></td><td>—</td><td>Cloudflare address. Lowest precedence of the three sources.</td></tr>
+      <tr><td><code>TAILSCALE_URL</code></td><td>auto</td><td>Funnel URL. Used when neither the state file nor the CLI yields one.</td></tr>
+      <tr><td><code>EASYTIER_IP</code></td><td>auto</td><td>Mesh IP. Usually the only detection path that works in a container.</td></tr>
+      <tr><td><code>CUSTOM_URL</code></td><td>—</td><td>Pre-fills the Custom Domain card. Never auto-detected.</td></tr>
+      <tr><td><code>TRUSTED_PROXY</code></td><td>—</td><td>CIDRs/IPs of your reverse proxy. Unset = forwarded headers ignored (fail-closed). See §8.</td></tr>
+      <tr><td><code>DATA_DIR</code></td><td><code>./data</code></td><td>Where <code>tunnel_config.json</code>, <code>tunnel_url.txt</code> and <code>webhook_config.json</code> live.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <p><strong>The Settings panel and the environment are not two views of the same
+    thing.</strong> For Cloudflare, Tailscale, EasyTier and Custom, the Settings value
+    wins and the variable is a fallback. For <strong>Local</strong>, the variable wins
+    outright. That inconsistency is the reason §4 has a red box.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 10 -->
+<section id="s10" class="card">
+  <h2><span class="num">10</span> Network troubleshooting</h2>
+
+  <h3>The link I sent points at an address nobody can reach</h3>
+  <p>Read §2 first — check what hostname <em>you</em> used when you created the share.
+  Then check what CasaDrop thinks it should be producing:</p>
+<pre><code>curl -s -b cookies.txt http://&lt;host&gt;:&lt;port&gt;/api/network | python3 -m json.tool</code></pre>
+  <p>Compare <code>primaryUrl</code> with a link you actually generated. If they differ
+  and the primary network is <em>local</em>, you have hit the <code>LOCAL_IP</code>
+  problem in §4 — the panel is showing you the value you typed, not the value in use.</p>
+
+  <h3>Detected shows the container's 172.x address</h3>
+  <p>Expected in bridged Docker. Set <code>LOCAL_IP</code> explicitly and recreate the
+  container.</p>
+
+  <h3>Links are http:// but my site is https://</h3>
+  <p><code>TRUSTED_PROXY</code> is unset. §8.</p>
+
+  <h3>Tailscale shows Not detected</h3>
+  <p>The <code>tailscale</code> binary is not reachable from inside the app container,
+  or the node reports itself offline. Both are normal for the sidecar setup — set
+  <code>TAILSCALE_URL</code> by hand rather than fighting detection.</p>
+
+  <h3>A saved URL is refused</h3>
+  <p>Cloudflare and Tailscale require <code>https://</code>; EasyTier requires a bare
+  IP with no scheme and no port. The error names the field.</p>
+
+  <h3>My Cloudflare link died on its own</h3>
+  <p>Either the container restarted (quick-tunnel addresses do not survive), or someone
+  re-selected Cloudflare as the primary network, which rotates on purpose. §5.</p>
+
+  <h3>A change in Settings did not take effect</h3>
+  <p>The config is cached for 30 seconds. If it is still wrong after a minute, the value
+  is being overridden by an environment variable — check the container's environment.</p>
+</section>
+
+<!-- ===================================================== 11 -->
+<section id="s11" class="card">
+  <h2><span class="num">11</span> Webhooks — what they are</h2>
+
+  <p>A webhook is an HTTP <code>POST</code> that CasaDrop sends to a URL of your choosing
+  when something happens. The body is JSON. Use it to drive a chat notification, an
+  automation flow, a log, or anything that speaks HTTP.</p>
+
+  <p>CasaDrop has <strong>two independent webhook systems</strong>, and they do not share
+  configuration, headers or payload shape:</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th></th><th>Global webhook</th><th>Receive-link webhook</th></tr></thead>
+    <tbody>
+      <tr><td>Configured in</td><td>Settings → Webhook (one per instance)</td><td>Per receive link, at creation time</td></tr>
+      <tr><td>Fires on</td><td>Downloads, download-limit reached</td><td>Someone uploads a file to that link</td></tr>
+      <tr><td>Signed</td><td class="yes">Yes — <code>X-Webhook-Signature</code></td><td class="no">No signature at all</td></tr>
+      <tr><td>Event header</td><td><code>X-Webhook-Event</code></td><td class="no">none</td></tr>
+      <tr><td>User-Agent</td><td><code>Zima-Share/1.1</code></td><td><code>Zima-Share/1.0</code></td></tr>
+      <tr><td>Stored in</td><td><code>webhook_config.json</code></td><td>The receive link's database row</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Events</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Event</th><th>Fires when</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><code>download</code></td><td>Anyone downloads or streams a shared file</td><td><span class="badge b-success">works</span></td></tr>
+      <tr><td><code>limit_reached</code></td><td>The download reaching a share's <code>max_downloads</code></td><td><span class="badge b-success">works</span></td></tr>
+      <tr><td><code>file_received</code></td><td>A file is uploaded to a receive link</td><td><span class="badge b-success">works</span></td></tr>
+      <tr><td><code>expire</code></td><td>The hourly cleanup removes an expired share</td><td><span class="badge b-success">works</span> <span class="badge b-neutral">2.4.5+</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <p><strong>The <code>expire</code> event is emitted by the cleanup sweep, which
+    runs hourly.</strong> A share therefore reports its expiry up to an hour after the
+    timestamp passed — the event marks the moment the file was actually deleted, not
+    the moment the link stopped working. The payload carries the share's final
+    download count.</p>
+  </div>
+
+  <div class="note warn">
+    <p><strong>On 2.4.4 the <code>expire</code> event never fired.</strong> The flag
+    could be set to <code>true</code> and the sending function existed, but nothing
+    called it — the cleanup had no connection to the webhook service. An automation
+    waiting for <code>expire</code> on 2.4.4 waits forever.</p>
+  </div>
+
+  <p>When a download exhausts a share's limit, <strong>both</strong> <code>download</code>
+  and <code>limit_reached</code> are sent, as two separate deliveries. They are dispatched
+  concurrently, so the order they arrive in is not guaranteed — do not write a receiver
+  that assumes one precedes the other.</p>
+
+  <h3>Delivery behaviour</h3>
+  <ul class="plain">
+    <li><strong>Fire and forget.</strong> Delivery happens in the background. The
+        download the user requested succeeds regardless of whether your endpoint
+        answers.</li>
+    <li><strong>No retries.</strong> A failed delivery is logged and dropped. If your
+        receiver is down, the event is gone.</li>
+    <li><strong>10-second timeout</strong> per delivery.</li>
+    <li><strong>Redirects are refused.</strong> A <code>302</code> is not followed —
+        point the webhook at its final destination.</li>
+    <li><strong>32 concurrent deliveries maximum.</strong> Beyond that, events are
+        dropped with a log line rather than queued.</li>
+    <li>On shutdown, in-flight deliveries get up to 5 seconds to finish.</li>
+  </ul>
+</section>
+
+<!-- ===================================================== 12 -->
+<section id="s12" class="card">
+  <h2><span class="num">12</span> Setting up the global webhook</h2>
+
+  <h3>Route A — Settings → Webhook</h3>
+  <p>The card carries everything the feature needs:</p>
+  <ol class="steps">
+    <li><strong>Webhook enabled</strong> — the master switch. Nothing is sent while
+        it is off, whatever else is filled in.</li>
+    <li><strong>Webhook URL</strong> — the target. See §15 for which hosts are
+        permitted.</li>
+    <li><strong>Notify on</strong> — one checkbox per event: file downloaded,
+        download limit reached, share expired.</li>
+    <li><strong>Webhook Secret</strong> — optional HMAC key. The field is always
+        blank when the page loads, because the API never sends a stored secret
+        back; the placeholder tells you which case you are in.</li>
+    <li><strong>Save</strong>, then <strong>Test Webhook</strong>.</li>
+  </ol>
+
+  <div class="note">
+    <p><strong>How the secret field behaves.</strong> Leave it blank and the stored
+    secret is kept — blank means "unchanged", never "erase". Type a value to replace
+    it. To remove one, tick <strong>Remove the stored secret</strong>, which only
+    appears when a secret is actually stored. The placeholder reads
+    <em>"unchanged — leave blank to keep"</em> or <em>"no secret set"</em> accordingly,
+    so you can always tell whether one exists without being shown its value.</p>
+  </div>
+
+  <div class="note warn">
+    <p><strong>On 2.4.4, do not use this card.</strong> It had only URL and Secret
+    fields and no enable or event checkboxes, so saving it stored
+    <code>enabled: false</code> / <code>on_download: false</code> and silently
+    disarmed the webhook — <strong>Test Webhook</strong> then answered
+    <code>HTTP 400 — Webhook not configured</code>:</p>
+    <div class="screen">POST /api/webhook  {"url":"…","secret":"…"}         → 200 {"status":"ok"}
+GET  /api/webhook  → enabled:false  on_download:false
+POST /api/webhook/test → 400 "Webhook not configured"</div>
+    <p>Worse, the blank Secret field was written back on every save, <strong>silently
+    erasing a stored signing secret</strong> (measured: <code>"s3cr3t"</code> →
+    <code>null</code>) and breaking the receiver's signature checks with no message
+    anywhere. On 2.4.4 use Route B or C below and leave the card alone.</p>
+  </div>
+
+  <h3>Route B — the API</h3>
+  <p>The same endpoint the form uses. Any field you omit keeps its stored value, so
+  a one-line call can flip a single setting without disturbing the rest.</p>
+<pre><code># 1. log in and keep the session cookie
+curl -s -c cookies.txt -X POST https://files.example.com/login \
+     -H 'Content-Type: application/json' \
+     -d '{"password":"&lt;your admin password&gt;"}'
+
+# 2. write the full configuration
+curl -s -b cookies.txt -X POST https://files.example.com/api/webhook \
+     -H 'Content-Type: application/json' \
+     -d '{
+           "enabled": true,
+           "url": "https://hooks.example.com/casadrop",
+           "on_download": true,
+           "on_limit_reached": true,
+           "secret": "a-long-random-string"
+         }'
+
+# 3. prove it
+curl -s -b cookies.txt -X POST https://files.example.com/api/webhook/test</code></pre>
+
+  <p>Field by field:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>enabled</code></td><td>Master switch. Without <code>true</code> nothing is ever sent. Enabling with an empty URL is refused (400).</td></tr>
+      <tr><td><code>url</code></td><td>Target. <code>http</code> or <code>https</code>; see §15 for which hosts are permitted.</td></tr>
+      <tr><td><code>on_download</code></td><td>Send the <code>download</code> event.</td></tr>
+      <tr><td><code>on_limit_reached</code></td><td>Send the <code>limit_reached</code> event.</td></tr>
+      <tr><td><code>on_expire</code></td><td>Send the <code>expire</code> event when the cleanup deletes an expired share.</td></tr>
+      <tr><td><code>secret</code></td><td>Optional HMAC key. Present ⇒ every delivery is signed. <strong>Omit the key to keep the stored secret</strong>; send <code>""</code> to remove it.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note warn">
+    <p><strong>A <code>200</code> from the test endpoint does not mean delivery
+    succeeded.</strong> It means the notification was handed to the background sender.
+    A blocked or unreachable target still returns <code>{"status":"test notification
+    sent"}</code>. Confirm at the receiving end, or read the container log — §16.</p>
+  </div>
+
+  <h3>Route C — environment variables</h3>
+  <p>Simplest for a fixed deployment. Applied at startup, and they override whatever is
+  in <code>webhook_config.json</code>:</p>
+<pre><code>environment:
+  - WEBHOOK_URL=https://hooks.example.com/casadrop
+  - WEBHOOK_SECRET=a-long-random-string</code></pre>
+  <p>This sets <code>enabled: true</code> and <code>on_download: true</code>. It does
+  <strong>not</strong> enable <code>on_limit_reached</code> or <code>on_expire</code> —
+  for those use Route A or B. The variables are re-applied on every start, so a config
+  written through the interface or the API is overridden again after a restart.</p>
+
+  <div class="note warn">
+    <p><strong><code>WEBHOOK_URL</code> is always checked against the SSRF guard, and
+    <code>STRICT_WEBHOOK_URLS=false</code> does not exempt it.</strong> Measured: with
+    both opt-outs set, <code>WEBHOOK_URL=http://127.0.0.1:8791/env</code> is still
+    discarded, with one line in the log and nothing in the interface:</p>
+    <div class="screen">Webhook: ignoring WEBHOOK_URL from env: webhook URL
+must not target a private or loopback address</div>
+    <p>A literal private or loopback IP in <code>WEBHOOK_URL</code> can never work. Use a
+    hostname instead — see §15.</p>
+  </div>
+
+  <h3>Reading the configuration back</h3>
+  <p><code>GET /api/webhook</code> reports every setting and whether a secret is
+  stored, but never the secret itself:</p>
+<pre><code>{
+  "enabled": true,
+  "url": "https://hooks.example.com/casadrop",
+  "on_download": true,
+  "on_expire": true,
+  "on_limit_reached": true,
+  "secret_set": true
+}</code></pre>
+
+  <h3>The payload</h3>
+  <p>Recorded from a real download:</p>
+<pre><code>POST /hook HTTP/1.1
+Content-Type: application/json
+User-Agent: Zima-Share/1.1
+X-Webhook-Event: download
+X-Webhook-Signature: sha256=244d2e38a34b5c7d…
+
+{
+  "event": "download",
+  "share_id": "43dce6dc",
+  "file_name": "demo.txt",
+  "downloads": 1,
+  "timestamp": "2026-09-07T14:51:21.418576866+02:00",
+  "client_ip": "203.0.113.44",
+  "user_agent": "Mozilla/5.0 …"
+}</code></pre>
+  <p><code>client_ip</code> and <code>user_agent</code> are present on
+  <code>download</code> only; <code>limit_reached</code> omits both. <code>downloads</code>
+  is the counter <em>after</em> the download that triggered the event.</p>
+
+  <div class="note">
+    <p><strong><code>client_ip</code> is only meaningful if <code>TRUSTED_PROXY</code> is
+    set.</strong> Behind a reverse proxy without it, every event reports your proxy's
+    address rather than the visitor's. Same setting as §8, second reason to get it
+    right.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 13 -->
+<section id="s13" class="card">
+  <h2><span class="num">13</span> Verifying the signature</h2>
+
+  <p>With a <code>secret</code> configured, every global-webhook delivery carries:</p>
+<pre><code>X-Webhook-Signature: sha256=&lt;hex&gt;</code></pre>
+
+  <p>The value is <code>HMAC-SHA256</code> over the <strong>raw request body</strong>,
+  hex-encoded, with the literal prefix <code>sha256=</code>. Independently reproduced
+  from a captured delivery:</p>
+<pre><code>$ echo -n "$BODY" | openssl dgst -sha256 -hmac "s3cr3t" -r
+c6e5d425512602f1f942dbdef9ff8afac445f729605e906db2b943de4f03bf20
+
+# header CasaDrop sent
+X-Webhook-Signature: sha256=c6e5d425512602f1f942dbdef9ff8afac445f729605e906db2b943de4f03bf20</code></pre>
+
+  <div class="note warn">
+    <p><strong>Hash the raw bytes, not a re-serialised object.</strong> Parsing the JSON
+    and dumping it again changes the whitespace and key order, and the signature will
+    never match. Capture the body before your framework touches it.</p>
+  </div>
+
+  <h4>Python</h4>
+<pre><code>import hmac, hashlib
+
+def valid(raw_body: bytes, header: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(
+        secret.encode(), raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, header or "")</code></pre>
+
+  <h4>Node.js</h4>
+<pre><code>const crypto = require('crypto');
+
+function valid(rawBody, header, secret) {
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', secret).update(rawBody).digest('hex');
+  const a = Buffer.from(expected), b = Buffer.from(header || '');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}</code></pre>
+
+  <p>Always compare in constant time (<code>compare_digest</code>,
+  <code>timingSafeEqual</code>) rather than with <code>==</code>.</p>
+
+  <div class="note">
+    <p><strong>Without a secret there is no signature header at all</strong> — anyone who
+    learns your webhook URL can post convincing fake events to it. Set a secret unless
+    the endpoint is otherwise authenticated.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 14 -->
+<section id="s14" class="card">
+  <h2><span class="num">14</span> Receive-link webhooks</h2>
+
+  <p>A receive link lets people upload files to you. Each link can carry its own webhook,
+  fired when a file arrives. This is separate from the global webhook; both can be
+  active at once.</p>
+
+  <p>Set it when creating the link:</p>
+<pre><code>curl -s -b cookies.txt -X POST https://files.example.com/api/receive-links \
+     -H 'Content-Type: application/json' \
+     -d '{
+           "name": "Client uploads",
+           "max_uploads": 10,
+           "auto_share": true,
+           "webhook_url": "https://hooks.example.com/casadrop-receive"
+         }'</code></pre>
+
+  <p>Recorded from a real anonymous upload:</p>
+<pre><code>POST /receive HTTP/1.1
+Content-Type: application/json
+User-Agent: Zima-Share/1.0
+
+{
+  "event": "file_received",
+  "receive_link": "50d94287",
+  "receive_name": "Client uploads",
+  "file_id": "adbc5a59",
+  "file_name": "demo.txt",
+  "file_size": 15,
+  "uploader_ip": "203.0.113.44",
+  "timestamp": "2026-09-07T14:51:43.673454729+02:00",
+  "share_id": "1e0f933d"
+}</code></pre>
+
+  <p><code>share_id</code> appears only when the link has <code>auto_share</code>
+  enabled, which turns each arriving file into a share automatically.</p>
+
+  <div class="note warn">
+    <p><strong>These deliveries are not signed.</strong> There is no
+    <code>X-Webhook-Signature</code> and no <code>X-Webhook-Event</code> header — the
+    event name is in the body only. A receiver cannot verify that a
+    <code>file_received</code> POST really came from CasaDrop. Protect the endpoint
+    another way: an unguessable path, a bearer token in the URL, or an IP allow-list.</p>
+  </div>
+
+  <p>Same delivery rules as the global webhook: fire-and-forget, 10-second timeout, no
+  retries, redirects refused, and the same SSRF guard applies to
+  <code>webhook_url</code> at link-creation time — a private-IP target is rejected with
+  HTTP 400 when you create the link.</p>
+</section>
+
+<!-- ===================================================== 15 -->
+<section id="s15" class="card">
+  <h2><span class="num">15</span> The SSRF guard</h2>
+
+  <p>Webhook URLs are attacker-influenceable — anyone who can create a receive link can
+  ask CasaDrop to make an HTTP request. Left open, that turns your file server into a
+  probe for everything on your internal network, including cloud metadata endpoints.
+  CasaDrop therefore refuses private targets <strong>by default</strong>.</p>
+
+  <p>There are two layers, and they catch different things:</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Layer</th><th>When</th><th>Catches</th><th>Opt-out</th></tr></thead>
+    <tbody>
+      <tr><td><strong>URL validation</strong></td><td>On save</td>
+          <td>A <em>literal</em> private, loopback or link-local IP in the URL</td>
+          <td><code>STRICT_WEBHOOK_URLS=false</code></td></tr>
+      <tr><td><strong>Dial-time check</strong></td><td>On every delivery</td>
+          <td>A <em>hostname</em> that resolves to a blocked address — including DNS
+              rebinding after the URL was approved</td>
+          <td><code>WEBHOOK_STRICT_SSRF=false</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Measured against a default instance:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Webhook URL</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>http://192.168.10.20:9000/hook</code></td><td class="no">400 — must not target a private or loopback address</td></tr>
+      <tr><td><code>http://127.0.0.1:8791/hook</code></td><td class="no">400 — same</td></tr>
+      <tr><td><code>ftp://example.com/x</code></td><td class="no">400 — URL must use HTTP or HTTPS</td></tr>
+      <tr><td><code>https://hooks.example.com/casadrop</code></td><td class="yes">200 — accepted</td></tr>
+      <tr><td><code>http://localhost:8791/hook</code></td><td><span class="badge b-warn">saved, never delivered</span> — passes validation as a name, blocked at dial time</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>That last row is the confusing one and it is worth showing what it looks like. The
+  save succeeds, the test reports success, and nothing arrives. The only evidence is in
+  the container log:</p>
+  <div class="screen">Webhook: failed to send request: Post "http://localhost:8791/hook":
+ssrf: refusing to connect to blocked address 127.0.0.1</div>
+
+  <h3>Sending to a receiver on your own LAN</h3>
+  <p>A legitimate homelab need — n8n, Home Assistant, Gotify, ntfy on the same network.
+  The measured working recipe is a <strong>hostname</strong> plus the dial-time opt-out:</p>
+<pre><code>environment:
+  # a NAME, not a literal private IP — a literal IP is rejected
+  # even with the opt-outs below
+  - WEBHOOK_URL=http://ntfy.lan:8080/casadrop
+  - WEBHOOK_SECRET=a-long-random-string
+  # allow the delivery to land on a private address
+  - WEBHOOK_STRICT_SSRF=false</code></pre>
+  <p>Configuring a private target through the <em>API</em> instead of the environment
+  additionally needs <code>STRICT_WEBHOOK_URLS=false</code>, since that is the layer
+  which rejects the literal IP on save.</p>
+
+  <div class="note warn">
+    <p><strong>Neither variable is present in the shipped compose files.</strong>
+    <code>WEBHOOK_STRICT_SSRF</code> is passed through with a default of
+    <code>true</code>; <code>STRICT_WEBHOOK_URLS</code> is not listed at all. To use
+    either opt-out you must add the line to the <code>environment:</code> block
+    yourself.</p>
+  </div>
+
+  <div class="note danger">
+    <p><strong>Turn these off only if CasaDrop is not reachable by strangers.</strong>
+    They are on by default because CasaDrop is designed to be internet-exposed and
+    receive links let anonymous visitors influence webhook targets. On a
+    publicly-reachable instance, leave both at their defaults and put your notification
+    receiver behind a name that resolves publicly.</p>
+  </div>
+</section>
+
+<!-- ===================================================== 16 -->
+<section id="s16" class="card">
+  <h2><span class="num">16</span> Webhook troubleshooting</h2>
+
+  <p>Every webhook outcome is logged. Start here, always:</p>
+<pre><code>docker logs casadrop 2>&amp;1 | grep -i webhook</code></pre>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Log line</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>successfully sent &lt;event&gt; notification for share &lt;id&gt;</code></td><td>Delivered, receiver answered below 400.</td></tr>
+      <tr><td><code>received error status &lt;n&gt;</code></td><td>Delivered, but your endpoint returned 4xx/5xx. Not retried.</td></tr>
+      <tr><td><code>failed to send request: …</code></td><td>Never reached the endpoint. The rest of the line says why — DNS, timeout, or <code>ssrf: refusing to connect</code>.</td></tr>
+      <tr><td><code>ignoring WEBHOOK_URL from env: …</code></td><td>The environment variable was discarded at startup (§12).</td></tr>
+      <tr><td><code>delivery budget exhausted, dropping …</code></td><td>More than 32 deliveries in flight. Your receiver is too slow.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Test Webhook says "Webhook not configured" (400)</h3>
+  <p>The stored configuration has <code>enabled: false</code> or an empty URL. Tick
+  <strong>Webhook enabled</strong> and save. On 2.4.4 this was the normal outcome of
+  saving the Settings card at all — see §12.</p>
+
+  <h3>Test says sent, nothing arrives</h3>
+  <p>Three measured causes, in order of likelihood:</p>
+  <ol class="steps">
+    <li>The SSRF guard blocked the dial. The log line begins <code>ssrf: refusing to
+        connect</code>. §15.</li>
+    <li>The URL redirects. Redirects are refused by design — use the final URL.</li>
+    <li>The receiver is unreachable or slower than 10 seconds.</li>
+  </ol>
+
+  <h3>Signature checks started failing and nothing changed</h3>
+  <p>Check whether the secret is still stored: <code>GET /api/webhook</code> reports
+  <code>secret_set</code>. On 2.4.4, opening Settings → Webhook and pressing Save
+  erased it (§12); from 2.4.5 a blank field means "keep", and only the explicit
+  <strong>Remove the stored secret</strong> checkbox clears one.</p>
+
+  <h3>I get download events but never limit_reached</h3>
+  <p><code>on_limit_reached</code> is <code>false</code>. If you configured via
+  <code>WEBHOOK_URL</code>, only <code>on_download</code> is switched on — use the API
+  to enable the rest.</p>
+
+  <h3>I never get expire events</h3>
+  <p>On 2.4.4 the event did not exist — upgrade (§11). From 2.4.5, check that
+  <code>on_expire</code> is set, and remember the sweep is hourly: a share that
+  expired four minutes ago has not been swept yet.</p>
+
+  <h3>Verifying without touching production</h3>
+  <p>A three-line receiver is enough to see exactly what CasaDrop sends:</p>
+<pre><code>python3 - &lt;&lt;'EOF'
+import http.server
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get('Content-Length', 0))
+        print(dict(self.headers)); print(self.rfile.read(n).decode())
+        self.send_response(200); self.end_headers()
+http.server.HTTPServer(('0.0.0.0', 8791), H).serve_forever()
+EOF</code></pre>
+  <p>Point the webhook at it by hostname and remember <code>WEBHOOK_STRICT_SSRF=false</code>
+  if it is on a private address.</p>
+</section>
+
+<!-- ===================================================== 17 -->
+<section id="s17" class="card">
+  <h2><span class="num">17</span> Quick reference</h2>
+
+  <h3>Networks at a glance</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Network</th><th>Field format</th><th>Auto-detected</th><th>Stable link</th><th>Public</th></tr></thead>
+    <tbody>
+      <tr><td>Local</td><td>bare IPv4</td><td class="yes">yes</td><td class="yes">yes</td><td class="no">LAN only</td></tr>
+      <tr><td>Cloudflare (quick)</td><td><code>https://</code></td><td class="yes">yes</td><td class="no">no — rotates</td><td class="yes">yes</td></tr>
+      <tr><td>Cloudflare (token)</td><td><code>https://</code></td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+      <tr><td>Tailscale Funnel</td><td><code>https://</code></td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+      <tr><td>EasyTier</td><td>bare IPv4</td><td>rarely in Docker</td><td class="yes">yes</td><td class="no">mesh only</td></tr>
+      <tr><td>Custom Domain</td><td><code>http(s)://</code></td><td class="no">never</td><td class="yes">yes</td><td>your choice</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Endpoints used in this guide</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Endpoint</th><th>Access</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/network</code></td><td>any signed-in user</td><td>Detected values, enabled flags, primary URL</td></tr>
+      <tr><td><code>GET|POST /api/tunnel</code></td><td>admin</td><td>Read/write the network configuration</td></tr>
+      <tr><td><code>GET|POST /api/webhook</code></td><td>admin</td><td>Read/write the global webhook (GET omits the secret)</td></tr>
+      <tr><td><code>POST /api/webhook/test</code></td><td>admin</td><td>Queue a synthetic <code>download</code> event</td></tr>
+      <tr><td><code>POST /api/receive-links</code></td><td>admin</td><td>Create a receive link, optionally with its own webhook</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>The five settings that cause the most trouble</h3>
+  <ol class="steps">
+    <li><code>LOCAL_IP</code> — set it in the environment. The Settings field looks
+        authoritative and is not (§4).</li>
+    <li><code>EXTERNAL_PORT</code> — set it whenever the published port is not 8080.</li>
+    <li><code>TRUSTED_PROXY</code> — set it behind any reverse proxy, or links come out
+        as <code>http://</code> and every <code>client_ip</code> is your proxy (§8).</li>
+    <li><strong>Webhook enabled</strong> — the webhook does nothing without it; on
+        2.4.4 the Settings form could not set it at all (§12).</li>
+    <li><code>WEBHOOK_STRICT_SSRF</code> — the reason a correctly configured LAN webhook
+        silently delivers nothing (§15).</li>
+  </ol>
+</section>
+
+<div class="card accent">
+  <h3 style="margin-top:0">If you only remember three things</h3>
+  <ul class="plain">
+    <li>The hostname in your browser bar can silently override the Primary network you
+        selected. When a link looks wrong, check how you reached the interface.</li>
+    <li>A webhook needs its master switch on and at least one event ticked; a blank
+        Secret field means "keep the stored one", not "erase it".</li>
+    <li>A green "test notification sent" only means the message was queued. Confirm at
+        the receiving end or in <code>docker logs</code>.</li>
+  </ul>
+</div>
+
+<footer class="doc">
+  <p>CasaDrop 2.4.5 · Network &amp; webhook configuration guide, 7 September 2026.
+  Behaviour described here was measured against a running build of this version, in
+  the browser as well as through the API. Notes marked <em>"On 2.4.4"</em> record where
+  the previous release differed, since instructions outlive the version they were
+  written for. For installation, roles and everyday use see the operator HowTo
+  (<code>docs/HOWTO.md</code>) and the user guide.</p>
+</footer>
+
+</div>
+</body>
+</html>
