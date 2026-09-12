@@ -34,9 +34,11 @@ check() {
     fi
 }
 
-# Real output shapes, collected from actual hosts.
+# Real output SHAPES, collected from actual hosts; the addresses themselves
+# are anonymised. Only the field layout matters to the parser under test —
+# keep any replacement a private-range address so the cases stay realistic.
 check "plain host route" \
-    "1.1.1.1 via 192.168.1.1 dev eth0 src 192.168.178.23 uid 1000" \
+    "1.1.1.1 via 192.168.10.1 dev eth0 src 192.168.178.23 uid 1000" \
     "192.168.178.23"
 
 check "docker bridge" \
@@ -61,7 +63,7 @@ check "empty input" "" ""
 
 # A device literally named "src" must not be mistaken for the keyword's value.
 check "interface named src" \
-    "1.1.1.1 via 192.168.1.1 dev src src 192.168.178.7 uid 0" \
+    "1.1.1.1 via 192.168.10.1 dev src src 192.168.178.7 uid 0" \
     "192.168.178.7"
 
 if [ "$fails" -ne 0 ]; then

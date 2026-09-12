@@ -1,0 +1,18 @@
+# Path-scoped exemptions for check-public-data.py.
+#
+# Own host addresses are NEVER listed here — they get anonymised instead.
+# Every entry below is an invented documentation address in a range where none
+# of our own machines live.
+#
+# Repo-wide convention: 192.168.10.x for LAN examples, 10.147.99.x for mesh.
+# See CLAUDE.md > "Example IP addresses in this repo". Replacements stay
+# private-range on purpose: CasaDrop's own utils.IsLocalHostname treats
+# 203.0.113.x / 198.51.100.x (RFC 5737) as PUBLIC, so using those in a "your LAN
+# address" example teaches the wrong thing and inverts the tests that rely on it.
+#
+# Format: <path>:<value> — a bare value would exempt it in every file, including
+# files that do not exist yet.
+
+CasaDrop-HowTo-Network-Webhooks-2026-09-07.html:192.168.10.20
+CasaDrop-HowTo-Network-Webhooks-2026-09-07.html:192.168.10.5
+CasaDrop-HowTo-Network-Webhooks-2026-09-07.html:172.18.0.5

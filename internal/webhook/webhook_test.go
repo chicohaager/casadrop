@@ -166,7 +166,7 @@ func TestNotifyDownload_Enabled(t *testing.T) {
 		Downloads:    5,
 	}
 
-	service.NotifyDownload(share, "192.168.1.1", "Mozilla/5.0")
+	service.NotifyDownload(share, "192.168.10.1", "Mozilla/5.0")
 
 	// Wait for webhook with timeout
 	done := make(chan struct{})
@@ -191,8 +191,8 @@ func TestNotifyDownload_Enabled(t *testing.T) {
 	if received.FileName != "test.txt" {
 		t.Errorf("Expected fileName 'test.txt', got %s", received.FileName)
 	}
-	if received.ClientIP != "192.168.1.1" {
-		t.Errorf("Expected clientIP '192.168.1.1', got %s", received.ClientIP)
+	if received.ClientIP != "192.168.10.1" {
+		t.Errorf("Expected clientIP '192.168.10.1', got %s", received.ClientIP)
 	}
 }
 

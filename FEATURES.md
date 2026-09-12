@@ -233,8 +233,8 @@
 
 # Output:
 # Detected IPs:
-#   EasyTier: 10.147.19.1
-#   Local:    192.168.1.100
+#   EasyTier: 10.147.99.1
+#   Local:    192.168.10.100
 ```
 
 ### Network Settings UI
