@@ -381,7 +381,11 @@ func (h *EmailHandler) getPrimaryBaseURL(r *http.Request) string {
 			return strings.TrimSuffix(customURL, "/")
 		}
 	case "local":
-		localIP := os.Getenv("LOCAL_IP")
+		// Settings first, env as fallback — mirrors Handler.getPrimaryBaseURL.
+		localIP := tunnelCfg.LocalIP
+		if localIP == "" {
+			localIP = os.Getenv("LOCAL_IP")
+		}
 		if localIP != "" {
 			return fmt.Sprintf("http://%s:%s", localIP, port)
 		}

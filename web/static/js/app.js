@@ -124,6 +124,15 @@
             'settings.testWebhook': 'Test Webhook',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhook Secret',
+            'settings.webhookEnabled': 'Webhook enabled',
+            'settings.webhookEvents': 'Notify on',
+            'settings.webhookOnDownload': 'File downloaded',
+            'settings.webhookOnLimit': 'Download limit reached',
+            'settings.webhookOnExpire': 'Share expired',
+            'settings.webhookSecretKeep': 'unchanged — leave blank to keep',
+            'settings.webhookSecretNone': 'no secret set',
+            'settings.webhookSecretClear': 'Remove the stored secret',
+            'settings.webhookNeedsUrl': 'Enter a webhook URL or switch the webhook off',
             'settings.webhookSent': 'Webhook sent',
             'settings.createUser': 'Create User',
             'settings.quota': 'Storage / Quota',
@@ -298,6 +307,15 @@
             'settings.testWebhook': 'Webhook testen',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhook Secret',
+            'settings.webhookEnabled': 'Webhook aktiviert',
+            'settings.webhookEvents': 'Benachrichtigen bei',
+            'settings.webhookOnDownload': 'Datei heruntergeladen',
+            'settings.webhookOnLimit': 'Download-Limit erreicht',
+            'settings.webhookOnExpire': 'Freigabe abgelaufen',
+            'settings.webhookSecretKeep': 'unverändert — leer lassen zum Beibehalten',
+            'settings.webhookSecretNone': 'kein Secret gesetzt',
+            'settings.webhookSecretClear': 'Gespeichertes Secret entfernen',
+            'settings.webhookNeedsUrl': 'Webhook-URL eingeben oder Webhook deaktivieren',
             'settings.webhookSent': 'Webhook gesendet',
             'settings.createUser': 'Benutzer erstellen',
             'settings.quota': 'Speicher / Quota',
@@ -446,6 +464,15 @@
             'settings.testWebhook': 'Tester le webhook',
             'settings.webhookUrl': 'URL du webhook',
             'settings.webhookSecret': 'Secret du webhook',
+            'settings.webhookEnabled': 'Webhook activé',
+            'settings.webhookEvents': 'Notifier lors de',
+            'settings.webhookOnDownload': 'Fichier téléchargé',
+            'settings.webhookOnLimit': 'Limite de téléchargement atteinte',
+            'settings.webhookOnExpire': 'Partage expiré',
+            'settings.webhookSecretKeep': 'inchangé — laisser vide pour conserver',
+            'settings.webhookSecretNone': 'aucun secret défini',
+            'settings.webhookSecretClear': 'Supprimer le secret enregistré',
+            'settings.webhookNeedsUrl': 'Saisissez une URL de webhook ou désactivez le webhook',
             'settings.webhookSent': 'Webhook envoyé',
             'settings.createUser': 'Créer un utilisateur',
             'settings.email': 'E-mail',
@@ -535,6 +562,15 @@
             'settings.testWebhook': 'Probar webhook',
             'settings.webhookUrl': 'URL del webhook',
             'settings.webhookSecret': 'Secreto del webhook',
+            'settings.webhookEnabled': 'Webhook activado',
+            'settings.webhookEvents': 'Notificar cuando',
+            'settings.webhookOnDownload': 'Archivo descargado',
+            'settings.webhookOnLimit': 'Límite de descargas alcanzado',
+            'settings.webhookOnExpire': 'Recurso caducado',
+            'settings.webhookSecretKeep': 'sin cambios — dejar vacío para conservar',
+            'settings.webhookSecretNone': 'ningún secreto definido',
+            'settings.webhookSecretClear': 'Eliminar el secreto guardado',
+            'settings.webhookNeedsUrl': 'Introduce una URL de webhook o desactiva el webhook',
             'settings.webhookSent': 'Webhook enviado',
             'settings.createUser': 'Crear usuario',
             'settings.email': 'Correo electrónico',
@@ -624,6 +660,15 @@
             'settings.testWebhook': 'Testa webhook',
             'settings.webhookUrl': 'URL webhook',
             'settings.webhookSecret': 'Segreto webhook',
+            'settings.webhookEnabled': 'Webhook attivo',
+            'settings.webhookEvents': 'Notifica quando',
+            'settings.webhookOnDownload': 'File scaricato',
+            'settings.webhookOnLimit': 'Limite di download raggiunto',
+            'settings.webhookOnExpire': 'Condivisione scaduta',
+            'settings.webhookSecretKeep': 'invariato — lascia vuoto per mantenere',
+            'settings.webhookSecretNone': 'nessun segreto impostato',
+            'settings.webhookSecretClear': 'Rimuovi il segreto salvato',
+            'settings.webhookNeedsUrl': 'Inserisci un URL webhook o disattiva il webhook',
             'settings.webhookSent': 'Webhook inviato',
             'settings.createUser': 'Crea utente',
             'settings.email': 'E-mail',
@@ -713,6 +758,15 @@
             'settings.testWebhook': 'Testar webhook',
             'settings.webhookUrl': 'URL do webhook',
             'settings.webhookSecret': 'Segredo do webhook',
+            'settings.webhookEnabled': 'Webhook ativado',
+            'settings.webhookEvents': 'Notificar quando',
+            'settings.webhookOnDownload': 'Ficheiro descarregado',
+            'settings.webhookOnLimit': 'Limite de downloads atingido',
+            'settings.webhookOnExpire': 'Partilha expirada',
+            'settings.webhookSecretKeep': 'inalterado — deixe vazio para manter',
+            'settings.webhookSecretNone': 'nenhum segredo definido',
+            'settings.webhookSecretClear': 'Remover o segredo guardado',
+            'settings.webhookNeedsUrl': 'Introduza um URL de webhook ou desative o webhook',
             'settings.webhookSent': 'Webhook enviado',
             'settings.createUser': 'Criar usuário',
             'settings.email': 'E-mail',
@@ -802,6 +856,15 @@
             'settings.testWebhook': 'Webhook testen',
             'settings.webhookUrl': 'Webhook-URL',
             'settings.webhookSecret': 'Webhook-geheim',
+            'settings.webhookEnabled': 'Webhook ingeschakeld',
+            'settings.webhookEvents': 'Melden bij',
+            'settings.webhookOnDownload': 'Bestand gedownload',
+            'settings.webhookOnLimit': 'Downloadlimiet bereikt',
+            'settings.webhookOnExpire': 'Deling verlopen',
+            'settings.webhookSecretKeep': 'ongewijzigd — leeg laten om te behouden',
+            'settings.webhookSecretNone': 'geen geheim ingesteld',
+            'settings.webhookSecretClear': 'Opgeslagen geheim verwijderen',
+            'settings.webhookNeedsUrl': 'Voer een webhook-URL in of schakel de webhook uit',
             'settings.webhookSent': 'Webhook verzonden',
             'settings.createUser': 'Gebruiker aanmaken',
             'settings.email': 'E-mail',
@@ -891,6 +954,15 @@
             'settings.testWebhook': 'Testuj webhook',
             'settings.webhookUrl': 'URL webhooka',
             'settings.webhookSecret': 'Sekret webhooka',
+            'settings.webhookEnabled': 'Webhook włączony',
+            'settings.webhookEvents': 'Powiadom przy',
+            'settings.webhookOnDownload': 'Pobrano plik',
+            'settings.webhookOnLimit': 'Osiągnięto limit pobrań',
+            'settings.webhookOnExpire': 'Udostępnienie wygasło',
+            'settings.webhookSecretKeep': 'bez zmian — pozostaw puste, aby zachować',
+            'settings.webhookSecretNone': 'brak ustawionego sekretu',
+            'settings.webhookSecretClear': 'Usuń zapisany sekret',
+            'settings.webhookNeedsUrl': 'Podaj adres URL webhooka lub wyłącz webhook',
             'settings.webhookSent': 'Webhook wysłany',
             'settings.createUser': 'Utwórz użytkownika',
             'settings.email': 'E-mail',
@@ -980,6 +1052,15 @@
             'settings.testWebhook': 'Тестировать вебхук',
             'settings.webhookUrl': 'URL вебхука',
             'settings.webhookSecret': 'Секрет вебхука',
+            'settings.webhookEnabled': 'Вебхук включён',
+            'settings.webhookEvents': 'Уведомлять при',
+            'settings.webhookOnDownload': 'Файл скачан',
+            'settings.webhookOnLimit': 'Достигнут лимит скачиваний',
+            'settings.webhookOnExpire': 'Срок ссылки истёк',
+            'settings.webhookSecretKeep': 'без изменений — оставьте пустым, чтобы сохранить',
+            'settings.webhookSecretNone': 'секрет не задан',
+            'settings.webhookSecretClear': 'Удалить сохранённый секрет',
+            'settings.webhookNeedsUrl': 'Укажите URL вебхука или отключите вебхук',
             'settings.webhookSent': 'Вебхук отправлен',
             'settings.createUser': 'Создать пользователя',
             'settings.email': 'Эл. почта',
@@ -1069,6 +1150,15 @@
             'settings.testWebhook': 'Webhookをテスト',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhookシークレット',
+            'settings.webhookEnabled': 'Webhook を有効にする',
+            'settings.webhookEvents': '通知するイベント',
+            'settings.webhookOnDownload': 'ファイルがダウンロードされた',
+            'settings.webhookOnLimit': 'ダウンロード上限に到達',
+            'settings.webhookOnExpire': '共有の期限切れ',
+            'settings.webhookSecretKeep': '変更なし — 保持するには空のまま',
+            'settings.webhookSecretNone': 'シークレット未設定',
+            'settings.webhookSecretClear': '保存済みシークレットを削除',
+            'settings.webhookNeedsUrl': 'Webhook URL を入力するか、Webhook を無効にしてください',
             'settings.webhookSent': 'Webhookを送信しました',
             'settings.createUser': 'ユーザーを作成',
             'settings.email': 'メールアドレス',
@@ -1158,6 +1248,15 @@
             'settings.testWebhook': '测试Webhook',
             'settings.webhookUrl': 'Webhook地址',
             'settings.webhookSecret': 'Webhook密钥',
+            'settings.webhookEnabled': '启用 Webhook',
+            'settings.webhookEvents': '通知事件',
+            'settings.webhookOnDownload': '文件被下载',
+            'settings.webhookOnLimit': '达到下载上限',
+            'settings.webhookOnExpire': '分享已过期',
+            'settings.webhookSecretKeep': '保持不变 — 留空即保留',
+            'settings.webhookSecretNone': '未设置密钥',
+            'settings.webhookSecretClear': '删除已保存的密钥',
+            'settings.webhookNeedsUrl': '请填写 Webhook 地址，或关闭 Webhook',
             'settings.webhookSent': 'Webhook已发送',
             'settings.createUser': '创建用户',
             'settings.email': '电子邮箱',
@@ -1247,6 +1346,15 @@
             'settings.testWebhook': 'Webhook 테스트',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhook 비밀키',
+            'settings.webhookEnabled': 'Webhook 사용',
+            'settings.webhookEvents': '알림 이벤트',
+            'settings.webhookOnDownload': '파일 다운로드됨',
+            'settings.webhookOnLimit': '다운로드 한도 도달',
+            'settings.webhookOnExpire': '공유 만료됨',
+            'settings.webhookSecretKeep': '변경 없음 — 유지하려면 비워 두세요',
+            'settings.webhookSecretNone': '비밀키 없음',
+            'settings.webhookSecretClear': '저장된 비밀키 삭제',
+            'settings.webhookNeedsUrl': 'Webhook URL을 입력하거나 Webhook을 끄세요',
             'settings.webhookSent': 'Webhook이 전송되었습니다',
             'settings.createUser': '사용자 만들기',
             'settings.email': '이메일',
@@ -1336,6 +1444,15 @@
             'settings.testWebhook': 'Webhook Test Et',
             'settings.webhookUrl': 'Webhook URL',
             'settings.webhookSecret': 'Webhook Gizli Anahtarı',
+            'settings.webhookEnabled': 'Webhook etkin',
+            'settings.webhookEvents': 'Şu durumda bildir',
+            'settings.webhookOnDownload': 'Dosya indirildi',
+            'settings.webhookOnLimit': 'İndirme sınırına ulaşıldı',
+            'settings.webhookOnExpire': 'Paylaşım süresi doldu',
+            'settings.webhookSecretKeep': 'değişmedi — korumak için boş bırakın',
+            'settings.webhookSecretNone': 'gizli anahtar tanımlı değil',
+            'settings.webhookSecretClear': 'Kayıtlı gizli anahtarı kaldır',
+            'settings.webhookNeedsUrl': 'Bir webhook adresi girin veya webhook\'u kapatın',
             'settings.webhookSent': 'Webhook gönderildi',
             'settings.createUser': 'Kullanıcı Oluştur',
             'settings.email': 'E-posta',
@@ -1427,6 +1544,15 @@
             'settings.testWebhook': 'اختبار Webhook',
             'settings.webhookUrl': 'رابط Webhook',
             'settings.webhookSecret': 'مفتاح Webhook السري',
+            'settings.webhookEnabled': 'تفعيل الويب هوك',
+            'settings.webhookEvents': 'إشعار عند',
+            'settings.webhookOnDownload': 'تنزيل الملف',
+            'settings.webhookOnLimit': 'بلوغ حد التنزيلات',
+            'settings.webhookOnExpire': 'انتهاء صلاحية المشاركة',
+            'settings.webhookSecretKeep': 'دون تغيير — اتركه فارغًا للإبقاء عليه',
+            'settings.webhookSecretNone': 'لا يوجد مفتاح سري',
+            'settings.webhookSecretClear': 'إزالة المفتاح السري المحفوظ',
+            'settings.webhookNeedsUrl': 'أدخل عنوان الويب هوك أو عطّل الويب هوك',
             'settings.webhookSent': 'تم إرسال Webhook',
             'settings.createUser': 'إنشاء مستخدم',
             'settings.email': 'البريد الإلكتروني',
@@ -3251,14 +3377,47 @@
             const res = await api('/api/webhook');
             const config = res.ok ? await res.json() : {};
 
+            // The secret is never sent back by the API (only whether one is
+            // stored), so the field starts empty by design. Leaving it empty on
+            // save must therefore KEEP the stored secret, not erase it — hence
+            // the field is only included in the body when the admin typed
+            // something, or ticked "clear".
+            const secretSet = !!config.secret_set;
+
             container.innerHTML = `
+                <label class="toggle-label" style="margin-bottom:var(--space-3)">
+                    <input type="checkbox" id="webhook-enabled" ${config.enabled ? 'checked' : ''}>
+                    <span class="toggle-switch"></span>
+                    <span>${t('settings.webhookEnabled')}</span>
+                </label>
                 <div class="form-group">
                     <label>${t('settings.webhookUrl')}</label>
-                    <input type="url" id="webhook-url" value="${escapeHtml(config.url || config.webhook_url || '')}" placeholder="https://...">
+                    <input type="url" id="webhook-url" value="${escapeHtml(config.url || '')}" placeholder="https://...">
+                </div>
+                <div class="form-group">
+                    <label>${t('settings.webhookEvents')}</label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="webhook-on-download" ${config.on_download ? 'checked' : ''}>
+                        <span>${t('settings.webhookOnDownload')}</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="webhook-on-limit" ${config.on_limit_reached ? 'checked' : ''}>
+                        <span>${t('settings.webhookOnLimit')}</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="webhook-on-expire" ${config.on_expire ? 'checked' : ''}>
+                        <span>${t('settings.webhookOnExpire')}</span>
+                    </label>
                 </div>
                 <div class="form-group">
                     <label>${t('settings.webhookSecret')}</label>
-                    <input type="password" id="webhook-secret" value="${escapeHtml(config.secret || config.webhook_secret || '')}" placeholder="">
+                    <input type="password" id="webhook-secret" value="" autocomplete="new-password"
+                           placeholder="${secretSet ? t('settings.webhookSecretKeep') : t('settings.webhookSecretNone')}">
+                    ${secretSet ? `
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="webhook-secret-clear">
+                        <span>${t('settings.webhookSecretClear')}</span>
+                    </label>` : ''}
                 </div>
                 <div class="form-actions">
                     <button class="btn btn-primary btn-sm" id="save-webhook-btn">${t('settings.save')}</button>
@@ -3267,19 +3426,35 @@
             `;
 
             document.getElementById('save-webhook-btn').addEventListener('click', async () => {
+                const url = document.getElementById('webhook-url').value.trim();
+                const enabled = document.getElementById('webhook-enabled').checked;
+                if (enabled && !url) {
+                    toast(t('settings.webhookNeedsUrl'), 'error');
+                    return;
+                }
                 const body = {
-                    url: document.getElementById('webhook-url').value,
-                    webhook_url: document.getElementById('webhook-url').value,
-                    secret: document.getElementById('webhook-secret').value,
-                    webhook_secret: document.getElementById('webhook-secret').value,
+                    enabled,
+                    url,
+                    on_download: document.getElementById('webhook-on-download').checked,
+                    on_limit_reached: document.getElementById('webhook-on-limit').checked,
+                    on_expire: document.getElementById('webhook-on-expire').checked,
                 };
+                // Omitted `secret` means "keep what is stored" server-side.
+                const typedSecret = document.getElementById('webhook-secret').value;
+                const clearSecret = document.getElementById('webhook-secret-clear')?.checked;
+                if (clearSecret) body.secret = '';
+                else if (typedSecret) body.secret = typedSecret;
                 try {
                     const saveRes = await api('/api/webhook', {
                         method: 'POST',
                         body: JSON.stringify(body),
                     });
-                    if (saveRes.ok) toast(t('settings.saved'), 'success');
-                    else toast(t('toast.error'), 'error');
+                    if (saveRes.ok) {
+                        toast(t('settings.saved'), 'success');
+                        loadWebhookConfig();
+                    } else {
+                        toast(await saveRes.text() || t('toast.error'), 'error');
+                    }
                 } catch { toast(t('toast.error'), 'error'); }
             });
 

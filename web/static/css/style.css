@@ -1336,6 +1336,26 @@ input::placeholder { color: var(--text-muted); }
     margin-bottom: var(--space-2);
 }
 
+/* Plain checkbox rows (webhook event list). The master on/off switch uses
+   .toggle-label like the SMTP card; these are the secondary options under it. */
+label.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-top: var(--space-2);
+    /* .form-group label uppercases its field headings; these rows are options
+       under such a heading, so undo it or they read as more headings. */
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+label.checkbox-label input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
 .network-enable-label {
     display: flex;
     align-items: center;
