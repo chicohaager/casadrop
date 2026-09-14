@@ -42,6 +42,45 @@ Response:
 (the setup wizard is then skipped). `sessionExpiry` is only present while
 authenticated.
 
+### Sessions
+
+```bash
+GET /api/sessions
+```
+
+Every device signed in to the caller's account. An **admin** sees every
+session on the server (each carries `user_email` so a stranger can be
+recognised); anyone else sees only their own. The caller's own session is
+flagged `current`.
+
+```json
+{
+  "sessions": [
+    {
+      "id": "opaque-handle",
+      "ip": "203.0.113.7",
+      "user_agent": "Mozilla/5.0 …",
+      "created_at": "2026-09-14T20:12:59+02:00",
+      "expires_at": "2026-09-15T20:12:59+02:00",
+      "current": true,
+      "user_email": "admin@example.com"
+    }
+  ]
+}
+```
+
+The `id` is a random handle, not derived from the session token.
+
+```bash
+DELETE /api/sessions/{id}          # end one session
+POST   /api/sessions/revoke-others # end every OTHER session of the caller
+```
+
+A user may end their own sessions; an admin may end anyone's. A session that
+does not exist and one the caller may not touch are **both 404**, so the
+endpoint cannot enumerate other people's sessions. `revoke-others` spares the
+current session and never touches another user's; it returns `{"revoked": N}`.
+
 ### Login
 
 Form-encoded and JSON are both accepted:

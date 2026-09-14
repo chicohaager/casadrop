@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Activity log.** A durable record of who did what, to which share, from
+  where: share created / updated / deleted / expired, downloaded, streamed,
+  files received through a receive link, and every authentication event
+  (previously `[AUDIT]` lines that went to stdout and died with the container).
+  New table `events`; `GET /api/events` (admin, filterable, paged),
+  `GET /api/events/export` (CSV), `GET /api/shares/{id}/events` (owner or
+  admin). Retention via `EVENT_RETENTION_DAYS` (default 90, `0` = forever),
+  swept daily. A Settings card and a per-share "Activity" button in the UI.
+- **Resumable uploads.** Chunked uploads now persist a manifest to disk and are
+  rebuilt on startup, so a browser reload or a server restart continues the
+  transfer instead of losing it. `GET /api/upload/chunk/{id}` reports which
+  chunks the server holds; the client sends only the missing ones and retries a
+  chunk on a transient failure. Uploads are bound to their owner — chunk, status
+  and finalize answer 404 to anyone else.
+- **Session management.** `GET /api/sessions` lists the devices signed in to
+  your account (all sessions, for an admin), `DELETE /api/sessions/{id}` ends
+  one, `POST /api/sessions/revoke-others` signs out everywhere else. A Settings
+  card exposes it. Revoking a session someone else owns, or one that does not
+  exist, is a 404 either way.
+
 ### Security
 - **`GET /auth/oidc/logout` now revokes the server-side session.** It only
   cleared the cookie: the bearer token stayed valid in the session store (and

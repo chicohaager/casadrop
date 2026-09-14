@@ -208,6 +208,18 @@
             'settings.twofaDisabledMsg': 'Two-factor authentication disabled',
             'settings.twofaCodeRequired': 'Please enter the 6-digit code',
             'settings.twofaSetupFailed': 'Could not start 2FA setup',
+            'settings.sessions': 'Active Sessions',
+            'sessions.hint': 'Every device signed in to your account. End a session you no longer recognise.',
+            'sessions.hintAdmin': 'Every active session on this server. End one you no longer recognise.',
+            'sessions.current': 'This device',
+            'sessions.since': 'Signed in',
+            'sessions.expires': 'Expires',
+            'sessions.revoke': 'End session',
+            'sessions.revokeOthers': 'Sign out all other devices',
+            'sessions.revokedOthers': 'Signed out {n} other device(s)',
+            'sessions.revoked': 'Session ended',
+            'sessions.empty': 'No other active sessions.',
+            'sessions.confirmOthers': 'Sign out of every other device?',
             'settings.activity': 'Activity log',
             'settings.activityHint': 'Who downloaded, uploaded, signed in — with address and time. Entries older than the retention period are removed automatically.',
             'activity.when': 'When',
@@ -421,6 +433,18 @@
             'settings.twofaDisabledMsg': 'Zwei-Faktor-Authentifizierung deaktiviert',
             'settings.twofaCodeRequired': 'Bitte gib den 6-stelligen Code ein',
             'settings.twofaSetupFailed': '2FA-Einrichtung konnte nicht gestartet werden',
+            'settings.sessions': 'Aktive Sitzungen',
+            'sessions.hint': 'Alle bei deinem Konto angemeldeten Geräte. Beende eine Sitzung, die du nicht wiedererkennst.',
+            'sessions.hintAdmin': 'Alle aktiven Sitzungen auf diesem Server. Beende eine, die du nicht wiedererkennst.',
+            'sessions.current': 'Dieses Gerät',
+            'sessions.since': 'Angemeldet',
+            'sessions.expires': 'Läuft ab',
+            'sessions.revoke': 'Sitzung beenden',
+            'sessions.revokeOthers': 'Alle anderen Geräte abmelden',
+            'sessions.revokedOthers': '{n} andere(s) Gerät(e) abgemeldet',
+            'sessions.revoked': 'Sitzung beendet',
+            'sessions.empty': 'Keine weiteren aktiven Sitzungen.',
+            'sessions.confirmOthers': 'Von allen anderen Geräten abmelden?',
             'settings.activity': 'Aktivitätsprotokoll',
             'settings.activityHint': 'Wer hat heruntergeladen, hochgeladen, sich angemeldet — mit Adresse und Zeit. Einträge, die älter als die Aufbewahrungsfrist sind, werden automatisch entfernt.',
             'activity.when': 'Wann',
@@ -3270,7 +3294,81 @@
             loadAPIKeys(),
             loadSMTPConfig(),
             loadActivityLog(),
+            loadSessions(),
         ]);
+    }
+
+    // ==========================================
+    // Active sessions
+    // ==========================================
+    async function loadSessions() {
+        const container = document.getElementById('sessions-config');
+        if (!container) return;
+
+        let sessions = [];
+        try {
+            const res = await api('/api/sessions');
+            if (!res.ok) throw new Error(await res.text());
+            sessions = (await res.json()).sessions || [];
+        } catch (err) {
+            container.innerHTML = `<p style="color:var(--danger)">${escapeHtml(err.message || t('toast.error'))}</p>`;
+            return;
+        }
+
+        const isAdminView = sessions.some(s => s.user_email);
+        // Current first, then newest.
+        sessions.sort((a, b) => (b.current - a.current) || (new Date(b.created_at) - new Date(a.created_at)));
+        const others = sessions.filter(s => !s.current).length;
+
+        container.innerHTML = `
+            <p style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:var(--space-3)">${t(isAdminView ? 'sessions.hintAdmin' : 'sessions.hint')}</p>
+            <div style="overflow-x:auto">
+                <table class="users-table">
+                    <thead><tr>
+                        <th>${t('activity.from')}</th>
+                        ${isAdminView ? `<th>${t('activity.who')}</th>` : ''}
+                        <th>${t('sessions.since')}</th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody>
+                        ${sessions.map(s => `
+                            <tr>
+                                <td>
+                                    <div style="font-family:var(--font-mono);font-size:var(--text-xs)">${escapeHtml(s.ip || '')}</div>
+                                    <div style="font-size:var(--text-xs);color:var(--text-muted)" title="${escapeHtml(s.user_agent || '')}">${escapeHtml((s.user_agent || '').slice(0, 48))}</div>
+                                </td>
+                                ${isAdminView ? `<td style="font-size:var(--text-xs)">${escapeHtml(s.user_email || '')}</td>` : ''}
+                                <td style="white-space:nowrap;font-size:var(--text-xs)">${escapeHtml(new Date(s.created_at).toLocaleString())}</td>
+                                <td style="text-align:right">
+                                    ${s.current
+                                        ? `<span class="role-badge role-admin">${t('sessions.current')}</span>`
+                                        : `<button class="btn btn-ghost btn-sm revoke-session-btn" data-id="${escapeHtml(s.id)}">${t('sessions.revoke')}</button>`}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            ${others > 0 ? `<button class="btn btn-ghost btn-sm" id="revoke-others-btn" style="margin-top:var(--space-3);color:var(--danger)">${t('sessions.revokeOthers')}</button>` : ''}
+        `;
+
+        container.querySelectorAll('.revoke-session-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const res = await api('/api/sessions/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' });
+                if (res.ok) { toast(t('sessions.revoked'), 'success'); loadSessions(); }
+                else toast((await res.text()).trim() || t('toast.error'), 'error');
+            };
+        });
+        const othersBtn = document.getElementById('revoke-others-btn');
+        if (othersBtn) othersBtn.onclick = async () => {
+            if (!confirm(t('sessions.confirmOthers'))) return;
+            const res = await api('/api/sessions/revoke-others', { method: 'POST' });
+            if (res.ok) {
+                const { revoked } = await res.json();
+                toast(t('sessions.revokedOthers').replace('{n}', revoked), 'success');
+                loadSessions();
+            } else toast(t('toast.error'), 'error');
+        };
     }
 
     // ==========================================
