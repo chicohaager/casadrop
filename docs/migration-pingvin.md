@@ -27,6 +27,7 @@ Pingvin Share was archived in June 2025. CasaDrop provides a lightweight alterna
 | Storage backends | Local, S3 | Local (S3 on the roadmap) |
 | Public access helpers | No | Tailscale, Cloudflare Tunnel, Pangolin, Taildrop |
 | Prometheus metrics | No | Yes |
+| Session management (list / revoke devices) | No | Yes |
 | Custom branding (logo, name) | Yes | Planned |
 | Languages | 29 | 14 |
 | API documentation | OpenAPI/Swagger | Markdown ([api.md](api.md)) |
