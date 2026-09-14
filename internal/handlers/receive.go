@@ -612,6 +612,12 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		go h.sendReceiveWebhook(link, receivedFile)
 	}
 
+	h.recordEvent(r, models.EventReceiveUploaded, models.Event{
+		LinkID:  id,
+		ShareID: receivedFile.ShareID,
+		Detail:  fmt.Sprintf("%s (%d bytes)", receivedFile.OriginalName, receivedFile.FileSize),
+	})
+
 	// Return response
 	resp := map[string]interface{}{
 		"success":   true,

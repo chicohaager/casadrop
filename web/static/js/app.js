@@ -208,6 +208,36 @@
             'settings.twofaDisabledMsg': 'Two-factor authentication disabled',
             'settings.twofaCodeRequired': 'Please enter the 6-digit code',
             'settings.twofaSetupFailed': 'Could not start 2FA setup',
+            'settings.activity': 'Activity log',
+            'settings.activityHint': 'Who downloaded, uploaded, signed in — with address and time. Entries older than the retention period are removed automatically.',
+            'activity.when': 'When',
+            'activity.kind': 'Event',
+            'activity.who': 'Who',
+            'activity.share': 'Share',
+            'activity.from': 'From',
+            'activity.detail': 'Detail',
+            'activity.empty': 'Nothing recorded yet.',
+            'activity.export': 'Export CSV',
+            'activity.allKinds': 'All events',
+            'activity.loadMore': 'Load more',
+            'activity.anonymous': 'anonymous',
+            'activity.system': 'system',
+            'activity.forShare': 'Activity',
+            'activity.loadFailed': 'Could not load the activity log',
+            'activity.kind.share.created': 'Share created',
+            'activity.kind.share.updated': 'Share updated',
+            'activity.kind.share.deleted': 'Share deleted',
+            'activity.kind.share.expired': 'Share expired',
+            'activity.kind.share.downloaded': 'Downloaded',
+            'activity.kind.share.streamed': 'Streamed',
+            'activity.kind.receive.uploaded': 'File received',
+            'activity.kind.auth.login': 'Signed in',
+            'activity.kind.auth.login_failed': 'Sign-in failed',
+            'activity.kind.auth.locked': 'Locked out',
+            'activity.kind.auth.logout': 'Signed out',
+            'activity.kind.auth.setup': 'Setup / 2FA change',
+            'activity.kind.session.revoked': 'Session revoked',
+            'activity.kind.security': 'Security',
         },
         de: {
             'nav.upload': 'Hochladen',
@@ -391,6 +421,36 @@
             'settings.twofaDisabledMsg': 'Zwei-Faktor-Authentifizierung deaktiviert',
             'settings.twofaCodeRequired': 'Bitte gib den 6-stelligen Code ein',
             'settings.twofaSetupFailed': '2FA-Einrichtung konnte nicht gestartet werden',
+            'settings.activity': 'Aktivitätsprotokoll',
+            'settings.activityHint': 'Wer hat heruntergeladen, hochgeladen, sich angemeldet — mit Adresse und Zeit. Einträge, die älter als die Aufbewahrungsfrist sind, werden automatisch entfernt.',
+            'activity.when': 'Wann',
+            'activity.kind': 'Ereignis',
+            'activity.who': 'Wer',
+            'activity.share': 'Freigabe',
+            'activity.from': 'Von',
+            'activity.detail': 'Detail',
+            'activity.empty': 'Noch nichts aufgezeichnet.',
+            'activity.export': 'CSV exportieren',
+            'activity.allKinds': 'Alle Ereignisse',
+            'activity.loadMore': 'Mehr laden',
+            'activity.anonymous': 'anonym',
+            'activity.system': 'System',
+            'activity.forShare': 'Aktivität',
+            'activity.loadFailed': 'Aktivitätsprotokoll konnte nicht geladen werden',
+            'activity.kind.share.created': 'Freigabe erstellt',
+            'activity.kind.share.updated': 'Freigabe geändert',
+            'activity.kind.share.deleted': 'Freigabe gelöscht',
+            'activity.kind.share.expired': 'Freigabe abgelaufen',
+            'activity.kind.share.downloaded': 'Heruntergeladen',
+            'activity.kind.share.streamed': 'Gestreamt',
+            'activity.kind.receive.uploaded': 'Datei empfangen',
+            'activity.kind.auth.login': 'Angemeldet',
+            'activity.kind.auth.login_failed': 'Anmeldung fehlgeschlagen',
+            'activity.kind.auth.locked': 'Gesperrt',
+            'activity.kind.auth.logout': 'Abgemeldet',
+            'activity.kind.auth.setup': 'Einrichtung / 2FA geändert',
+            'activity.kind.session.revoked': 'Sitzung beendet',
+            'activity.kind.security': 'Sicherheit',
         },
         fr: {
             'nav.upload': 'Envoyer',
@@ -2672,6 +2732,11 @@
                                 <polyline points="22,6 12,13 2,6"/>
                             </svg>
                         </button>
+                        <button class="btn-icon" data-activity="${escapeHtml(share.id)}" data-name="${escapeHtml(share.original_name || share.file_name || '')}" title="${t('activity.forShare')}">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            </svg>
+                        </button>
                         ${(taildropState.available && !share.is_directory) ? `<button class="btn-icon taildrop-share-btn" data-id="${escapeHtml(share.id)}" title="${t('shares.taildrop')}">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                                 <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
@@ -2706,6 +2771,10 @@
                     `);
                     document.getElementById('modal-close-btn')?.addEventListener('click', closeModal);
                 });
+            });
+
+            listEl.querySelectorAll('[data-activity]').forEach(btn => {
+                btn.addEventListener('click', () => showShareActivity(btn.dataset.activity, btn.dataset.name));
             });
 
             listEl.querySelectorAll('[data-delete]').forEach(btn => {
@@ -3132,7 +3201,143 @@
             load2FAConfig(),
             loadAPIKeys(),
             loadSMTPConfig(),
+            loadActivityLog(),
         ]);
+    }
+
+    // ==========================================
+    // Activity log
+    // ==========================================
+    const ACTIVITY_KINDS = [
+        'share.created', 'share.updated', 'share.deleted', 'share.expired',
+        'share.downloaded', 'share.streamed', 'receive.uploaded',
+        'auth.login', 'auth.login_failed', 'auth.locked', 'auth.logout', 'auth.setup',
+        'session.revoked', 'security',
+    ];
+
+    function activityKindLabel(kind) {
+        const key = 'activity.kind.' + kind;
+        const label = t(key);
+        return label === key ? kind : label;
+    }
+
+    function activityActor(e) {
+        if (e.actor_email) return escapeHtml(e.actor_email);
+        if (e.actor_id) return escapeHtml(e.actor_id);
+        // No request behind it (expiry sweep) vs. a request without a login.
+        return `<span style="color:var(--text-muted)">${e.ip ? t('activity.anonymous') : t('activity.system')}</span>`;
+    }
+
+    function activityRowsHTML(events, { withShare = true } = {}) {
+        return events.map(e => `
+            <tr>
+                <td title="${escapeHtml(e.at)}" style="white-space:nowrap">${escapeHtml(new Date(e.at).toLocaleString())}</td>
+                <td>${escapeHtml(activityKindLabel(e.kind))}</td>
+                <td>${activityActor(e)}</td>
+                ${withShare ? `<td style="font-family:var(--font-mono);font-size:var(--text-xs)">${escapeHtml(e.share_id || e.link_id || '')}</td>` : ''}
+                <td style="font-family:var(--font-mono);font-size:var(--text-xs)" title="${escapeHtml(e.user_agent || '')}">${escapeHtml(e.ip || '')}</td>
+                <td style="color:var(--text-muted)">${escapeHtml(e.detail || '')}</td>
+            </tr>
+        `).join('');
+    }
+
+    function activityTableHTML(events, opts) {
+        if (events.length === 0) return `<p style="color:var(--text-muted)">${t('activity.empty')}</p>`;
+        const withShare = opts?.withShare !== false;
+        return `
+            <div style="overflow-x:auto">
+                <table class="users-table activity-table">
+                    <thead><tr>
+                        <th>${t('activity.when')}</th>
+                        <th>${t('activity.kind')}</th>
+                        <th>${t('activity.who')}</th>
+                        ${withShare ? `<th>${t('activity.share')}</th>` : ''}
+                        <th>${t('activity.from')}</th>
+                        <th>${t('activity.detail')}</th>
+                    </tr></thead>
+                    <tbody>${activityRowsHTML(events, { withShare })}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // The settings card: admin-only on the server, so a 403 simply hides it
+    // instead of showing a dead widget to a user or viewer.
+    async function loadActivityLog() {
+        const card = document.getElementById('activity-card');
+        const container = document.getElementById('activity-config');
+        if (!card || !container) return;
+
+        const state = { kind: '', offset: 0, limit: 50, events: [], total: 0 };
+
+        async function fetchPage(append) {
+            const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
+            if (state.kind) params.set('kind', state.kind);
+            const res = await api('/api/events?' + params.toString());
+            if (res.status === 403) { card.style.display = 'none'; return false; }
+            if (!res.ok) throw new Error(await res.text());
+            const page = await res.json();
+            state.total = page.total;
+            state.events = append ? state.events.concat(page.events) : page.events;
+            return true;
+        }
+
+        function render() {
+            const exportParams = state.kind ? '?kind=' + encodeURIComponent(state.kind) : '';
+            container.innerHTML = `
+                <p style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:var(--space-3)">${t('settings.activityHint')}</p>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:var(--space-3);flex-wrap:wrap">
+                    <select id="activity-kind" style="flex:0 1 auto">
+                        <option value="">${t('activity.allKinds')}</option>
+                        ${ACTIVITY_KINDS.map(k => `<option value="${k}" ${k === state.kind ? 'selected' : ''}>${escapeHtml(activityKindLabel(k))}</option>`).join('')}
+                    </select>
+                    <span style="font-size:var(--text-xs);color:var(--text-muted)">${state.events.length} / ${state.total}</span>
+                    <a class="btn btn-ghost btn-sm" href="/api/events/export${exportParams}" style="margin-left:auto">${t('activity.export')}</a>
+                </div>
+                <div id="activity-table">${activityTableHTML(state.events)}</div>
+                ${state.events.length < state.total ? `<button class="btn btn-ghost btn-sm" id="activity-more" style="margin-top:var(--space-3)">${t('activity.loadMore')}</button>` : ''}
+            `;
+            document.getElementById('activity-kind').onchange = async (ev) => {
+                state.kind = ev.target.value;
+                state.offset = 0;
+                await load(false);
+            };
+            document.getElementById('activity-more')?.addEventListener('click', async () => {
+                state.offset = state.events.length;
+                await load(true);
+            });
+        }
+
+        async function load(append) {
+            try {
+                if (await fetchPage(append)) render();
+            } catch (err) {
+                container.innerHTML = `<p style="color:var(--danger)">${t('activity.loadFailed')}: ${escapeHtml(err.message || '')}</p>`;
+            }
+        }
+
+        await load(false);
+    }
+
+    // Per-share activity, opened from the share list. Owner or admin.
+    async function showShareActivity(shareId, shareName) {
+        showModal(`
+            <h3>${t('activity.forShare')} — ${escapeHtml(shareName || shareId)}</h3>
+            <div id="share-activity-body" style="margin:var(--space-3) 0"><p style="color:var(--text-muted)">…</p></div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" id="modal-close-btn">Close</button>
+            </div>
+        `);
+        document.getElementById('modal-close-btn')?.addEventListener('click', closeModal);
+        const body = document.getElementById('share-activity-body');
+        try {
+            const res = await api(`/api/shares/${encodeURIComponent(shareId)}/events?limit=100`);
+            if (!res.ok) throw new Error(await res.text());
+            const page = await res.json();
+            body.innerHTML = activityTableHTML(page.events, { withShare: false });
+        } catch (err) {
+            body.innerHTML = `<p style="color:var(--danger)">${t('activity.loadFailed')}: ${escapeHtml(err.message || '')}</p>`;
+        }
     }
 
     async function loadNetworkConfig() {

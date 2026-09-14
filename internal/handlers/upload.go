@@ -231,6 +231,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
 	}
+	h.recordShareCreated(r, share)
 
 	// Return response
 	resp := share.ToResponse(fmt.Sprintf("%s/s/%s", h.getPrimaryBaseURL(r), share.ID))
@@ -547,6 +548,7 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
 	}
+	h.recordShareCreated(r, share)
 
 	resp := share.ToResponse(fmt.Sprintf("%s/s/%s", h.getPrimaryBaseURL(r), share.ID))
 
@@ -723,6 +725,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 			failedCount++
 			continue
 		}
+		h.recordShareCreated(r, share)
 
 		responses = append(responses, share.ToResponse(fmt.Sprintf("%s/s/%s", baseURL, share.ID)))
 		successCount++

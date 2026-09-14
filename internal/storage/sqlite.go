@@ -285,6 +285,23 @@ func (s *SQLiteStorage) initBaseSchema() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+
+	-- Activity log (v2.5): who did what, to which share, from where.
+	CREATE TABLE IF NOT EXISTS events (
+		id TEXT PRIMARY KEY,
+		at DATETIME NOT NULL,
+		kind TEXT NOT NULL,
+		actor_id TEXT NOT NULL DEFAULT '',
+		actor_email TEXT NOT NULL DEFAULT '',
+		share_id TEXT NOT NULL DEFAULT '',
+		link_id TEXT NOT NULL DEFAULT '',
+		ip TEXT NOT NULL DEFAULT '',
+		user_agent TEXT NOT NULL DEFAULT '',
+		detail TEXT NOT NULL DEFAULT ''
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+	CREATE INDEX IF NOT EXISTS idx_events_share_at ON events(share_id, at);
 	`
 
 	_, err := s.db.Exec(schema)

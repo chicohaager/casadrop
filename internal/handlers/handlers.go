@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
+	"casadrop/internal/audit"
 	"casadrop/internal/auth"
 	"casadrop/internal/config"
 	"casadrop/internal/middleware"
@@ -42,6 +43,7 @@ type Handler struct {
 	sharePassLimiter *sharePasswordRateLimiter
 	thumbnails       *preview.ThumbnailService
 	emailHandler     *EmailHandler
+	events           *audit.Recorder         // nil = activity log disabled (tests); see recordEvent
 	scanner          scan.Scanner            // nil = malware scanning disabled (no CLAMAV_ADDR)
 	pow              *pow.Manager            // nil = receive-upload proof-of-work disabled
 	receiveLimiter   *middleware.RateLimiter // per-IP throttle on public receive uploads
@@ -164,7 +166,13 @@ func New(s *storage.Storage, templatesDir string) (*Handler, error) {
 	// hourly expiry cleanup. Until this existed, webhook.NotifyExpire had no
 	// caller anywhere in the tree, so on_expire was a config flag that could be
 	// set to true and never did anything.
-	if !s.SetExpiryNotifier(webhookSvc.NotifyExpire) {
+	h := &Handler{
+		storage:          s,
+		templates:        tmpl,
+		webhook:          webhookSvc,
+		sharePassLimiter: newSharePasswordRateLimiter(),
+	}
+	if !s.SetExpiryNotifier(h.onShareExpired) {
 		log.Printf("Webhook: storage backend reports no expiry cleanup; the expire event will not fire")
 	}
 
@@ -205,16 +213,22 @@ func New(s *storage.Storage, templatesDir string) (*Handler, error) {
 		}
 	}
 
-	return &Handler{
-		storage:          s,
-		templates:        tmpl,
-		webhook:          webhookSvc,
-		sharePassLimiter: newSharePasswordRateLimiter(),
-		thumbnails:       thumbSvc,
-		scanner:          scanner,
-		pow:              powMgr,
-		receiveLimiter:   middleware.NewRateLimiter(receiveRate, time.Hour),
-	}, nil
+	h.thumbnails = thumbSvc
+	h.scanner = scanner
+	h.pow = powMgr
+	h.receiveLimiter = middleware.NewRateLimiter(receiveRate, time.Hour)
+	return h, nil
+}
+
+// onShareExpired is the storage layer's expiry callback: it fans one expired
+// share out to the webhook and the activity log. It runs on the cleanup
+// goroutine, so neither branch may block.
+func (h *Handler) onShareExpired(share *models.Share) {
+	h.webhook.NotifyExpire(share)
+	h.recordSystem(models.EventShareExpired, models.Event{
+		ShareID: share.ID,
+		Detail:  share.OriginalName,
+	})
 }
 
 // Stop drains the handler's background services (webhook deliveries) on
@@ -237,6 +251,35 @@ func (h *Handler) Stop() {
 // SetEmailHandler sets the email handler for download notifications
 func (h *Handler) SetEmailHandler(emailHandler *EmailHandler) {
 	h.emailHandler = emailHandler
+}
+
+// SetAudit wires the activity log. Without it every recordEvent call is a no-op,
+// which is what the unit tests want and what production must never be.
+func (h *Handler) SetAudit(recorder *audit.Recorder) {
+	h.events = recorder
+}
+
+// recordEvent writes a request-scoped activity-log entry; nil-safe.
+func (h *Handler) recordEvent(r *http.Request, kind models.EventKind, event models.Event) {
+	if h.events != nil {
+		h.events.Record(r, kind, event)
+	}
+}
+
+// recordShareCreated is the one place that decides what a "created" row says,
+// so the five upload paths cannot drift apart in wording.
+func (h *Handler) recordShareCreated(r *http.Request, share *models.Share) {
+	h.recordEvent(r, models.EventShareCreated, models.Event{
+		ShareID: share.ID,
+		Detail:  fmt.Sprintf("%s (%d bytes)", share.OriginalName, share.FileSize),
+	})
+}
+
+// recordSystem writes an activity-log entry with no request behind it; nil-safe.
+func (h *Handler) recordSystem(kind models.EventKind, event models.Event) {
+	if h.events != nil {
+		h.events.RecordSystem(kind, event)
+	}
 }
 
 // quotaExceededBy reports whether adding `incoming` bytes would push the user
@@ -516,6 +559,7 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
 	}
+	h.recordShareCreated(r, share)
 
 	// Return response
 	resp := share.ToResponse(fmt.Sprintf("%s/s/%s", h.getPrimaryBaseURL(r), share.ID))
@@ -761,6 +805,7 @@ func (h *Handler) DeleteShare(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to delete share", http.StatusInternalServerError)
 		return
 	}
+	h.recordEvent(r, models.EventShareDeleted, models.Event{ShareID: id, Detail: share.OriginalName})
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -855,6 +900,7 @@ func (h *Handler) UpdateShare(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update share", http.StatusInternalServerError)
 		return
 	}
+	h.recordEvent(r, models.EventShareUpdated, models.Event{ShareID: share.ID, Detail: share.OriginalName})
 
 	resp := share.ToResponse(fmt.Sprintf("%s/s/%s", h.getPrimaryBaseURL(r), share.ID))
 
@@ -893,6 +939,7 @@ func (h *Handler) BulkDeleteShares(w http.ResponseWriter, r *http.Request) {
 			errors++
 			continue
 		}
+		h.recordEvent(r, models.EventShareDeleted, models.Event{ShareID: id, Detail: share.OriginalName + " (bulk)"})
 		deleted++
 	}
 

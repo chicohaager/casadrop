@@ -140,6 +140,13 @@ func registerAPIShares(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Ha
 	api.HandleFunc("/shares/{id}", h.GetShareInfo).Methods("GET")
 	api.HandleFunc("/shares/{id}", h.UpdateShare).Methods("PUT")
 	api.HandleFunc("/shares/{id}", h.DeleteShare).Methods("DELETE")
+	// Per-share activity: owner or admin, enforced in the handler.
+	api.HandleFunc("/shares/{id}/events", h.ShareEvents).Methods("GET")
+
+	// The whole activity log is admin territory: it carries every visitor's
+	// address and every user's logins.
+	api.Handle("/events", aa.RequireAdmin()(http.HandlerFunc(h.ListEvents))).Methods("GET")
+	api.Handle("/events/export", aa.RequireAdmin()(http.HandlerFunc(h.ExportEvents))).Methods("GET")
 }
 
 func registerAPIMisc(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Handler, oidc *auth.Handlers) {

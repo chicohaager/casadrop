@@ -319,3 +319,18 @@ func (s *Storage) UpdateAPIKeyLastUsed(id string) {
 func (s *Storage) DropSharesTableForTest() error {
 	return s.backend.DropSharesTableForTest()
 }
+
+// RecordEvent appends one row to the activity log
+func (s *Storage) RecordEvent(event *models.Event) error {
+	return s.backend.RecordEvent(event)
+}
+
+// ListEvents returns one page of the activity log, newest first, and the total match count
+func (s *Storage) ListEvents(filter models.EventFilter) ([]*models.Event, int, error) {
+	return s.backend.ListEvents(filter)
+}
+
+// PurgeEventsBefore deletes activity-log rows older than cutoff
+func (s *Storage) PurgeEventsBefore(cutoff time.Time) (int64, error) {
+	return s.backend.PurgeEventsBefore(cutoff)
+}

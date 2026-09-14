@@ -181,6 +181,7 @@ func (h *Handler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
 	}
+	h.recordShareCreated(r, share)
 
 	// Save folder contents
 	for _, entry := range folderContents {
@@ -377,6 +378,8 @@ func (h *Handler) DownloadFolderFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.recordEvent(r, models.EventShareDownloaded, models.Event{ShareID: id, Detail: fileInfo.Name()})
+
 	// Set headers
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(fileInfo.Name())))
 	// Detect MIME from the validated, symlink-resolved path — not the raw
@@ -454,6 +457,8 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Download limit reached", http.StatusGone)
 		return
 	}
+
+	h.recordEvent(r, models.EventShareDownloaded, models.Event{ShareID: id, Detail: share.OriginalName + " (zip)"})
 
 	// Set headers for ZIP download
 	zipName := share.OriginalName + ".zip"
