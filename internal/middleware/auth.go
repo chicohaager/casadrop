@@ -52,11 +52,35 @@ const (
 	AuditSessionExpired AuditEventType = "SESSION_EXPIRED"
 	AuditCSRFViolation  AuditEventType = "CSRF_VIOLATION"
 	AuditRateLimitHit   AuditEventType = "RATE_LIMIT_HIT"
+	AuditSessionRevoked AuditEventType = "SESSION_REVOKED"
 )
 
-// LogAuditEvent logs a security-relevant event
+// LogAuditEvent prints a security-relevant event to the process log.
 func LogAuditEvent(eventType AuditEventType, ip, userAgent, details string) {
 	log.Printf("[AUDIT] %s | IP: %s | UA: %.50s | %s", eventType, ip, userAgent, details)
+}
+
+// AuditSink receives every security event after it has been logged, so it can
+// be kept somewhere more durable than stdout (the activity log).
+type AuditSink func(eventType AuditEventType, ip, userAgent, details string)
+
+// SetAuditSink registers where security events go besides the process log.
+func (aa *AdminAuth) SetAuditSink(sink AuditSink) {
+	aa.mu.Lock()
+	aa.auditSink = sink
+	aa.mu.Unlock()
+}
+
+// audit logs a security event and forwards it to the sink, if one is set. The
+// process log stays the fallback that always works, sink or no sink.
+func (aa *AdminAuth) audit(eventType AuditEventType, ip, userAgent, details string) {
+	LogAuditEvent(eventType, ip, userAgent, details)
+	aa.mu.RLock()
+	sink := aa.auditSink
+	aa.mu.RUnlock()
+	if sink != nil {
+		sink(eventType, ip, userAgent, details)
+	}
 }
 
 // failedAttemptInfo tracks failed login attempts with timestamps for time-based cleanup
@@ -85,6 +109,7 @@ type AdminAuth struct {
 	oidcStatusFn      func() (enabled, localDisabled bool) // Live OIDC status (single source of truth)
 	apiKeyValidator   APIKeyValidator                      // Optional API key validator
 	userStore         LocalUserStore                       // Optional per-user local credential store
+	auditSink         AuditSink                            // Optional durable destination for security events
 	setupToken        string                               // One-time token gating the unauthenticated setup wizard
 	stop              chan struct{}                        // Shutdown signal for background cleanup goroutine
 	stopOnce          sync.Once
@@ -625,7 +650,7 @@ func (aa *AdminAuth) TOTPEnableHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save", http.StatusInternalServerError)
 		return
 	}
-	LogAuditEvent(AuditSetupComplete, utils.GetClientIP(r), r.Header.Get("User-Agent"), "Admin 2FA enabled")
+	aa.audit(AuditSetupComplete, utils.GetClientIP(r), r.Header.Get("User-Agent"), "Admin 2FA enabled")
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
 }
 
@@ -653,7 +678,7 @@ func (aa *AdminAuth) TOTPDisableHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to save", http.StatusInternalServerError)
 		return
 	}
-	LogAuditEvent(AuditSetupComplete, utils.GetClientIP(r), r.Header.Get("User-Agent"), "Admin 2FA disabled")
+	aa.audit(AuditSetupComplete, utils.GetClientIP(r), r.Header.Get("User-Agent"), "Admin 2FA disabled")
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
 }
 
@@ -934,7 +959,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Local password auth may be disabled (OIDC-only). Enforce on the endpoint,
 	// not just by hiding the form, so a direct POST can't use the password path.
 	if !aa.IsLocalAuthAllowed() {
-		LogAuditEvent(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
+		aa.audit(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
 		aa.renderLoginPage(w, "Local login is disabled. Please sign in with SSO.", false)
 		return
 	}
@@ -942,7 +967,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// Validate CSRF token
 	csrfToken := r.FormValue("csrf_token")
 	if !aa.ConsumeCSRFToken(csrfToken) {
-		LogAuditEvent(AuditCSRFViolation, clientIP, userAgent, "Invalid CSRF token on login")
+		aa.audit(AuditCSRFViolation, clientIP, userAgent, "Invalid CSRF token on login")
 		newToken, err := aa.GenerateCSRFToken()
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -954,7 +979,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Rate limiting
 	if !aa.rateLimiter.Allow(clientIP) {
-		LogAuditEvent(AuditRateLimitHit, clientIP, userAgent, "Login rate limit exceeded")
+		aa.audit(AuditRateLimitHit, clientIP, userAgent, "Login rate limit exceeded")
 		newToken, err := aa.GenerateCSRFToken()
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -983,10 +1008,10 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			msg = "Invalid password. Warning: Account will be locked after more failed attempts."
 		}
 		if attempts >= MaxFailedAttempts {
-			LogAuditEvent(AuditLoginLocked, clientIP, userAgent, "Account locked after max failed attempts")
+			aa.audit(AuditLoginLocked, clientIP, userAgent, "Account locked after max failed attempts")
 			msg = "Account locked due to too many failed attempts. Please try again later."
 		} else {
-			LogAuditEvent(AuditLoginFailed, clientIP, userAgent, fmt.Sprintf("Failed login attempt %d/%d", attempts, MaxFailedAttempts))
+			aa.audit(AuditLoginFailed, clientIP, userAgent, fmt.Sprintf("Failed login attempt %d/%d", attempts, MaxFailedAttempts))
 		}
 
 		newToken, err := aa.GenerateCSRFToken()
@@ -1004,7 +1029,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		if !aa.verifyTOTP(r.FormValue("totp")) {
 			aa.RecordFailedAttempt(clientIP)
 			time.Sleep(500 * time.Millisecond)
-			LogAuditEvent(AuditLoginFailed, clientIP, userAgent, "Admin 2FA code missing/invalid")
+			aa.audit(AuditLoginFailed, clientIP, userAgent, "Admin 2FA code missing/invalid")
 			newToken, err := aa.GenerateCSRFToken()
 			if err != nil {
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -1017,7 +1042,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Successful login - reset failed attempts
 	aa.ResetFailedAttempts(clientIP)
-	LogAuditEvent(AuditLoginSuccess, clientIP, userAgent, fmt.Sprintf("Successful login (role=%s)", role))
+	aa.audit(AuditLoginSuccess, clientIP, userAgent, fmt.Sprintf("Successful login (role=%s)", role))
 
 	// Create session with the resolved identity/role
 	token, err := aa.CreateSessionForUser(clientIP, userAgent, userID, userEmail, role)
@@ -1059,7 +1084,7 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Local password auth may be disabled (OIDC-only); enforce on the endpoint.
 	if !aa.IsLocalAuthAllowed() {
-		LogAuditEvent(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
+		aa.audit(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Local login is disabled"})
@@ -1088,10 +1113,10 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 
 		msg := "Invalid credentials"
 		if attempts >= MaxFailedAttempts {
-			LogAuditEvent(AuditLoginLocked, clientIP, userAgent, "Account locked after max failed attempts (JSON)")
+			aa.audit(AuditLoginLocked, clientIP, userAgent, "Account locked after max failed attempts (JSON)")
 			msg = "Account locked due to too many failed attempts. Please try again later."
 		} else {
-			LogAuditEvent(AuditLoginFailed, clientIP, userAgent, fmt.Sprintf("Failed JSON login attempt %d/%d", attempts, MaxFailedAttempts))
+			aa.audit(AuditLoginFailed, clientIP, userAgent, fmt.Sprintf("Failed JSON login attempt %d/%d", attempts, MaxFailedAttempts))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1105,7 +1130,7 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 		if !aa.verifyTOTP(req.TOTP) {
 			aa.RecordFailedAttempt(clientIP)
 			time.Sleep(500 * time.Millisecond)
-			LogAuditEvent(AuditLoginFailed, clientIP, userAgent, "Admin 2FA code missing/invalid (JSON)")
+			aa.audit(AuditLoginFailed, clientIP, userAgent, "Admin 2FA code missing/invalid (JSON)")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{"error": "2FA code required", "totpRequired": "true"})
@@ -1115,7 +1140,7 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Successful login - reset failed attempts
 	aa.ResetFailedAttempts(clientIP)
-	LogAuditEvent(AuditLoginSuccess, clientIP, userAgent, fmt.Sprintf("Successful JSON login (role=%s)", role))
+	aa.audit(AuditLoginSuccess, clientIP, userAgent, fmt.Sprintf("Successful JSON login (role=%s)", role))
 
 	token, err := aa.CreateSessionForUser(clientIP, userAgent, userID, userEmail, role)
 	if err != nil {
@@ -1149,7 +1174,7 @@ func (aa *AdminAuth) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("casadrop_session")
 	if err == nil {
 		aa.InvalidateSession(cookie.Value)
-		LogAuditEvent(AuditLogout, clientIP, userAgent, "User logged out")
+		aa.audit(AuditLogout, clientIP, userAgent, "User logged out")
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -1237,7 +1262,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 	// concurrent setup POSTs can't both pass (compare-and-clear under one lock).
 	if !aa.consumeSetupToken(r.FormValue("setup_token")) {
 		clientIP := utils.GetClientIP(r)
-		LogAuditEvent(AuditLoginFailed, clientIP, r.Header.Get("User-Agent"), "Setup rejected: invalid setup token")
+		aa.audit(AuditLoginFailed, clientIP, r.Header.Get("User-Agent"), "Setup rejected: invalid setup token")
 		time.Sleep(500 * time.Millisecond)
 		newToken, err := aa.GenerateCSRFToken()
 		if err != nil {
@@ -1264,7 +1289,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 	// Auto-login after setup
 	clientIP := utils.GetClientIP(r)
 	userAgent := r.Header.Get("User-Agent")
-	LogAuditEvent(AuditSetupComplete, clientIP, userAgent, "Initial admin setup completed")
+	aa.audit(AuditSetupComplete, clientIP, userAgent, "Initial admin setup completed")
 
 	token, err := aa.CreateSession(clientIP, userAgent)
 	if err != nil {

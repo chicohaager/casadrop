@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"casadrop/internal/audit"
 	"casadrop/internal/auth"
 	"casadrop/internal/handlers"
 	"casadrop/internal/middleware"
@@ -65,6 +66,16 @@ func main() {
 	// in addition to the single admin password.
 	adminAuth.SetLocalUserStore(store)
 
+	// Activity log: durable "who did what" for shares, uploads and logins.
+	retention, err := audit.RetentionFromEnv()
+	if err != nil {
+		log.Fatalf("Activity log: %v", err)
+	}
+	activityLog := audit.New(store, retention)
+	activityLog.Start()
+	h.SetAudit(activityLog)
+	adminAuth.SetAuditSink(activityLog.AuthSink)
+
 	// Initialize Email handler and start background expiry notifier
 	emailHandler := handlers.NewEmailHandler(store)
 	h.SetEmailHandler(emailHandler)
@@ -114,6 +125,7 @@ func main() {
 
 	log.Println("Stopping background workers...")
 	adminAuth.Stop()
+	activityLog.Stop()
 	downloadLimiter.Stop()
 	emailHandler.Stop()
 	h.Stop()

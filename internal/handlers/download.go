@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 
 	"casadrop/internal/auth"
+	"casadrop/internal/models"
 	"casadrop/internal/utils"
 )
 
@@ -163,6 +164,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	// Send webhook notification
 	clientIP := utils.GetClientIP(r)
 	userAgent := r.Header.Get("User-Agent")
+	h.recordEvent(r, models.EventShareDownloaded, models.Event{ShareID: id, Detail: share.OriginalName})
 	if updatedShare != nil {
 		h.webhook.NotifyDownload(updatedShare, clientIP, userAgent)
 
@@ -272,6 +274,7 @@ func (h *Handler) StreamFile(w http.ResponseWriter, r *http.Request) {
 		updatedShare, _ := h.storage.Get(id)
 		clientIP := utils.GetClientIP(r)
 		userAgent := r.Header.Get("User-Agent")
+		h.recordEvent(r, models.EventShareStreamed, models.Event{ShareID: id, Detail: share.OriginalName})
 		if updatedShare != nil {
 			h.webhook.NotifyDownload(updatedShare, clientIP, userAgent)
 			if updatedShare.MaxDownloads > 0 && updatedShare.Downloads >= updatedShare.MaxDownloads {

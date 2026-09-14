@@ -66,6 +66,11 @@ type StorageBackend interface {
 	DeleteAPIKey(id string) error
 	UpdateAPIKeyLastUsed(id string)
 
+	// Activity log operations (v2.5)
+	RecordEvent(event *models.Event) error
+	ListEvents(filter models.EventFilter) ([]*models.Event, int, error)
+	PurgeEventsBefore(cutoff time.Time) (int64, error)
+
 	// Utility
 	UploadsDir() string
 	Ping() error
