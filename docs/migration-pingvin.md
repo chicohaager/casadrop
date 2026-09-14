@@ -6,29 +6,44 @@ Pingvin Share was archived in June 2025. CasaDrop provides a lightweight alterna
 
 | Feature | Pingvin Share | CasaDrop |
 |---------|---------------|----------|
-| File Sharing | Yes | Yes |
-| Password Protection | Yes | Yes |
-| Expiration | Yes | Yes |
-| Download Limits | Yes | Yes |
-| Reverse Shares | Yes | Yes (Receive Links) |
-| Folder Sharing | Limited | Yes |
+| File sharing via link | Yes | Yes |
+| Folder sharing | Limited — multi-file shares with ZIP download, no folder upload or tree | Yes — upload a folder, browse it, ZIP on the fly |
+| Share files already on the server | No | Yes ("Share from host") |
+| Receive links (reverse shares) | Yes | Yes — per-link limits, allowed extensions, webhook |
+| Password protection | Yes | Yes |
+| Expiration | Yes | Yes (1 hour to 30 days, or never) |
+| Download limits | Yes | Yes |
+| QR code for a share link | No (QR only for 2FA enrolment) | Yes |
+| Media streaming | Preview in the browser | Yes, seekable (Range requests) |
+| Image thumbnails | No | Yes |
 | Multi-user | Yes | Yes (Admin / User / Viewer roles) |
 | OIDC/SSO | Yes | Yes (Authentik, Keycloak, any OIDC provider) |
-| Email Notifications | Yes | Yes (SMTP) — plus webhooks |
-| Database | PostgreSQL | SQLite |
-| Size | ~300 MB | ~17 MB binary, ~55 MB image |
-| Stack | Node.js/Next.js | Go |
+| LDAP | Yes | No |
+| Two-factor (TOTP) | Yes | Yes (admin login) |
+| Email | Yes | Yes (SMTP) |
+| Webhooks | No | Yes (HMAC-signed) |
+| ClamAV scanning | Yes | Yes (receive-link uploads, fail-closed) |
+| Per-user storage quota | No (one global maximum share size) | Yes |
+| Storage backends | Local, S3 | Local (S3 on the roadmap) |
+| Public access helpers | No | Tailscale, Cloudflare Tunnel, Pangolin, Taildrop |
+| Prometheus metrics | No | Yes |
+| Custom branding (logo, name) | Yes | Planned |
+| Languages | 29 | 14 |
+| API documentation | OpenAPI/Swagger | Markdown ([api.md](api.md)) |
+| Database | SQLite | SQLite |
+| Docker image (amd64, compressed) | ~186 MB | ~17 MB |
+| Stack | Node.js (NestJS + Next.js) | Go, single static binary |
 
 ## Migration Steps
 
 ### 1. Export Shares (Manual)
 
-Pingvin Share doesn't provide an export function. Document your active shares:
+Pingvin Share doesn't provide an export function. Document your active shares.
+Pingvin keeps its metadata in an SQLite file inside the `./data` folder you
+mounted into the container:
 
 ```bash
-# From Pingvin Share database
-docker exec pingvin-share-db psql -U pingvin -d pingvin -c \
-  "SELECT id, name, expiration FROM share WHERE expiration > NOW();"
+sqlite3 ./data/pingvin-share.db "SELECT id, name, expiration FROM Share;"
 ```
 
 ### 2. Deploy CasaDrop
@@ -82,14 +97,11 @@ proxy_pass http://casadrop:8080;
 ### 6. Stop Pingvin Share
 
 ```bash
-# Backup Pingvin data first
-docker cp pingvin-share-backend:/app/data ./pingvin-backup
+# Backup Pingvin data first — it is the ./data bind mount from its compose file
+cp -r ./data ./pingvin-backup
 
-# Stop containers
+# Stop the container
 docker compose -f pingvin-docker-compose.yml down
-
-# Optional: Remove volumes
-docker volume rm pingvin-share_data pingvin-share_db
 ```
 
 ## URL Compatibility
@@ -154,7 +166,7 @@ Custom branding (your own logo and name) is planned, not yet available.
 After Pingvin Share was archived, the homelab community needed an alternative:
 
 - **Active Development**: CasaDrop is actively maintained
-- **Lightweight**: Single Go binary, no Node.js/PostgreSQL required
+- **Lightweight**: a single 17 MB Go binary, no Node.js runtime — the Docker image is about a tenth the size
 - **Self-contained**: SQLite database, no external dependencies
 - **Fast**: Low memory footprint, quick startup
 - **Homelab-focused**: Built for Docker, supports common integrations
