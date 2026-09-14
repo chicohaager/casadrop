@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was an inconsistency rather than an exploitable hole.)
 
 ### Documentation
+- **`docs/CasaDrop-HowTo-Users-2026-08-28.html`** — a user guide for the people
+  an operator hands a login to (12 sections: signing in, the interface, sending
+  a file, managing shares, what the recipient sees, receive links, share from
+  host, roles and quota, 2FA, troubleshooting, quick reference). Self-contained
+  HTML like the network & webhooks guide; both are now listed in
+  `docs/README.md`.
 - **`docs/api.md` corrected against a running instance.** Most documented field
   names were wrong, and the request-side ones failed *silently*: `expires` /
   `maxDownloads` are really `expires_in` (integer hours) / `max_downloads`, so a
