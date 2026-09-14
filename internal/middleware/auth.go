@@ -119,7 +119,11 @@ type AdminAuth struct {
 type Session struct {
 	// Token holds the SHA-256 hash of the bearer token (hex), NOT the raw token.
 	// It doubles as the map key. The raw token is never persisted.
-	Token     string      `json:"token"`
+	Token string `json:"token"`
+	// ID is a random, opaque handle for this session, safe to expose in the
+	// session-management API. It is unrelated to the token so listing sessions
+	// reveals nothing about the credential.
+	ID        string      `json:"id"`
 	ExpiresAt time.Time   `json:"expiresAt"`
 	IP        string      `json:"ip"`
 	UserAgent string      `json:"userAgent"`
@@ -321,14 +325,30 @@ func (aa *AdminAuth) loadSessions() {
 		return
 	}
 
-	// Filter expired sessions
+	// Filter expired sessions and backfill an ID for any session persisted by a
+	// version that predated per-session IDs, so it can be listed and revoked
+	// like any other rather than showing up id-less.
 	now := time.Now()
 	aa.sessions = make(map[string]Session)
 	for token, session := range sessions {
-		if now.Before(session.ExpiresAt) {
-			aa.sessions[token] = session
+		if !now.Before(session.ExpiresAt) {
+			continue
 		}
+		if session.ID == "" {
+			if sid := make([]byte, 16); readRandom(sid) {
+				session.ID = base64.URLEncoding.EncodeToString(sid)
+			}
+		}
+		aa.sessions[token] = session
 	}
+}
+
+// readRandom fills b with cryptographic random bytes, reporting success. A
+// backfilled session ID that could not be generated is left empty rather than
+// crashing session loading at startup.
+func readRandom(b []byte) bool {
+	_, err := rand.Read(b)
+	return err == nil
 }
 
 // saveSessions persists sessions to disk
@@ -897,9 +917,15 @@ func (aa *AdminAuth) CreateSessionForUser(ip, userAgent, userID, userEmail strin
 	token := base64.URLEncoding.EncodeToString(b)
 	h := hashToken(token)
 
+	sid := make([]byte, 16)
+	if _, err := rand.Read(sid); err != nil {
+		return "", err
+	}
+
 	aa.mu.Lock()
 	aa.sessions[h] = Session{
 		Token:     h, // store the hash, never the raw token
+		ID:        base64.URLEncoding.EncodeToString(sid),
 		ExpiresAt: time.Now().Add(SessionIdleTTL),
 		IP:        ip,
 		UserAgent: userAgent,

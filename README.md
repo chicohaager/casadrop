@@ -39,7 +39,8 @@ Open http://localhost:8080 and start sharing!
 ## Features
 
 ### File Sharing
-- Drag & Drop upload (up to 100 GB configurable)
+- Drag & Drop upload (up to 100 GB configurable), **resumable** — a reload or a
+  server restart continues the transfer instead of starting over
 - Password protection with bcrypt hashing
 - Expiration (1 hour to 30 days)
 - Download limits
@@ -81,7 +82,9 @@ Open http://localhost:8080 and start sharing!
 - Prometheus metrics at `/api/metrics` (admin-only)
 - Health probes: `/healthz` (liveness), `/readyz` (readiness)
 - Statistics dashboard
-- Upload/download tracking
+- **Activity log** — who downloaded, uploaded, signed in, with address and
+  time; per-share and (for admins) server-wide, filterable, CSV export,
+  configurable retention
 
 ### Security
 - Role-based access control (RBAC)
@@ -91,6 +94,8 @@ Open http://localhost:8080 and start sharing!
 - Strict Content-Security-Policy (`script-src 'self'`), HSTS, security headers
 - Webhook SSRF guard (literal-IP block, redirect refusal, optional DNS pinning)
 - Session absolute lifetime on top of rolling idle timeout
+- **Session management** — see every device signed in to your account and end
+  any of them, or sign out everywhere else at once; admins see all sessions
 - Blocked executable uploads
 - Optional ClamAV malware scanning (fail-closed) + proof-of-work throttle on the
   anonymous receive-upload path; per-user storage quotas
@@ -194,6 +199,7 @@ Or build the container image: `docker build -t casadrop:latest .`
 | `DATA_DIR` | /data | Data directory |
 | `ADMIN_PASSWORD` | - | Admin password (if set, skips the setup wizard) |
 | `TZ` | Europe/Berlin | Timezone |
+| `EVENT_RETENTION_DAYS` | 90 | Days to keep the activity log; `0` keeps it forever. Swept daily. |
 | `SHARE_ALLOWED_PATHS` | /DATA,/media,/home | Paths for file browser |
 | `MAX_FOLDER_ZIP_GB` | 10 | Max uncompressed budget per folder-ZIP download |
 | `TRUSTED_PROXY` | - | CIDRs/IPs of trusted proxies; `X-Forwarded-For`/`-Proto` honored only from them (anti-spoof). Fail-closed: unset ⇒ forwarded headers ignored (socket peer used). **Set to your proxy's IP/CIDR when behind a reverse proxy.** |
@@ -301,6 +307,47 @@ See [docs/api.md](docs/api.md) for full API documentation.
 
 ---
 
+## Backup, Restore & Upgrade
+
+Everything CasaDrop keeps lives in the data directory — `/data` in the
+container, whatever you mounted it from on the host (`./data` in the compose
+files above). That is the whole backup: the SQLite database (`shares.db`, which
+holds shares, users, receive links, SMTP config, API keys and the activity
+log), the uploaded and received files under `uploads/`, and the admin
+configuration and sessions.
+
+**Back up** by copying that directory while the container is stopped, or with
+SQLite's online backup while it runs:
+
+```bash
+# Cold copy — simplest, fully consistent
+docker compose stop
+tar czf casadrop-backup-$(date +%F).tar.gz ./data
+docker compose start
+```
+
+**Restore** by putting the directory back and starting the container:
+
+```bash
+docker compose down
+rm -rf ./data && tar xzf casadrop-backup-YYYY-MM-DD.tar.gz
+docker compose up -d
+```
+
+**Upgrade** by pulling the new image tag and recreating the container — the
+data directory is untouched and the database migrates itself on first start:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Pin a specific version (`chicohaager/casadrop:2.4.4`) rather than `latest` if
+you want upgrades to be a deliberate step. Downgrading across a schema change
+is not supported; keep a backup from before an upgrade.
+
+---
+
 ## Documentation
 
 - **[Complete HowTo](docs/HOWTO.md)** — install → first share → public access → automation → hardening
@@ -326,6 +373,9 @@ See [docs/api.md](docs/api.md) for full API documentation.
 - [x] Per-user local authentication (email + password)
 - [x] Email notifications (SMTP)
 - [x] Tailscale Taildrop ("send to my device")
+- [x] Activity log (per-share + server-wide, CSV export)
+- [x] Resumable chunked uploads
+- [x] Session management (list + revoke devices)
 - [ ] S3 storage backend
 - [ ] Share link customization
 
