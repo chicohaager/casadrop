@@ -55,7 +55,7 @@ x-casaos:
   description:
     en_us: Simple and secure file sharing for your homelab. Share files via link with optional password protection and expiration.
   developer: CasaDrop
-  icon: https://raw.githubusercontent.com/chicohaager/casadrop/main/assets/logo.png
+  icon: https://raw.githubusercontent.com/chicohaager/casadrop/main/icon.png
   tagline:
     en_us: Secure File Sharing
   title:
