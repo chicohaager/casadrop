@@ -31,3 +31,27 @@ func containsCRLF(s string) bool {
 	}
 	return false
 }
+
+// The share dialog sends no sender, so an empty sender must fall back to the
+// configured SMTP identity rather than producing an empty "shared a file with
+// you" line. Regression for the "sender_email is required" bug that made every
+// email-share fail even with correct SMTP settings.
+func TestApplySenderFallback(t *testing.T) {
+	cfg := SMTPConfigForTest("from@example.com", "CasaDrop")
+	s := NewService(&cfg)
+
+	// Empty sender: both fields fall back to the SMTP identity.
+	tr := &transferForTest{}
+	s.applySenderFallback(tr.e())
+	if tr.msg.SenderEmail != "from@example.com" || tr.msg.SenderName != "CasaDrop" {
+		t.Errorf("empty sender not filled from config: %+v", tr.msg)
+	}
+
+	// A caller-supplied sender is preserved.
+	tr2 := &transferForTest{email: "user@example.com", name: "Alice"}
+	m := tr2.e()
+	s.applySenderFallback(m)
+	if m.SenderEmail != "user@example.com" || m.SenderName != "Alice" {
+		t.Errorf("caller sender overwritten: %+v", m)
+	}
+}

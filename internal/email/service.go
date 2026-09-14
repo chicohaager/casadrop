@@ -93,6 +93,8 @@ func (s *Service) SendTransferEmail(transfer *models.EmailTransfer, downloadURL 
 		return fmt.Errorf("email service is not configured")
 	}
 
+	s.applySenderFallback(transfer)
+
 	subject := transfer.Title
 	if subject == "" {
 		if transfer.SenderName != "" {
@@ -108,6 +110,20 @@ func (s *Service) SendTransferEmail(transfer *models.EmailTransfer, downloadURL 
 	}
 
 	return s.sendEmail(transfer.RecipientEmail, subject, body)
+}
+
+// applySenderFallback fills empty sender fields from the configured SMTP
+// identity. The sender is cosmetic — it names who shared the file in the
+// subject and body — while the real From/envelope is always s.config.FromEmail.
+// The share dialog does not collect a sender, so an empty one must not reject
+// the send or produce an empty "shared a file with you" line.
+func (s *Service) applySenderFallback(transfer *models.EmailTransfer) {
+	if transfer.SenderEmail == "" {
+		transfer.SenderEmail = s.config.FromEmail
+	}
+	if transfer.SenderName == "" {
+		transfer.SenderName = s.config.FromName
+	}
 }
 
 // SendDownloadNotification sends notification to sender when file is downloaded

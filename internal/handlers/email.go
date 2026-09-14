@@ -142,8 +142,8 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if req.ShareID == "" || req.RecipientEmail == "" || req.SenderEmail == "" {
-		http.Error(w, "share_id, recipient_email, and sender_email are required", http.StatusBadRequest)
+	if req.ShareID == "" || req.RecipientEmail == "" {
+		http.Error(w, "share_id and recipient_email are required", http.StatusBadRequest)
 		return
 	}
 
