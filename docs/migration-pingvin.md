@@ -142,7 +142,7 @@ the README for the compose snippet).
 
 CasaDrop has built-in dark/light mode (auto-detects system preference).
 
-Custom branding is not supported.
+Custom branding (your own logo and name) is planned, not yet available.
 
 ## Getting Help
 
