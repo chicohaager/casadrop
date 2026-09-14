@@ -94,6 +94,10 @@ func main() {
 		StaticDir:       staticDir,
 	})
 
+	// Rebuild any chunked uploads interrupted by a previous shutdown so they can
+	// be resumed rather than silently lost.
+	handlers.RestoreChunkUploads(store.UploadsDir())
+
 	// Initialize Tailscale if configured
 	handlers.InitTailscaleOnStartup(dataDir)
 

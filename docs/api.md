@@ -131,6 +131,52 @@ Response:
 
 `errors` is present only when `failed > 0`.
 
+### Chunked / Resumable Upload
+
+For large files the browser splits the file into chunks. The upload survives a
+page reload or a server restart: chunks already stored are not re-sent.
+
+```bash
+POST /api/upload/chunk/init
+Content-Type: application/json
+
+{ "fileName": "movie.mkv", "totalSize": 5368709120, "totalChunks": 640 }
+```
+
+Response: `{ "uploadId": "<uuid>", "totalChunks": "640" }`. A manifest is written
+to disk immediately, so an upload interrupted before the first chunk is still
+tracked (and cleaned up on age).
+
+```bash
+POST /api/upload/chunk/{uploadId}?index=N     # body = raw chunk bytes, max 10 MB
+```
+
+Response: `{ "received": <count>, "total": <totalChunks> }`. Chunks may arrive in
+any order and an index may be re-sent (its bytes replace the previous copy). The
+cumulative on-disk size is capped against the declared `totalSize`.
+
+```bash
+GET /api/upload/chunk/{uploadId}              # resume: what does the server hold?
+```
+
+Response: `{ "uploadId", "fileName", "totalChunks", "received": [0, 1, 5, …] }`.
+The client sends only the missing indices.
+
+```bash
+POST /api/upload/chunk/{uploadId}/finalize
+Content-Type: application/json
+
+{ "password": "", "expires_in": 24, "max_downloads": 0 }
+```
+
+Assembles the chunks in order and creates the share; the response is the same
+share object as a single-file upload.
+
+**Ownership.** An upload belongs to the user who initialised it. Every chunk,
+status and finalize request is checked against that owner; a request from anyone
+else (or for an unknown id) is a `404` — an upload cannot be probed, resumed or
+finalised by another account. Interrupted uploads are removed after 24 hours.
+
 ### Share From Server Path
 
 Share existing files without copying:
