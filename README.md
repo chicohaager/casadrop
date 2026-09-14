@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="CasaDrop logo" width="180">
+  <img src="assets/icon.png" alt="CasaDrop icon" width="160">
 </p>
 
 # CasaDrop
