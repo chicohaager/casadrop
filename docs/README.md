@@ -7,6 +7,8 @@ Self-hosted file sharing for your homelab.
 | Topic | Description |
 |-------|-------------|
 | **[Complete HowTo](HOWTO.md)** | **Start here** — install, share, expose publicly, automate, harden |
+| [User Guide (HTML)](CasaDrop-HowTo-Users-2026-08-28.html) | For the people you hand a login to — signing in, sending files, managing shares, receiving files, roles & quota, 2FA. Self-contained, prints cleanly |
+| [Network & Webhooks (HTML)](CasaDrop-HowTo-Network-Webhooks-2026-09-07.html) | For operators — which address ends up in a share link and why, reverse proxy / `TRUSTED_PROXY`, tunnels, webhook setup and the SSRF guard |
 | [Docker Compose Setup](docker-compose.md) | Standard deployment guide |
 | [Reverse Proxy](reverse-proxy.md) | Nginx, Traefik, Caddy configurations |
 | [Tailscale](tailscale.md) | Host Tailscale or bundled sidecar, serve/Funnel, Taildrop |

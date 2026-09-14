@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CasaDrop — User Guide</title>
+<meta name="description" content="A complete, task-by-task guide to using CasaDrop 2.4.4: signing in, sending files, managing shares, receiving files from other people, roles, quotas and account security.">
+<style>
+/*
+ * Palette and type stacks taken from the ZFW firewall design system
+ * (zfw/raw/usr/share/casaos/www/modules/zfw/styles.css): warm off-white page,
+ * white cards on soft shadow with 18px corners, forest-green accent, pill
+ * badges on tinted backgrounds, Fira Sans / Fira Code.
+ *
+ * No webfont import, for the same reason ZFW gives: the page must render
+ * self-contained, offline, without calling a third party on load.
+ */
+:root{
+  --page-bg:#F5F4EE;
+  --card-bg:#FFFFFF;
+  --card-bg-accent:#234B3E;
+  --card-border:#ECE9DF;
+  --card-radius:18px;
+  --card-radius-sm:12px;
+  --card-shadow:0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(15,23,42,.05);
+  --text:#0F1F1A;
+  --text-muted:#6B7280;
+  --text-on-accent:#FFFFFF;
+  --accent:#234B3E;
+  --accent-hover:#1A3A2F;
+  --accent-tint:#DCEFE5;
+  --accent-ring:rgba(35,75,62,.18);
+  --success:#166534;
+  --success-tint:#DCFCE7;
+  --warn:#B45309;
+  --warn-tint:#FEF3C7;
+  --danger:#B91C1C;
+  --danger-tint:#FEE2E2;
+  --neutral-tint:#F1F5F9;
+  --font-sans:"Fira Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"Fira Code",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--page-bg)}
+body{
+  font-family:var(--font-sans);color:var(--text);
+  font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased;
+  padding:40px 24px 80px;
+}
+.wrap{max-width:940px;margin:0 auto}
+
+/* ---------- header ---------- */
+header.doc{margin-bottom:28px}
+.eyebrow{
+  display:inline-block;background:var(--accent-tint);color:var(--accent);
+  border-radius:999px;padding:3px 12px;font-size:12px;font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase;margin-bottom:14px;
+}
+h1{font-size:34px;line-height:1.18;letter-spacing:-.02em;font-weight:700}
+.lede{color:var(--text-muted);font-size:17px;margin-top:10px;max-width:64ch}
+.meta-row{
+  display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;
+  font-size:12.5px;color:var(--text-muted);
+}
+.meta-row span{
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-radius:999px;padding:3px 11px;
+}
+
+/* ---------- cards & sections ---------- */
+.card{
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-radius:var(--card-radius);box-shadow:var(--card-shadow);
+  padding:26px 28px;margin-bottom:20px;
+}
+.card.accent{background:var(--card-bg-accent);border-color:var(--card-bg-accent);color:var(--text-on-accent)}
+.card.accent h2,.card.accent h3,.card.accent a{color:var(--text-on-accent)}
+.card.accent p,.card.accent li{color:rgba(255,255,255,.86)}
+.card.accent code{background:rgba(255,255,255,.13);color:#fff;border-color:rgba(255,255,255,.2)}
+
+section{scroll-margin-top:20px}
+h2{
+  font-size:22px;letter-spacing:-.01em;font-weight:700;margin-bottom:4px;
+  display:flex;align-items:baseline;gap:10px;
+}
+h2 .num{
+  font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-tint);
+  border-radius:999px;padding:2px 9px;letter-spacing:.02em;flex:none;
+}
+h3{font-size:16.5px;font-weight:650;margin:22px 0 8px}
+h3:first-of-type{margin-top:16px}
+h4{font-size:14px;font-weight:650;margin:16px 0 6px;color:var(--text-muted);
+   text-transform:uppercase;letter-spacing:.05em}
+p{margin:9px 0}
+p.sub{color:var(--text-muted);margin-top:2px}
+a{color:var(--accent);text-decoration-color:var(--accent-ring);text-underline-offset:2px}
+a:hover{color:var(--accent-hover)}
+hr{border:0;border-top:1px solid var(--card-border);margin:22px 0}
+
+/* ---------- lists ---------- */
+ul,ol{margin:10px 0 10px 22px}
+li{margin:5px 0}
+ol.steps{list-style:none;margin-left:0;counter-reset:step}
+ol.steps>li{
+  counter-increment:step;position:relative;padding-left:38px;margin:14px 0;
+}
+ol.steps>li::before{
+  content:counter(step);position:absolute;left:0;top:1px;
+  width:25px;height:25px;border-radius:999px;
+  background:var(--accent);color:#fff;
+  font-size:12.5px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
+ul.plain{list-style:none;margin-left:0}
+ul.plain>li{padding-left:20px;position:relative}
+ul.plain>li::before{
+  content:"";position:absolute;left:4px;top:10px;width:6px;height:6px;
+  border-radius:999px;background:var(--accent);
+}
+
+/* ---------- code ---------- */
+code{
+  font-family:var(--font-mono);font-size:.88em;
+  background:var(--neutral-tint);border:1px solid var(--card-border);
+  border-radius:6px;padding:1px 5px;
+}
+pre{
+  font-family:var(--font-mono);font-size:13px;line-height:1.55;
+  background:#0F1F1A;color:#E6EDE9;border-radius:var(--card-radius-sm);
+  padding:15px 17px;margin:12px 0;overflow-x:auto;
+}
+pre code{background:none;border:0;padding:0;color:inherit;font-size:inherit}
+kbd{
+  font-family:var(--font-sans);font-size:12.5px;font-weight:600;
+  background:var(--card-bg);border:1px solid var(--card-border);
+  border-bottom-width:2px;border-radius:6px;padding:1px 7px;
+}
+
+/* ---------- tables ---------- */
+.table-scroll{overflow-x:auto;margin:14px 0;
+  border:1px solid var(--card-border);border-radius:var(--card-radius-sm)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--card-border);
+      vertical-align:top}
+th{background:var(--neutral-tint);font-weight:650;font-size:12.5px;
+   text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+.yes{color:var(--success);font-weight:650}
+.no{color:var(--text-muted)}
+
+/* ---------- badges & callouts ---------- */
+.badge{
+  display:inline-block;border-radius:999px;padding:1px 9px;
+  font-size:12px;font-weight:650;line-height:1.5;white-space:nowrap;
+}
+.b-accent{background:var(--accent-tint);color:var(--accent)}
+.b-success{background:var(--success-tint);color:var(--success)}
+.b-warn{background:var(--warn-tint);color:var(--warn)}
+.b-danger{background:var(--danger-tint);color:var(--danger)}
+.b-neutral{background:var(--neutral-tint);color:var(--text-muted)}
+
+.note{
+  border-radius:var(--card-radius-sm);padding:13px 16px;margin:14px 0;
+  font-size:14.2px;border-left:3px solid var(--accent);background:var(--accent-tint);
+}
+.note.warn{border-left-color:var(--warn);background:var(--warn-tint)}
+.note.danger{border-left-color:var(--danger);background:var(--danger-tint)}
+.note.ok{border-left-color:var(--success);background:var(--success-tint)}
+.note strong{font-weight:650}
+.note p:first-child{margin-top:0}
+.note p:last-child{margin-bottom:0}
+
+/* ---------- table of contents ---------- */
+.toc ol{list-style:none;margin:0;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:2px 22px}
+.toc li{margin:0}
+.toc a{
+  display:flex;gap:10px;align-items:baseline;
+  padding:7px 9px;border-radius:9px;text-decoration:none;color:var(--text);
+  font-size:14.3px;
+}
+.toc a:hover{background:var(--neutral-tint)}
+.toc .n{color:var(--accent);font-weight:700;font-size:12px;min-width:17px}
+
+/* ---------- misc ---------- */
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.mini{
+  border:1px solid var(--card-border);border-radius:var(--card-radius-sm);
+  padding:15px 17px;background:var(--card-bg);
+}
+.mini h4{margin-top:0}
+.screen{
+  font-family:var(--font-mono);font-size:12.5px;line-height:1.7;
+  background:var(--neutral-tint);border:1px solid var(--card-border);
+  border-radius:var(--card-radius-sm);padding:14px 16px;margin:12px 0;
+  color:var(--text);white-space:pre;overflow-x:auto;
+}
+footer.doc{
+  margin-top:30px;padding-top:20px;border-top:1px solid var(--card-border);
+  font-size:13px;color:var(--text-muted);
+}
+
+@media (max-width:640px){
+  body{padding:26px 14px 60px;font-size:14.5px}
+  .card{padding:20px 18px}
+  h1{font-size:27px}
+}
+
+@media print{
+  body{background:#fff;padding:0;font-size:11pt}
+  .card{box-shadow:none;border:1px solid #D8D5CB;break-inside:avoid;
+        padding:16px 18px;margin-bottom:14px}
+  .card.accent{background:#fff;color:#000;border-color:#D8D5CB}
+  .card.accent h2,.card.accent h3{color:#000}
+  .card.accent p,.card.accent li{color:#333}
+  .toc{display:none}
+  pre{background:#F4F4F0;color:#111;border:1px solid #D8D5CB}
+  h2{break-after:avoid}
+  table{font-size:10pt}
+  a{text-decoration:none;color:#000}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="eyebrow">User Guide</div>
+  <h1>CasaDrop — sending and receiving files</h1>
+  <p class="lede">Everything you can do with CasaDrop from the browser: sign in,
+  send a file to someone, hand out an upload link so they can send files back to
+  you, and keep your shares tidy. Written for the people who <em>use</em> a
+  CasaDrop instance, not the person who installed it.</p>
+  <div class="meta-row">
+    <span>Version 2.4.4</span>
+    <span>28 August 2026</span>
+    <span>Audience: everyday users &amp; share admins</span>
+    <span>Setup &amp; hosting: see the operator HowTo</span>
+  </div>
+</header>
+
+<div class="card toc">
+  <h2 style="margin-bottom:12px">Contents</h2>
+  <ol>
+    <li><a href="#s1"><span class="n">1</span> What CasaDrop does for you</a></li>
+    <li><a href="#s2"><span class="n">2</span> Signing in</a></li>
+    <li><a href="#s3"><span class="n">3</span> A tour of the interface</a></li>
+    <li><a href="#s4"><span class="n">4</span> Sending a file</a></li>
+    <li><a href="#s5"><span class="n">5</span> Managing your shares</a></li>
+    <li><a href="#s6"><span class="n">6</span> What the recipient sees</a></li>
+    <li><a href="#s7"><span class="n">7</span> Receiving files from others</a></li>
+    <li><a href="#s8"><span class="n">8</span> Sharing what is already on the server</a></li>
+    <li><a href="#s9"><span class="n">9</span> Roles and storage quota</a></li>
+    <li><a href="#s10"><span class="n">10</span> Securing your account</a></li>
+    <li><a href="#s11"><span class="n">11</span> When something goes wrong</a></li>
+    <li><a href="#s12"><span class="n">12</span> Quick reference</a></li>
+  </ol>
+</div>
+
+<!-- 1 -->
+<section id="s1" class="card">
+  <h2><span class="num">1</span> What CasaDrop does for you</h2>
+  <p>CasaDrop turns a file into a link. You drop a file into the browser, CasaDrop
+  gives you a URL, and whoever holds that URL can download the file — no account,
+  no app, no sign-up on their side. It works the other way round too: you can hand
+  out an upload page so somebody else can send files <em>to</em> you.</p>
+
+  <div class="grid2" style="margin-top:16px">
+    <div class="mini">
+      <h4>Send</h4>
+      <p class="sub">Upload a file or a whole folder's worth of files and get a
+      link for each one. Optionally protect it with a password, let it expire
+      after a set time, or let it die after N downloads.</p>
+    </div>
+    <div class="mini">
+      <h4>Receive</h4>
+      <p class="sub">Create a receive link and send it to someone. They get a
+      simple upload page — no account needed — and you get the files, within the
+      limits you set.</p>
+    </div>
+    <div class="mini">
+      <h4>Browse</h4>
+      <p class="sub">Share a whole folder and the recipient gets a browsable
+      listing with breadcrumbs, per-file downloads and a “Download All as ZIP”
+      button.</p>
+    </div>
+    <div class="mini">
+      <h4>Preview</h4>
+      <p class="sub">Images, video, audio and PDFs play or render right on the
+      share page, so a recipient can look before downloading.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><strong>Who can do what depends on your role.</strong> Admin, User and
+    Viewer see different things. If a button described here is missing for you,
+    check <a href="#s9">§9 Roles and storage quota</a> before assuming something
+    is broken.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="s2" class="card">
+  <h2><span class="num">2</span> Signing in</h2>
+  <p>Open the address your administrator gave you. If you are not signed in yet,
+  CasaDrop sends you to its login page.</p>
+
+  <div class="screen">┌─────────────────────────────────┐
+│           [ CasaDrop ]          │
+│           Admin Login           │
+│                                 │
+│  EMAIL  (leave blank for admin) │
+│  ┌───────────────────────────┐  │
+│  │ you@example.com           │  │
+│  └───────────────────────────┘  │
+│  PASSWORD                       │
+│  ┌───────────────────────────┐  │
+│  │ ••••••••                  │  │
+│  └───────────────────────────┘  │
+│  2FA CODE  (if enabled)         │
+│  ┌───────────────────────────┐  │
+│  │ 123456                    │  │
+│  └───────────────────────────┘  │
+│  ┌───────────────────────────┐  │
+│  │           Login           │  │
+│  └───────────────────────────┘  │
+└─────────────────────────────────┘</div>
+
+  <h3>Which of the three fields you fill in</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Your situation</th><th>Email</th><th>Password</th><th>2FA code</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>You have your <strong>own account</strong> (an administrator created it for you)</td>
+        <td>Your email address</td>
+        <td>Your personal password</td>
+        <td>Leave empty</td>
+      </tr>
+      <tr>
+        <td>The instance uses <strong>one shared admin password</strong></td>
+        <td><strong>Leave blank</strong></td>
+        <td>The admin password</td>
+        <td>Only if 2FA was enabled</td>
+      </tr>
+      <tr>
+        <td>Your organisation uses <strong>SSO</strong></td>
+        <td colspan="3">Ignore the form — click <span class="badge b-accent">Login with SSO</span> below it. The button only appears when the administrator has switched OIDC on.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note warn">
+    <p><strong>Leaving the email blank is not a shortcut for a personal account.</strong>
+    A blank email means “use the single shared admin password”. If you have your
+    own account and leave the email out, your password will simply be rejected.</p>
+  </div>
+
+  <h3>If the login page keeps rejecting you</h3>
+  <ul class="plain">
+    <li>CasaDrop rate-limits sign-in attempts (5 per minute from one address) and
+    locks an account for 15 minutes after 10 failures. If you have been guessing,
+    wait it out — a correct password will still fail while the lock is active.</li>
+    <li>A session lasts up to 24 hours of inactivity and is refreshed while you
+    work, with a hard ceiling of 7 days. After that you sign in again. That is
+    normal, not a fault.</li>
+  </ul>
+</section>
+
+<!-- 3 -->
+<section id="s3" class="card">
+  <h2><span class="num">3</span> A tour of the interface</h2>
+  <p>Everything lives behind the sidebar on the left.</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:22%">Sidebar entry</th><th>What it is for</th><th style="width:22%">Who sees it</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Upload</strong></td><td>Drop files in and turn them into share links. The default view.</td><td>Everyone (Viewers cannot complete an upload)</td></tr>
+      <tr><td><strong>Share from host</strong></td><td>Publish a file or folder that already sits on the server, without re-uploading it.</td><td><span class="badge b-warn">Admin only</span></td></tr>
+      <tr><td><strong>Shares</strong></td><td>Your active share links, with counters and per-share actions.</td><td>Everyone</td></tr>
+      <tr><td><strong>Receive</strong></td><td>Upload links you hand to other people so they can send you files.</td><td>Everyone</td></tr>
+      <tr><td><strong>Settings</strong></td><td>Instance configuration: network URLs, file restrictions, users, 2FA, API keys, SMTP, webhooks.</td><td>Administrator territory</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Language and theme</h3>
+  <p>At the bottom of the sidebar, above <strong>Logout</strong>, sit two controls:</p>
+  <ul class="plain">
+    <li>A <strong>language dropdown</strong>. CasaDrop ships 14 languages —
+      English, Deutsch, Français, Español, Italiano, Português, Nederlands,
+      Polski, Русский, 日本語, 中文, 한국어, Türkçe and العربية. It starts in your
+      browser's language and remembers your pick in that browser.</li>
+    <li>A <strong>Dark Mode / Light Mode</strong> button. Also remembered per browser.</li>
+  </ul>
+  <p class="sub">Both reload the page when you change them — that is by design, not
+  a glitch. Neither setting follows you to another device: they live in the
+  browser you are sitting at.</p>
+
+  <p>Above them, a small badge shows your name and your role. That badge is the
+  fastest way to answer “why can't I see that button?”.</p>
+</section>
+
+<!-- 4 -->
+<section id="s4" class="card">
+  <h2><span class="num">4</span> Sending a file</h2>
+
+  <ol class="steps">
+    <li><strong>Open <em>Upload</em></strong> and either drag files onto the drop
+      zone or click it to open a file picker. You can select several files at once.
+      There is also an <strong>Upload Folder</strong> button inside the drop zone.</li>
+    <li><strong>Set the options</strong> that appear once files are queued —
+      password, expiry and download limit (all described below). They apply to
+      every file in this batch.</li>
+    <li><strong>Click <em>Upload</em>.</strong> A progress bar runs per file.</li>
+    <li><strong>Copy the links.</strong> When it finishes, each file gets its own
+      share URL of the form <code>/s/&lt;id&gt;</code>. Copy them now, or find
+      them any time under <em>Shares</em>.</li>
+  </ol>
+
+  <div class="note warn">
+    <p><strong>“Upload Folder” does not create one folder share.</strong> It is a
+    convenience for <em>selecting</em> everything in a folder; each file is
+    uploaded separately and gets its own link. If you want one browsable link for
+    a whole directory, that is a folder share — see
+    <a href="#s8">§8</a> (admin) or ask your administrator.</p>
+  </div>
+
+  <h3>The three upload options</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:23%">Option</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Password</strong><br><span class="badge b-neutral">optional</span></td>
+        <td>The recipient must type this password before they see or download
+        anything. Leave empty for a link that works for anyone who has it.
+        There is no way to read the password back later — if you forget it, edit
+        the share and set a new one.</td>
+      </tr>
+      <tr>
+        <td><strong>Expires in</strong></td>
+        <td>How long the link stays alive. The choices are 1 hour, 6 hours,
+        12 hours, <strong>1 day (default)</strong>, 3 days, 7 days, 14 days,
+        30 days, or <strong>Never (unlimited)</strong>. After expiry the link is
+        dead and the file is cleaned up automatically.</td>
+      </tr>
+      <tr>
+        <td><strong>Max downloads</strong></td>
+        <td>Retire the link after this many downloads. <code>0</code> means
+        unlimited. Useful for “this is for you and nobody else”: set it to 1.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note ok">
+    <p><strong>Large files just work.</strong> Anything over 100 MB is uploaded in
+    8 MB chunks automatically, which survives flaky connections and proxies that
+    dislike huge single requests. You do not switch anything on; the progress bar
+    looks the same.</p>
+  </div>
+
+  <h3>If an upload fails</h3>
+  <p>A failed upload says so: the bar turns red and prints <strong>“Upload
+  failed”</strong> with the reason underneath. <em>Server unreachable</em> means
+  the connection died — check that you are still on the network and that the
+  instance is up. A message quoting an HTTP status came from the server, and the
+  most common reasons are the file type being blocked by your administrator, or
+  your storage quota being full (<a href="#s9">§9</a>).</p>
+</section>
+
+<!-- 5 -->
+<section id="s5" class="card">
+  <h2><span class="num">5</span> Managing your shares</h2>
+  <p>The <strong>Shares</strong> view lists everything you have shared, with a
+  statistics bar at the top (total shares, downloads, total size, how many are
+  password-protected). Administrators see everybody's shares; a User sees only
+  their own.</p>
+
+  <h3>Reading a share card</h3>
+  <p>Each card shows a thumbnail (for images), the file name, and a row of facts:
+  download count, size, and when it expires. Three badges may appear:</p>
+  <p style="margin-top:10px">
+    <span class="badge b-accent">Protected</span> needs a password &nbsp;·&nbsp;
+    <span class="badge b-neutral">Folder</span> a browsable folder share &nbsp;·&nbsp;
+    <span class="badge b-warn">Expiring</span> less than an hour left
+  </p>
+
+  <h3>The buttons on each card</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:24%">Action</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Copy link</strong></td><td>Puts the share URL on your clipboard and confirms with a toast.</td></tr>
+      <tr><td><strong>QR Code</strong></td><td>Shows a QR image of the link — the quickest way to move a file to a phone standing next to you.</td></tr>
+      <tr><td><strong>Edit</strong></td><td>Change the expiry, the download limit, and add, change or clear the password after the fact.</td></tr>
+      <tr><td><strong>Send via Email</strong></td><td>Mails the link to a recipient with an optional message. Only works if your administrator has configured SMTP.</td></tr>
+      <tr><td><strong>Send to device (Taildrop)</strong></td><td>Pushes the actual file to one of your Tailscale devices. The button only appears when Tailscale is running on the server, and never for folder shares.</td></tr>
+      <tr><td><strong>Delete</strong></td><td>Kills the link and removes the uploaded copy. Asks for confirmation first. Not undoable.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Clearing out several at once</h3>
+  <p>Each card has a checkbox. Tick a few — or use <strong>Select All</strong> —
+  and a <strong>Delete Selected</strong> button appears in the header with a
+  count next to it. Same warning applies: deletion is immediate and final.</p>
+</section>
+
+<!-- 6 -->
+<section id="s6" class="card">
+  <h2><span class="num">6</span> What the recipient sees</h2>
+  <p>Worth knowing, because it is what you are actually sending people. Your
+  recipient needs no account and no login.</p>
+
+  <h3>A single file — <code>/s/&lt;id&gt;</code></h3>
+  <ul class="plain">
+    <li>The file name, its size, when it expires, and its type.</li>
+    <li>A <strong>preview</strong> where the format allows: images render, video
+      and audio get a player, PDFs open in a frame.</li>
+    <li>A big <strong>Download</strong> button and a <strong>QR</strong> button
+      (“Scan to download on another device”).</li>
+    <li>If you set a password: a lock screen — <em>“Password Protected — Enter the
+      password to access this file”</em> — with an <strong>Unlock</strong> button.
+      Nothing about the file, not even the preview, loads until the password is
+      accepted.</li>
+  </ul>
+
+  <div class="note">
+    <p><strong>MKV files play only partly in browsers.</strong> If you share a
+    Matroska video, the page says so itself: audio tracks in AC-3, E-AC-3 or DTS
+    have no browser decoder, so the picture may run silently. The download is
+    unaffected — tell your recipient to download rather than stream.</p>
+  </div>
+
+  <h3>A folder — <code>/s/&lt;id&gt;</code> with a listing</h3>
+  <ul class="plain">
+    <li>A table of <strong>Name</strong> and <strong>Size</strong>, with
+      breadcrumbs to walk into subfolders and back.</li>
+    <li>Any single file downloads on click.</li>
+    <li>A <strong>Download All as ZIP</strong> button builds the archive on the
+      fly. Very large folders can hit a size ceiling set by your administrator.</li>
+    <li>The same password gate as above, worded <em>“Enter the password to browse
+      this folder”</em>.</li>
+  </ul>
+</section>
+
+<!-- 7 -->
+<section id="s7" class="card">
+  <h2><span class="num">7</span> Receiving files from others</h2>
+  <p>A receive link is the mirror image of a share: you publish a page, somebody
+  else uploads to it. They need no account. This is the right tool for “send me
+  the scans” instead of asking people to email attachments.</p>
+
+  <h3>Creating one</h3>
+  <ol class="steps">
+    <li>Go to <strong>Receive</strong> and click <strong>New Link</strong>.</li>
+    <li>Give it a <strong>Name</strong> — the only required field. It is for your
+      own orientation in the list.</li>
+    <li>Set the limits you want (all optional, all described below).</li>
+    <li>Click <strong>Create</strong>. You get a URL of the form
+      <code>/r/&lt;id&gt;</code>. Send that to whoever should upload.</li>
+  </ol>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:27%">Field</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Password</strong></td><td>Uploaders must enter it before the upload form appears.</td></tr>
+      <tr><td><strong>Max uploads</strong></td><td>Total files this link will ever accept. <code>0</code> = unlimited. The page shows a live counter, e.g. <em>2 / 10 uploads used</em>, and switches to <strong>Upload Limit Reached</strong> when full.</td></tr>
+      <tr><td><strong>Max file size (MB)</strong></td><td>Per-file ceiling. <code>0</code> = unlimited.</td></tr>
+      <tr><td><strong>Expires in (hours)</strong></td><td><code>0</code> = never. After it passes the link stops accepting uploads.</td></tr>
+      <tr><td><strong>Allowed extensions</strong></td><td>A whitelist, comma-separated, e.g. <code>.pdf,.doc</code>. Anything else is refused with a plain message — an attempted <code>.exe</code> against a <code>.txt</code>-only link is told <em>“File type .exe not allowed”</em>. Leave empty to accept whatever your instance allows generally.</td></tr>
+      <tr><td><strong>Auto-share uploaded files</strong></td><td>Every arriving file immediately gets its own share link, so you can pass it on without a second step.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>What your uploader sees</h3>
+  <p>A single card: the limits spelled out, the counter if you set one, a
+  password box if you set one, then <em>“Drag &amp; drop a file here / or click to
+  browse”</em> and an upload button. On success: <strong>“File Uploaded
+  Successfully”</strong>. Nothing else on your instance is reachable from that
+  page.</p>
+
+  <div class="note">
+    <p><strong>Two protections may be active without you doing anything.</strong>
+    Your administrator can switch on virus scanning (an infected file is rejected
+    outright) and a small proof-of-work puzzle the browser solves before
+    uploading, to blunt automated abuse. The puzzle needs an HTTPS connection to
+    work; on a plain-HTTP LAN address a per-address rate limit does the same job.
+    Neither needs anything from your uploader beyond a moment's wait.</p>
+  </div>
+
+  <h3>Collecting what arrived</h3>
+  <p>Open the link's card under <strong>Receive</strong> to see the files that
+  came in and download them. Deleting the receive link deletes its received files
+  with it.</p>
+</section>
+
+<!-- 8 -->
+<section id="s8" class="card">
+  <h2><span class="num">8</span> Sharing what is already on the server</h2>
+  <p><span class="badge b-warn">Admin only</span> — if you do not see
+  <strong>Share from host</strong> in the sidebar, you do not have this, and the
+  server will refuse the request even if you find the URL.</p>
+
+  <p>Use it when the file is already on the machine CasaDrop runs on — a video on
+  the NAS, a folder of photos — and re-uploading it would be absurd.</p>
+
+  <ol class="steps">
+    <li>Open <strong>Share from host</strong>. You get a file browser, restricted
+      to the directories your administrator allowed. Image files show a
+      thumbnail so you can tell them apart at a glance.</li>
+    <li>Walk to the file or folder using the breadcrumbs.</li>
+    <li>Click <strong>Share</strong> on the row you want.</li>
+    <li>In the dialog, decide whether to tick <strong>“Link instead of copy (no
+      extra disk space)”</strong>, then confirm.</li>
+  </ol>
+
+  <div class="note">
+    <p><strong>Link or copy?</strong> A <em>link</em> serves the original file
+    where it lies — no extra disk space, and it does not count against a storage
+    quota, but if the original is moved or deleted the share breaks. A
+    <em>copy</em> is independent of whatever happens to the original afterwards,
+    and it does consume managed storage.</p>
+  </div>
+
+  <p>Sharing a directory produces a folder share: one link, a browsable listing,
+  and a ZIP download for the recipient (<a href="#s6">§6</a>).</p>
+</section>
+
+<!-- 9 -->
+<section id="s9" class="card">
+  <h2><span class="num">9</span> Roles and storage quota</h2>
+
+  <h3>The three roles</h3>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Role</th><th>Upload</th><th>See own</th><th>See all</th><th>Delete own</th><th>Delete any</th><th>Manage users &amp; settings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Admin</strong></td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+      <tr><td><strong>User</strong></td><td class="yes">yes</td><td class="yes">yes</td><td class="no">no</td><td class="yes">yes</td><td class="no">no</td><td class="no">no</td></tr>
+      <tr><td><strong>Viewer</strong></td><td class="no">no</td><td class="yes">yes</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="no">no</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="sub">Host browsing and host sharing (<a href="#s8">§8</a>) are
+  restricted to Admin regardless of the table above.</p>
+
+  <h3>Your storage quota</h3>
+  <p>An administrator can cap how much managed storage your account uses. When you
+  exceed it, an upload is refused with <strong>“Storage quota exceeded”</strong>.
+  What counts and what does not:</p>
+  <div class="grid2" style="margin-top:14px">
+    <div class="mini">
+      <h4 style="color:var(--danger)">Counts against you</h4>
+      <ul class="plain" style="margin-bottom:0">
+        <li>Files you uploaded</li>
+        <li>Host files shared as a <em>copy</em></li>
+        <li>Files other people upload through <em>your</em> receive links</li>
+      </ul>
+    </div>
+    <div class="mini">
+      <h4 style="color:var(--success)">Does not count</h4>
+      <ul class="plain" style="margin-bottom:0">
+        <li>Host shares created as a <em>link</em></li>
+        <li>In-place folder shares</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note warn">
+    <p><strong>Watch the third item on the left.</strong> Uploads made by
+    strangers through a receive link you created are billed to <em>your</em>
+    quota, not theirs. A generous public receive link is the usual way to fill a
+    quota without noticing. Set a max file size and a max upload count.</p>
+  </div>
+  <p>Your own quota and usage are not shown in the sidebar; an administrator can
+  read both in <em>Settings → User Management</em>. If uploads start failing with
+  the quota message, delete some old shares — that frees the space immediately —
+  or ask for a larger allowance.</p>
+</section>
+
+<!-- 10 -->
+<section id="s10" class="card">
+  <h2><span class="num">10</span> Securing your account</h2>
+
+  <h3>Two-factor authentication</h3>
+  <p>Available for the shared admin login. It adds a six-digit code from an
+  authenticator app — Aegis, Google Authenticator, 1Password and friends — on top
+  of the password.</p>
+  <ol class="steps">
+    <li>Go to <strong>Settings → Two-Factor Authentication</strong> and click
+      <strong>Enable 2FA</strong>.</li>
+    <li>Scan the QR code with your authenticator app, or copy the secret shown
+      beneath it into the app by hand.</li>
+    <li>Type the current six-digit code and click <strong>Verify &amp;
+      Enable</strong>. A wrong or stale code is refused — the codes rotate every
+      30 seconds, so take the fresh one.</li>
+    <li>From now on, fill the <strong>2FA Code</strong> field on the login page.</li>
+  </ol>
+  <div class="note danger">
+    <p><strong>There are no printed recovery codes.</strong> Losing the
+    authenticator means losing that login path; recovering it requires access to
+    the server itself. Enrol on a device you back up, or add the same secret to a
+    second device while the QR code is on screen.</p>
+  </div>
+
+  <h3>API keys</h3>
+  <p>Under <strong>Settings → API Keys</strong> you can mint a key for scripts and
+  other tools, which they present in an <code>X-API-Key</code> header instead of
+  signing in.</p>
+  <div class="note warn">
+    <p><strong>The key is shown exactly once, at creation.</strong> Copy it into
+    your password manager in that moment. If you lose it, the only remedy is to
+    delete the key and create a new one.</p>
+  </div>
+
+  <h3>Habits worth having</h3>
+  <ul class="plain">
+    <li>Treat a share link as the password itself — anyone holding the URL can
+      download the file. If it might get forwarded, add a share password and send
+      it through a different channel.</li>
+    <li>Prefer a short expiry. The default of one day is a sensible default for
+      a reason; “Never” should be a deliberate choice.</li>
+    <li>For a genuinely one-off handover, set <strong>Max downloads</strong> to 1.</li>
+    <li>Delete shares you are done with instead of waiting for expiry.</li>
+    <li>Sign out on machines that are not yours — the session survives a closed
+      browser window.</li>
+  </ul>
+</section>
+
+<!-- 11 -->
+<section id="s11" class="card">
+  <h2><span class="num">11</span> When something goes wrong</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th style="width:34%">Symptom</th><th>What it usually means</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Recipient reports “this page cannot be found”</td>
+        <td>The share expired, hit its download limit, or was deleted. Expiry is enforced strictly and the file is cleaned up afterwards — create a new share.</td>
+      </tr>
+      <tr>
+        <td>Upload bar turns red: <em>Server unreachable</em></td>
+        <td>The connection dropped or the instance is down. Reload the page; if the login screen appears, the server restarted and you simply sign in again.</td>
+      </tr>
+      <tr>
+        <td><em>Storage quota exceeded</em></td>
+        <td>Your account is at its cap. Delete old shares or ask for more (<a href="#s9">§9</a>).</td>
+      </tr>
+      <tr>
+        <td><em>File type … not allowed</em></td>
+        <td>Either the receive link's whitelist, or an instance-wide restriction set by your administrator. The message names the extension it rejected.</td>
+      </tr>
+      <tr>
+        <td>No <strong>Share from host</strong> in the sidebar</td>
+        <td>You are not an admin. This is intentional, not a bug (<a href="#s8">§8</a>).</td>
+      </tr>
+      <tr>
+        <td>No <strong>Send to device</strong> button</td>
+        <td>Tailscale is not running on the server, or the share is a folder — Taildrop handles single files only.</td>
+      </tr>
+      <tr>
+        <td><strong>Send via Email</strong> fails</td>
+        <td>SMTP is not configured on the instance. That is an administrator setting.</td>
+      </tr>
+      <tr>
+        <td>Video plays but is silent</td>
+        <td>Almost always an MKV with an AC-3/DTS audio track, which no browser decodes. Download the file and play it locally (<a href="#s6">§6</a>).</td>
+      </tr>
+      <tr>
+        <td>Correct password still rejected at login</td>
+        <td>You are inside the rate limit or a 15-minute lockout from earlier failures. Wait, then try once.</td>
+      </tr>
+      <tr>
+        <td>The share link works for you but not for the recipient</td>
+        <td>The link carries an address only reachable from inside your network. Ask your administrator which network is set as primary for outside links.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 12 -->
+<section id="s12" class="card accent">
+  <h2><span class="num" style="background:rgba(255,255,255,.16);color:#fff">12</span> Quick reference</h2>
+  <p>The four link shapes you will meet. <code>&lt;id&gt;</code> is the short
+  identifier CasaDrop generates.</p>
+  <pre><code>/s/&lt;id&gt;     the share page you send to people  (file or folder)
+/d/&lt;id&gt;     the direct download of a shared file
+/r/&lt;id&gt;     the upload page you hand to someone else
+/qr/&lt;id&gt;    a QR image of the share link</code></pre>
+  <p style="margin-top:16px"><strong>Defaults worth remembering:</strong>
+  expiry 1 day · max downloads 0 (unlimited) · no password ·
+  files over 100 MB upload in chunks automatically · 14 interface languages ·
+  sessions idle out after 24 hours and end after 7 days.</p>
+</section>
+
+<footer class="doc">
+  <p>CasaDrop 2.4.4 · User guide, 28 August 2026. For installation, reverse
+  proxies, tunnels and hardening, see the operator HowTo
+  (<code>docs/HOWTO.md</code>) — this document deliberately covers none of it.</p>
+</footer>
+
+</div>
+</body>
+</html>
