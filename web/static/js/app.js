@@ -2351,47 +2351,115 @@
         });
     }
 
+    // A resumable upload is remembered per (name, size, mtime, chunk size) so a
+    // reload or a dropped connection continues instead of starting over. The
+    // key deliberately excludes content: hashing gigabytes to make a key would
+    // cost more than re-sending a few chunks. A resumed upload only skips
+    // chunks the SERVER confirms it holds, so a stale key can never corrupt a
+    // file — at worst it wastes one status round trip.
+    const RESUME_PREFIX = 'casadrop_resume_';
+    const RESUME_TTL_MS = 24 * 60 * 60 * 1000; // matches the server-side chunk TTL
+
+    function resumeKey(file) {
+        return `${RESUME_PREFIX}${file.name}|${file.size}|${file.lastModified}|${CHUNK_SIZE}`;
+    }
+
+    function loadResume(file) {
+        try {
+            const raw = localStorage.getItem(resumeKey(file));
+            if (!raw) return null;
+            const rec = JSON.parse(raw);
+            if (!rec.uploadId || Date.now() - (rec.savedAt || 0) > RESUME_TTL_MS) {
+                localStorage.removeItem(resumeKey(file));
+                return null;
+            }
+            return rec;
+        } catch { return null; }
+    }
+
+    function saveResume(file, uploadId) {
+        try {
+            localStorage.setItem(resumeKey(file), JSON.stringify({ uploadId, savedAt: Date.now() }));
+        } catch { /* storage disabled/full: resume is a convenience, not required */ }
+    }
+
+    function clearResume(file) {
+        try { localStorage.removeItem(resumeKey(file)); } catch { /* ignore */ }
+    }
+
+    // Ask the server which chunks a remembered upload already has. Any failure
+    // (expired, gone, storage cleared) means "start fresh", never an error.
+    async function resumeState(file) {
+        const rec = loadResume(file);
+        if (!rec) return null;
+        try {
+            const res = await api(`/api/upload/chunk/${rec.uploadId}`);
+            if (!res.ok) { clearResume(file); return null; }
+            const status = await res.json();
+            return { uploadId: rec.uploadId, received: new Set(status.received || []) };
+        } catch { clearResume(file); return null; }
+    }
+
     async function uploadChunked(file, password, expiresIn, maxDownloads, progressId) {
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-        const initRes = await api('/api/upload/chunk/init', {
-            method: 'POST',
-            body: JSON.stringify({
-                fileName: file.name,
-                totalSize: file.size,
-                totalChunks: totalChunks,
-            }),
-        });
-
-        if (!initRes.ok) throw new Error(await initRes.text());
-        const { uploadId } = await initRes.json();
+        // Resume a remembered upload if the server still has it; otherwise init.
+        let uploadId, received;
+        const resumed = await resumeState(file);
+        if (resumed) {
+            uploadId = resumed.uploadId;
+            received = resumed.received;
+        } else {
+            const initRes = await api('/api/upload/chunk/init', {
+                method: 'POST',
+                body: JSON.stringify({ fileName: file.name, totalSize: file.size, totalChunks }),
+            });
+            if (!initRes.ok) throw new Error(await initRes.text());
+            uploadId = (await initRes.json()).uploadId;
+            received = new Set();
+            saveResume(file, uploadId);
+        }
 
         for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunk = file.slice(start, end);
-
-            const chunkRes = await api(`/api/upload/chunk/${uploadId}?index=${i}`, {
-                method: 'POST',
-                body: chunk,
-                headers: { 'Content-Type': 'application/octet-stream' },
-            });
-
-            if (!chunkRes.ok) throw new Error(await chunkRes.text());
+            if (received.has(i)) {
+                updateProgress(progressId, ((i + 1) / totalChunks) * 95);
+                continue; // already on the server from an earlier attempt
+            }
+            const chunk = file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, file.size));
+            await sendChunkWithRetry(uploadId, i, chunk);
             updateProgress(progressId, ((i + 1) / totalChunks) * 95);
         }
 
         const finalRes = await api(`/api/upload/chunk/${uploadId}/finalize`, {
             method: 'POST',
-            body: JSON.stringify({
-                password: password || '',
-                expires_in: expiresIn,
-                max_downloads: maxDownloads,
-            }),
+            body: JSON.stringify({ password: password || '', expires_in: expiresIn, max_downloads: maxDownloads }),
         });
-
         if (!finalRes.ok) throw new Error(await finalRes.text());
+
+        clearResume(file); // the upload is now a share; nothing left to resume
         return await finalRes.json();
+    }
+
+    // One transient network failure per chunk should not restart a multi-GB
+    // upload. Retry a few times with backoff; a 4xx (bad index, size cap, gone)
+    // is a real answer and is not retried.
+    async function sendChunkWithRetry(uploadId, index, chunk, attempts = 3) {
+        for (let attempt = 1; ; attempt++) {
+            try {
+                const res = await api(`/api/upload/chunk/${uploadId}?index=${index}`, {
+                    method: 'POST',
+                    body: chunk,
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                });
+                if (res.ok) return;
+                // 4xx is a decision, not a hiccup — surface it immediately.
+                if (res.status >= 400 && res.status < 500) throw new Error(await res.text());
+                if (attempt >= attempts) throw new Error(await res.text());
+            } catch (err) {
+                if (attempt >= attempts) throw err;
+            }
+            await new Promise(r => setTimeout(r, 500 * attempt));
+        }
     }
 
     function renderUploadResult(container, result, file) {

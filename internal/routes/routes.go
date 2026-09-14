@@ -125,6 +125,8 @@ func registerAPIShares(api *mux.Router, aa *middleware.AdminAuth, h *handlers.Ha
 	api.Handle("/upload", aa.RequireCanCreateShares()(http.HandlerFunc(h.UploadFile))).Methods("POST")
 	api.Handle("/upload/multi", aa.RequireCanCreateShares()(http.HandlerFunc(h.UploadMultipleFiles))).Methods("POST")
 	api.Handle("/upload/chunk/init", aa.RequireCanCreateShares()(http.HandlerFunc(h.InitChunkUpload))).Methods("POST")
+	// Resume support: which chunks does the server already hold?
+	api.Handle("/upload/chunk/{uploadId}", aa.RequireCanCreateShares()(http.HandlerFunc(h.ChunkUploadStatus))).Methods("GET")
 	api.Handle("/upload/chunk/{uploadId}", aa.RequireCanCreateShares()(http.HandlerFunc(h.UploadChunk))).Methods("POST")
 	api.Handle("/upload/chunk/{uploadId}/finalize", aa.RequireCanCreateShares()(http.HandlerFunc(h.FinalizeChunkUpload))).Methods("POST")
 	// Sharing an arbitrary server path is a host-filesystem operation gated by

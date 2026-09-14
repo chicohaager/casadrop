@@ -61,6 +61,7 @@ type ChunkUpload struct {
 	ReceivedBytes  int64         // running sum of distinct chunk bytes written
 	TempDir        string
 	CreatedAt      time.Time
+	UserID         string // owner; "" for the single-admin/anonymous case. Guards resume.
 }
 
 // chunkUploads stores ongoing chunked uploads
@@ -304,6 +305,16 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 		ChunkSizes:     make(map[int]int64),
 		TempDir:        tempDir,
 		CreatedAt:      time.Now(),
+		UserID:         chunkOwner(r),
+	}
+
+	// Persist the manifest before the upload is announced, so a crash between
+	// here and the first chunk still leaves a resumable (or cleanly cleanable)
+	// upload rather than an orphan directory with no record of what it was.
+	if err := writeManifest(upload); err != nil {
+		os.RemoveAll(tempDir)
+		http.Error(w, "Failed to start upload", http.StatusInternalServerError)
+		return
 	}
 
 	chunkUploadsMu.Lock()
@@ -314,26 +325,68 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 	startChunkCleanupWorker()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"uploadId": uploadID})
+	json.NewEncoder(w).Encode(map[string]string{"uploadId": uploadID, "totalChunks": strconv.Itoa(req.TotalChunks)})
+}
+
+// chunkOwner returns the id of the user a chunk upload belongs to, or "" for
+// the single-admin/anonymous case. It is what GetChunkStatus, UploadChunk and
+// Finalize check so one user cannot resume or finalise another's upload.
+func chunkOwner(r *http.Request) string {
+	if user := middleware.GetUserFromContext(r.Context()); user != nil {
+		return user.ID
+	}
+	return ""
+}
+
+// requireChunkOwner looks up an upload and verifies the caller owns it. It
+// writes the 404/403 response itself and returns ok=false when the caller must
+// stop. A missing upload and a foreign upload are both reported as 404 so an
+// attacker cannot probe which upload IDs exist.
+func requireChunkOwner(w http.ResponseWriter, r *http.Request, uploadID string) (*ChunkUpload, bool) {
+	chunkUploadsMu.Lock()
+	upload, ok := chunkUploads[uploadID]
+	chunkUploadsMu.Unlock()
+	if !ok || upload.UserID != chunkOwner(r) {
+		http.Error(w, "Upload not found", http.StatusNotFound)
+		return nil, false
+	}
+	return upload, true
+}
+
+// ChunkUploadStatus answers GET /api/upload/chunk/{uploadId}: which chunk
+// indices the server already holds, so the client can resume after a reload or
+// a dropped connection and send only what is missing.
+func (h *Handler) ChunkUploadStatus(w http.ResponseWriter, r *http.Request) {
+	uploadID := mux.Vars(r)["uploadId"]
+	upload, ok := requireChunkOwner(w, r, uploadID)
+	if !ok {
+		return
+	}
+
+	chunkUploadsMu.Lock()
+	resp := map[string]interface{}{
+		"uploadId":    upload.ID,
+		"fileName":    upload.FileName,
+		"totalChunks": upload.TotalChunks,
+		"received":    receivedIndices(upload),
+	}
+	chunkUploadsMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // UploadChunk receives a single chunk
 func (h *Handler) UploadChunk(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	uploadID := vars["uploadId"]
+	uploadID := mux.Vars(r)["uploadId"]
 
-	// Get upload info with lock
-	chunkUploadsMu.Lock()
-	upload, ok := chunkUploads[uploadID]
+	// A chunk may only be added to an upload the caller owns.
+	upload, ok := requireChunkOwner(w, r, uploadID)
 	if !ok {
-		chunkUploadsMu.Unlock()
-		http.Error(w, "Upload not found", http.StatusNotFound)
 		return
 	}
-	// Copy needed values before unlocking
 	totalChunks := upload.TotalChunks
 	tempDir := upload.TempDir
-	chunkUploadsMu.Unlock()
 
 	// Parse chunk index from query
 	chunkIndex, err := strconv.Atoi(r.URL.Query().Get("index"))
@@ -401,12 +454,14 @@ func (h *Handler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 
 // FinalizeChunkUpload combines chunks and creates the share
 func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	uploadID := vars["uploadId"]
+	uploadID := mux.Vars(r)["uploadId"]
 
-	// Snapshot everything we need under the lock. Reading upload.ChunksReceived
-	// after unlocking would race with any in-flight UploadChunk calls that had
-	// already resolved the map entry before we deleted it.
+	// Only the owner may finalise. The ownership check and the snapshot happen
+	// under the same lock acquisition sequence: verify, then take and remove the
+	// entry so an in-flight UploadChunk cannot resurrect it mid-assembly.
+	if _, ok := requireChunkOwner(w, r, uploadID); !ok {
+		return
+	}
 	chunkUploadsMu.Lock()
 	upload, ok := chunkUploads[uploadID]
 	var receivedCount int
