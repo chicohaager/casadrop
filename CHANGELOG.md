@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-14
+
 ### Added
 - **Activity log.** A durable record of who did what, to which share, from
   where: share created / updated / deleted / expired, downloaded, streamed,
