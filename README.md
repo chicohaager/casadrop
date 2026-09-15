@@ -342,7 +342,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Pin a specific version (`chicohaager/casadrop:2.4.4`) rather than `latest` if
+Pin a specific version (`chicohaager/casadrop:2.5.1`) rather than `latest` if
 you want upgrades to be a deliberate step. Downgrading across a schema change
 is not supported; keep a backup from before an upgrade.
 

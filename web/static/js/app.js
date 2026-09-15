@@ -4192,10 +4192,21 @@
             const res = await api('/api/smtp');
             const config = res.ok ? await res.json() : {};
 
+            // Which encryption the saved config uses. A fresh config (no flags)
+            // defaults to STARTTLS, the port-587 case most providers expect.
+            const enc = config.use_tls ? 'ssltls' : (config.use_starttls === false ? 'none' : 'starttls');
+
             container.innerHTML = `
                 <div class="form-row">
                     <div class="form-group"><label>SMTP Host</label><input type="text" id="smtp-host" value="${escapeHtml(config.host || '')}" placeholder="smtp.gmail.com"></div>
                     <div class="form-group"><label>Port</label><input type="number" id="smtp-port" value="${config.port || 587}" style="width:100px"></div>
+                    <div class="form-group"><label>Encryption</label>
+                        <select id="smtp-encryption">
+                            <option value="starttls" ${enc === 'starttls' ? 'selected' : ''}>STARTTLS (587)</option>
+                            <option value="ssltls" ${enc === 'ssltls' ? 'selected' : ''}>SSL/TLS (465)</option>
+                            <option value="none" ${enc === 'none' ? 'selected' : ''}>None</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label>Username</label><input type="text" id="smtp-user" value="${escapeHtml(config.username || '')}"></div>
@@ -4216,7 +4227,19 @@
                 </div>
             `;
 
+            // Switching encryption fills in the conventional port, but only when
+            // the current port is a standard one — a custom port is left alone.
+            document.getElementById('smtp-encryption').onchange = (e) => {
+                const portEl = document.getElementById('smtp-port');
+                const cur = parseInt(portEl.value);
+                if (!cur || cur === 25 || cur === 465 || cur === 587 || cur === 2525) {
+                    if (e.target.value === 'ssltls') portEl.value = 465;
+                    else if (e.target.value === 'starttls') portEl.value = 587;
+                }
+            };
+
             document.getElementById('save-smtp-btn').onclick = async () => {
+                const encryption = document.getElementById('smtp-encryption').value;
                 const body = {
                     enabled: document.getElementById('smtp-enabled').checked,
                     host: document.getElementById('smtp-host').value,
@@ -4225,7 +4248,8 @@
                     password: document.getElementById('smtp-pass').value,
                     from_email: document.getElementById('smtp-from').value,
                     from_name: document.getElementById('smtp-from-name').value,
-                    use_starttls: true,
+                    use_tls: encryption === 'ssltls',       // implicit TLS, port 465
+                    use_starttls: encryption === 'starttls', // STARTTLS, port 587
                 };
                 const r = await api('/api/smtp', { method: 'POST', body: JSON.stringify(body) });
                 toast(r.ok ? t('settings.saved') : t('toast.error'), r.ok ? 'success' : 'error');
