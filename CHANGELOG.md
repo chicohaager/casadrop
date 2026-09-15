@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-09-15
+
+### Fixed
+- **SMTP encryption is now selectable: STARTTLS / SSL-TLS / None.** The settings
+  form always sent STARTTLS, so a provider that requires implicit TLS on port 465
+  could not be used — mail only went out on 587. The backend already supported
+  implicit TLS (`use_tls`); the form now exposes the choice and fills in the
+  conventional port (587 / 465) when you switch. A custom port is left untouched.
+  Reported on the forum by morgyann.
+
 ## [2.5.0] - 2026-09-14
 
 ### Added
