@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.3] - 2026-10-05
+
+### Security
+- **Runtime base image alpine 3.21 → 3.24** in `Dockerfile` and `Dockerfile.tunnel`.
+  Alpine 3.21 reaches end of support on 2026-11-01; 3.24 is supported until
+  2028-06-01 (alpinelinux.org/releases.json). No code change. Verified on the
+  built image: Docker health `healthy`, `wget`/`ip`/`su-exec` present, tunnel
+  image with `cloudflared` + `curl`; browser tests folder shares 20/20,
+  `browser_252_check.py` 27/27, `browser_252_languages.py` 24/24.
+
 ## [2.5.2] - 2026-10-05
 
 ### Fixed
