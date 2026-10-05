@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CasaDrop - {{.FolderName}}</title>
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="icon" type="image/png" href="/static/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
@@ -396,7 +396,7 @@
 <body>
     <div class="card" id="folder-root" data-share-id="{{.ID}}" data-has-password="{{.HasPassword}}">
         <div class="card-header">
-            <img src="/static/logo.png" alt="CasaDrop" style="height:80px;width:auto;">
+            <img src="/static/icon.png" alt="" style="height:88px;width:88px;display:block;margin:0 auto;border-radius:20px"><div style="font-weight:700;font-size:22px;letter-spacing:-0.01em;margin-top:10px;color:inherit">CasaDrop</div>
         </div>
         <div class="card-body">
             {{if .HasPassword}}
@@ -410,7 +410,7 @@
                         <div class="folder-meta">
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                                {{.TotalFiles}} files
+                                {{tf .T "folder.files" "n" .TotalFiles}}
                             </span>
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -424,13 +424,13 @@
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                         <path d="M7 11V7a5 5 0 0110 0v4"/>
                     </svg>
-                    <h3>Password Protected</h3>
-                    <p>Enter the password to browse this folder</p>
+                    <h3>{{index .T "common.lockedTitle"}}</h3>
+                    <p>{{index .T "folder.lockedHint"}}</p>
                     <form class="password-form" id="folder-password-form">
-                        <input type="password" id="folder-password" placeholder="Enter password" autocomplete="off" autofocus>
-                        <button type="submit">Unlock</button>
+                        <input type="password" id="folder-password" placeholder="{{index .T "common.passwordPlaceholder"}}" autocomplete="off" autofocus>
+                        <button type="submit">{{index .T "common.unlock"}}</button>
                     </form>
-                    <div class="password-error" id="password-error">Incorrect password. Please try again.</div>
+                    <div class="password-error" id="password-error">{{index .T "common.wrongPassword"}}</div>
                 </div>
             </div>
             {{end}}
@@ -445,7 +445,7 @@
                         <div class="folder-meta">
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-                                {{.TotalFiles}} files
+                                {{tf .T "folder.files" "n" .TotalFiles}}
                             </span>
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -453,7 +453,7 @@
                             </span>
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                Expires {{.ExpiresAt}}
+                                {{tf .T "common.expires" "date" (fdate .Lang .ExpiresAtTime)}}
                             </span>
                         </div>
                     </div>
@@ -462,18 +462,18 @@
                 <div class="breadcrumbs" id="breadcrumbs"></div>
 
                 <div class="fetch-error" id="fetch-error">
-                    <p id="fetch-error-text">Failed to load folder contents.</p>
+                    <p id="fetch-error-text">{{index .T "folder.loadFailed"}}</p>
                 </div>
 
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
-                    <div>Loading contents...</div>
+                    <div>{{index .T "folder.loading"}}</div>
                 </div>
 
                 <div class="file-list" id="file-list" style="display:none">
                     <div class="file-list-header">
-                        <span>Name</span>
-                        <span>Size</span>
+                        <span>{{index .T "folder.name"}}</span>
+                        <span>{{index .T "folder.size"}}</span>
                     </div>
                     <div id="file-list-body"></div>
                 </div>
@@ -481,13 +481,14 @@
                 <div style="margin-top: 20px;">
                     <a href="#" class="btn-zip" id="btn-zip">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Download All as ZIP
+                        {{index .T "folder.downloadZip"}}
                     </a>
                 </div>
             </div>
         </div>
     </div>
 
+    <script type="application/json" id="i18n-data">{{.T}}</script>
     <script src="/static/js/folder.js"></script>
 </body>
 </html>

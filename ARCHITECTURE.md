@@ -526,14 +526,22 @@ marker, and at the time of writing there were known-wrong rows in the field.
 Ungated, each allow-list correction heals history for free. **Revisit this once
 the allow-lists have settled**; the sequencing matters more than the choice.
 
-**The public share page (`share.html`) is English-only, by decision.** The admin
-UI is fully translated (14 languages, `data-i18n` throughout `index.html`); the
-recipient-facing page is not, and has no i18n scaffolding at all. Translating it
-is a template-wide change, not a two-string change. Recorded here so the gap
-reads as a decision with a price rather than as something nobody noticed.
+**Translations: two catalogues, one language list (2.5.2).** The admin UI reads
+`I18N` in `web/static/js/app.js`; the server-rendered pages (share, folder,
+receive, not-found, login, setup) and the e-mails read
+`internal/i18n/locales/<lang>.json`. Both cover the same 14 languages. Until 2.5.2
+the admin UI had only 107 of 234 strings in 12 of them and the recipient pages
+were English-only. Tests in `internal/i18n` now enforce completeness: same
+language list, every key in every language with the same `{placeholders}`,
+every key used in code defined, no hard-coded text in admin markup, no
+`LANG === 'xx'` branches, and a display rule for every activity-log detail the
+middleware records (the stored records stay verbatim). Known gap: no
+right-to-left layout for Arabic.
 
 **`internal/storage.DropSharesTableForTest` exists only for a test.** It is on
 the `StorageBackend` interface, which is otherwise production-only surface. It
 earns its place: without it, nothing could prove that `Ping()` reads application
 data instead of answering a constant — and that exact confusion is what made
-`/readyz` a proxy signal in the first place.
+`/readyz` a proxy signal in the first place. `DropEmailTransfersTableForTest` (2.5.2) is its sibling: it makes
+`SaveEmailTransfer` fail so a test can prove no e-mail goes out without the
+record that drives the download and expiry notifications.

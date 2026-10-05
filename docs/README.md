@@ -59,7 +59,7 @@ CasaDrop
 │   └── Prometheus metrics
 ├── Web Frontend
 │   ├── Vanilla JS (no framework)
-│   ├── i18n (EN/DE)
+│   ├── i18n (14 languages)
 │   └── Dark/Light theme
 └── Storage
     ├── /data/uploads/ (files)

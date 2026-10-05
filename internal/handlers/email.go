@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"casadrop/internal/i18n"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -132,6 +133,7 @@ type EmailTransferRequest struct {
 	Title          string `json:"title,omitempty"`
 	Message        string `json:"message,omitempty"`
 	NotifyDownload bool   `json:"notify_download"`
+	Lang           string `json:"lang,omitempty"` // admin UI language of the sender
 }
 
 // SendEmailTransfer sends a file transfer via email
@@ -170,18 +172,13 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 		Title:          req.Title,
 		Message:        req.Message,
 		NotifyDownload: req.NotifyDownload,
+		Lang:           emailLang(r, req.Lang),
 	}
 
-	// Send email
-	if err := h.emailService.SendTransferEmail(transfer, downloadURL, share.FileName, fileSize); err != nil {
-		log.Printf("Failed to send email transfer: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to send email: " + err.Error()})
-		return
-	}
-
-	// Save transfer record
+	// The record is saved BEFORE the e-mail goes out (2.5.2). It drives the
+	// download notification, the expiry warning and the transfer history; it
+	// used to be saved afterwards with only a log line on failure, so the
+	// sender saw "sent" while those mails silently never came.
 	record := &models.EmailTransferRecord{
 		ID:             uuid.New().String(),
 		ShareID:        req.ShareID,
@@ -193,11 +190,26 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 		Message:        req.Message,
 		NotifyDownload: req.NotifyDownload,
 		SentAt:         time.Now().UTC().Format(time.RFC3339),
+		Lang:           transfer.Lang,
 	}
 
 	if err := h.storage.SaveEmailTransfer(record); err != nil {
-		log.Printf("Warning: Failed to save email transfer record: %v", err)
-		// Don't fail the request - email was already sent
+		log.Printf("Failed to save email transfer record, e-mail not sent: %v", err)
+		writeEmailError(w, "Failed to record the transfer, e-mail not sent: "+err.Error())
+		return
+	}
+
+	if err := h.emailService.SendTransferEmail(transfer, downloadURL, share.FileName, fileSize); err != nil {
+		log.Printf("Failed to send email transfer: %v", err)
+		msg := "Failed to send email: " + err.Error()
+		// Without the e-mail the record must go, or the recipient would get an
+		// expiry warning for a share they were never sent.
+		if derr := h.storage.DeleteEmailTransfer(record.ID); derr != nil {
+			log.Printf("Failed to remove record of unsent email transfer %s: %v", record.ID, derr)
+			msg += "; the transfer record could not be removed: " + derr.Error()
+		}
+		writeEmailError(w, msg)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -224,6 +236,16 @@ func (h *EmailHandler) GetEmailStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// emailLang picks the language for a transfer's e-mails: the sender's admin UI
+// language when the client sent a supported one, else the request's
+// Accept-Language (an API client without "lang").
+func emailLang(r *http.Request, requested string) string {
+	if i18n.Supported(requested) {
+		return requested
+	}
+	return i18n.Lang(r)
+}
+
 // NotifyDownload sends download notification if needed
 func (h *EmailHandler) NotifyDownload(shareID string, fileName string) {
 	// Get pending notifications for this share
@@ -235,6 +257,7 @@ func (h *EmailHandler) NotifyDownload(shareID string, fileName string) {
 
 	for _, transfer := range transfers {
 		if err := h.emailService.SendDownloadNotification(
+			transfer.Lang,
 			transfer.SenderEmail,
 			transfer.SenderName,
 			transfer.RecipientEmail,
@@ -309,6 +332,7 @@ func (h *EmailHandler) checkAndNotifyExpiring() {
 
 			// Send expiry warning email
 			err := h.emailService.SendExpiryWarning(
+				transfer.Lang,
 				transfer.RecipientEmail,
 				transfer.RecipientName,
 				share.OriginalName,
@@ -404,4 +428,10 @@ func (h *EmailHandler) getPrimaryBaseURL(r *http.Request) string {
 
 	// Fallback to request-based URL
 	return utils.GetBaseURL(r)
+}
+
+func writeEmailError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -45,21 +46,29 @@ func MigrateJSONToSQLite(dataDir string) error {
 	// Create SQLite storage (this creates the database and schema)
 	sqliteStorage, err := NewSQLiteStorage(dataDir)
 	if err != nil {
+		removeDatabaseFiles(dbPath)
 		return err
 	}
-	defer sqliteStorage.Close()
 
-	// Migrate each share
-	migrated := 0
-	for _, share := range shares {
-		if err := sqliteStorage.Save(share); err != nil {
-			log.Printf("Warning: Failed to migrate share %s: %v", share.ID, err)
-			continue
+	// All or nothing (2.5.2): a share that fails used to be skipped while the
+	// JSON was still renamed to .backup, so it vanished from CasaDrop. Now any
+	// failure removes the database this call created and keeps shares.json,
+	// so the next start retries the whole migration.
+	for id, share := range shares {
+		if share == nil {
+			err = fmt.Errorf("share %s: empty entry in shares.json", id)
+		} else {
+			err = sqliteStorage.Save(share)
 		}
-		migrated++
+		if err != nil {
+			sqliteStorage.Close()
+			removeDatabaseFiles(dbPath)
+			return fmt.Errorf("migrate share %s: %w", id, err)
+		}
 	}
+	sqliteStorage.Close()
 
-	log.Printf("Successfully migrated %d/%d shares", migrated, len(shares))
+	log.Printf("Successfully migrated %d shares", len(shares))
 
 	// Rename JSON file to backup
 	if err := os.Rename(jsonPath, backupPath); err != nil {
@@ -91,4 +100,16 @@ func CheckMigrationNeeded(dataDir string) bool {
 	}
 
 	return jsonExists && !dbExists
+}
+
+// removeDatabaseFiles deletes a database created by a failed migration,
+// including the WAL sidecars, so CheckMigrationNeeded sees no database and the
+// migration runs again on the next start. Only called for a database that did
+// not exist before this migration started.
+func removeDatabaseFiles(dbPath string) {
+	for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: could not remove %s after failed migration: %v", p, err)
+		}
+	}
 }

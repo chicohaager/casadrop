@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CasaDrop - {{.Name}}</title>
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="icon" type="image/png" href="/static/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
@@ -451,11 +451,11 @@
 <body>
     <div class="card" id="receive-root" data-link-id="{{.ID}}" data-max-file-size="{{.MaxFileSize}}" data-max-uploads="{{.MaxUploads}}" data-current-uploads="{{.CurrentUploads}}">
         <div class="card-header">
-            <img src="/static/logo.png" alt="CasaDrop" style="height:160px;width:auto;">
+            <img src="/static/icon.png" alt="" style="height:88px;width:88px;display:block;margin:0 auto;border-radius:20px"><div style="font-weight:700;font-size:22px;letter-spacing:-0.01em;margin-top:10px;color:inherit">CasaDrop</div>
         </div>
         <div class="card-body">
             <div class="link-title">{{.Name}}</div>
-            <div class="link-subtitle">Upload files to this receive link</div>
+            <div class="link-subtitle">{{index .T "receive.subtitle"}}</div>
 
             {{if .LimitReached}}
             <div class="limit-reached">
@@ -463,8 +463,8 @@
                     <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
                     <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
-                <h3>Upload Limit Reached</h3>
-                <p>This receive link has reached its maximum number of uploads.</p>
+                <h3>{{index .T "receive.limitTitle"}}</h3>
+                <p>{{index .T "receive.limitText"}}</p>
             </div>
             {{else}}
 
@@ -472,7 +472,7 @@
                 {{if .MaxUploads}}
                 <span class="constraint-tag">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/></svg>
-                    Max {{.MaxUploads}} uploads
+                    {{tf .T "receive.maxUploads" "n" .MaxUploads}}
                 </span>
                 {{end}}
                 {{if .MaxFileSize}}
@@ -491,7 +491,7 @@
 
             {{if .MaxUploads}}
             <div class="upload-counter">
-                <span class="counter-text"><strong>{{.CurrentUploads}}</strong> / {{.MaxUploads}} uploads used</span>
+                <span class="counter-text">{{tfh .T "receive.uploadsUsed" "*cur" .CurrentUploads "max" .MaxUploads}}</span>
                 <div class="counter-bar">
                     <div class="counter-fill" id="counter-fill"></div>
                 </div>
@@ -500,8 +500,8 @@
 
             {{if .HasPassword}}
             <div class="password-field">
-                <label>Password</label>
-                <input type="password" id="receive-password" placeholder="Enter link password" autocomplete="off">
+                <label>{{index .T "receive.password"}}</label>
+                <input type="password" id="receive-password" placeholder="{{index .T "receive.passwordPlaceholder"}}" autocomplete="off">
             </div>
             {{end}}
 
@@ -511,8 +511,8 @@
                     <polyline points="17 8 12 3 7 8"/>
                     <line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
-                <div class="drop-text">Drag & drop a file here</div>
-                <div class="drop-hint">or click to browse</div>
+                <div class="drop-text">{{index .T "receive.drop"}}</div>
+                <div class="drop-hint">{{index .T "receive.browse"}}</div>
                 <input type="file" id="file-input">
             </div>
 
@@ -524,21 +524,21 @@
                     <div class="selected-file-name" id="selected-name"></div>
                     <div class="selected-file-size" id="selected-size"></div>
                 </div>
-                <button class="selected-file-remove" id="selected-file-remove" title="Remove">
+                <button class="selected-file-remove" id="selected-file-remove" title="{{index .T "receive.remove"}}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
 
             <button class="btn-upload" id="btn-upload">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                Upload File
+                {{index .T "receive.upload"}}
             </button>
 
             <div class="progress-area" id="progress-area">
                 <div class="progress-bar-track">
                     <div class="progress-bar-fill" id="progress-fill"></div>
                 </div>
-                <div class="progress-text" id="progress-text">Uploading... 0%</div>
+                <div class="progress-text" id="progress-text">{{index .T "receive.uploading"}} 0%</div>
             </div>
 
             <div class="status-message success" id="status-success">
@@ -546,7 +546,7 @@
                     <circle cx="12" cy="12" r="10"/>
                     <polyline points="9 12 11.5 14.5 16 9.5" class="check-animated"/>
                 </svg>
-                <h4>File Uploaded Successfully</h4>
+                <h4>{{index .T "receive.success"}}</h4>
                 <p id="success-detail"></p>
             </div>
 
@@ -555,7 +555,7 @@
                     <circle cx="12" cy="12" r="10"/>
                     <line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
                 </svg>
-                <h4>Upload Failed</h4>
+                <h4>{{index .T "receive.failedTitle"}}</h4>
                 <p id="error-detail"></p>
             </div>
 
@@ -563,6 +563,7 @@
         </div>
     </div>
 
+    <script type="application/json" id="i18n-data">{{.T}}</script>
     <script src="/static/js/receive.js"></script>
 </body>
 </html>

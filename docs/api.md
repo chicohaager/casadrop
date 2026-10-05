@@ -481,6 +481,18 @@ Response:
 ```
 
 `share_id` / `share_url` appear only when the link has `auto_share` enabled.
+
+Errors (since 2.5.2) are JSON with the same status codes as before, in the
+caller's language (`Accept-Language`, or `?lang=`; English fallback):
+
+```json
+{ "error": "File type .exe not allowed" }
+```
+
+Status codes: 404 link not found or expired, 403 upload limit reached,
+401 wrong password, 429 rate limit / too many password attempts / proof-of-work
+failed, 400 no file / file too large / file type not allowed, 413 owner quota
+exceeded, 422 malware detected, 503 virus scanner unavailable, 500 save failed.
 This is the only endpoint anonymous strangers can write to, so it carries extra
 controls: a per-IP rate limit (`RECEIVE_RATE_PER_HOUR`, default 30), optional
 ClamAV scanning (`CLAMAV_ADDR`) and an optional proof-of-work

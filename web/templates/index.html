@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CasaDrop</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="icon" type="image/png" href="/static/icon.png">
 </head>
 <body>
     <div id="app">
         <aside id="sidebar">
             <div class="sidebar-brand">
-                <img src="/static/logo.png" alt="CasaDrop" class="brand-logo">
+                <img src="/static/icon.png" alt="" class="brand-icon"><span class="brand-name">CasaDrop</span>
             </div>
             <nav id="nav">
                 <button class="nav-btn active" data-view="upload">
@@ -49,7 +49,7 @@
             <div id="login-view" class="view" style="display:none">
                 <div class="login-card">
                     <div class="login-brand">
-                        <img src="/static/logo.png" alt="CasaDrop" class="login-logo">
+                        <img src="/static/icon.png" alt="" class="login-logo"><div class="login-name">CasaDrop</div>
                     </div>
                     <form id="login-form">
                         <div class="form-group">
@@ -119,12 +119,12 @@
             <div id="hostshare-view" class="view" style="display:none">
                 <div class="view-header">
                     <h2 data-i18n="hostshare.title">Share from host</h2>
-                    <button id="hostshare-refresh" class="btn btn-ghost btn-sm" title="Refresh">
+                    <button id="hostshare-refresh" class="btn btn-ghost btn-sm" title="Refresh" data-i18n-title="common.refresh">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                     </button>
                 </div>
                 <p class="upload-hint" data-i18n="hostshare.hint">Share files and folders that already live on the server — no re-upload.</p>
-                <nav id="hostshare-breadcrumb" class="breadcrumb" aria-label="Breadcrumb"></nav>
+                <nav id="hostshare-breadcrumb" class="breadcrumb" aria-label="Breadcrumb" data-i18n-aria="common.breadcrumb"></nav>
                 <div id="hostshare-list" class="host-browser"></div>
             </div>
 
@@ -132,12 +132,12 @@
             <div id="shares-view" class="view" style="display:none">
                 <div class="view-header">
                     <h2 data-i18n="shares.title">Active Shares</h2>
-                    <button id="refresh-shares" class="btn btn-ghost btn-sm" title="Refresh">
+                    <button id="refresh-shares" class="btn btn-ghost btn-sm" title="Refresh" data-i18n-title="common.refresh">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                     </button>
                     <div id="bulk-actions" style="display:none;gap:8px;align-items:center;margin-left:auto">
                         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;color:var(--text-secondary)"><input type="checkbox" id="select-all-shares"> <span data-i18n="shares.selectAll">Select All</span></label>
-                        <span id="selected-count" style="font-size:0.85rem;color:var(--text-secondary)">0 selected</span>
+                        <span id="selected-count" style="font-size:0.85rem;color:var(--text-secondary)"></span>
                         <button class="btn btn-danger btn-sm" id="bulk-delete-btn" data-i18n="shares.bulkDelete">Delete Selected</button>
                     </div>
                 </div>

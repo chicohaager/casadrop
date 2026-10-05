@@ -1,6 +1,20 @@
 // receive.js — public receive-link upload page (CSP-safe, no inline scripts/handlers).
 // Server-rendered values arrive via data-* attributes on #receive-root.
 (function () {
+
+    // Strings for this page in the visitor's language, rendered server-side into a
+    // non-executable JSON block (keeps CSP script-src 'self'). English fallback per key.
+    var I18N = (function () {
+        try { return JSON.parse(document.getElementById('i18n-data').textContent) || {}; } catch (e) { return {}; }
+    })();
+    function t(key, fallback) { return I18N[key] || fallback; }
+    // tf: whole sentence with {name} slots (word order differs per language).
+    function tf(key, fallback, vars) {
+        var out = t(key, fallback);
+        Object.keys(vars || {}).forEach(function (k) { out = out.split('{' + k + '}').join(vars[k]); });
+        return out;
+    }
+    function escapeText(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
     var root = document.getElementById('receive-root');
     if (!root) return;
 
@@ -21,7 +35,7 @@
     // Set max size tag text
     var maxSizeEl = document.getElementById('max-size-text');
     if (maxSizeEl && maxFileSize > 0) {
-        maxSizeEl.textContent = 'Max ' + formatSize(maxFileSize);
+        maxSizeEl.textContent = tf('receive.maxSize', 'Max {size}', { size: formatSize(maxFileSize) });
     }
 
     // Set counter bar
@@ -107,11 +121,11 @@
         if (!data || !data.bits || data.bits <= 0) return true; // disabled
 
         if (!(window.crypto && window.crypto.subtle)) {
-            showError('Spam protection requires a secure (HTTPS) connection.');
+            showError(t('receive.needsHTTPS', 'Spam protection requires a secure (HTTPS) connection.'));
             return false;
         }
 
-        btn.innerHTML = 'Verifying...';
+        btn.textContent = t('receive.verifying', 'Verifying...');
         var enc = new TextEncoder();
         for (var i = 0; ; i++) {
             var buf = await crypto.subtle.digest('SHA-256', enc.encode(data.challenge + '.' + i));
@@ -129,7 +143,7 @@
 
         // Client-side size check
         if (maxFileSize > 0 && selectedFile.size > maxFileSize) {
-            showError('File is too large. Maximum size is ' + formatSize(maxFileSize) + '.');
+            showError(tf('receive.tooLarge', 'File is too large. Maximum size is {size}.', { size: formatSize(maxFileSize) }));
             return;
         }
 
@@ -143,13 +157,13 @@
 
         var btn = document.getElementById('btn-upload');
         btn.disabled = true;
-        btn.innerHTML = 'Uploading...';
+        btn.textContent = t('receive.uploading', 'Uploading...');
 
         // Solve the anti-abuse proof of work before sending (if enabled).
         var ok = await attachProofOfWork(formData, btn);
         if (!ok) {
             btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload File';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> ' + escapeText(t('receive.upload', 'Upload File'));
             return;
         }
 
@@ -165,7 +179,7 @@
             if (e.lengthComputable) {
                 var pct = Math.round((e.loaded / e.total) * 100);
                 progressFill.style.width = pct + '%';
-                progressText.textContent = 'Uploading... ' + pct + '%';
+                progressText.textContent = t('receive.uploading', 'Uploading...') + ' ' + pct + '%';
             }
         });
 
@@ -179,29 +193,29 @@
                     var fill = document.getElementById('counter-fill');
                     if (fill) fill.style.width = Math.min((currentUploads / maxUploads) * 100, 100) + '%';
                     var counterText = document.querySelector('.counter-text');
-                    if (counterText) counterText.innerHTML = '<strong>' + currentUploads + '</strong> / ' + maxUploads + ' uploads used';
+                    if (counterText) counterText.innerHTML = escapeText(t('receive.uploadsUsed', '{cur} / {max} uploads used')).split('{cur}').join('<strong>' + currentUploads + '</strong>').split('{max}').join(String(maxUploads));
                 }
             } else {
-                var msg = 'Upload failed.';
+                var msg = t('receive.failed', 'Upload failed.');
                 try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
                 showError(msg);
             }
             btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload File';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> ' + escapeText(t('receive.upload', 'Upload File'));
         });
 
         xhr.addEventListener('error', function () {
             progress.classList.remove('visible');
-            showError('Network error. Please try again.');
+            showError(t('receive.networkError', 'Network error. Please try again.'));
             btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload File';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> ' + escapeText(t('receive.upload', 'Upload File'));
         });
 
         xhr.send(formData);
     }
 
     function showSuccess(filename) {
-        document.getElementById('success-detail').textContent = filename + ' has been uploaded.';
+        document.getElementById('success-detail').textContent = tf('receive.uploaded', '{file} has been uploaded.', { file: filename });
         document.getElementById('status-success').classList.add('visible');
         document.getElementById('status-error').classList.remove('visible');
     }
