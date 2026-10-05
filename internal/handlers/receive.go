@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"casadrop/internal/i18n"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -298,7 +299,7 @@ func (h *Handler) ReceivePage(w http.ResponseWriter, r *http.Request) {
 
 	link, ok := h.storage.GetReceiveLink(id)
 	if !ok {
-		h.templates.ExecuteTemplate(w, "not_found.html", nil)
+		h.renderPublic(w, r, "not_found.html", nil)
 		return
 	}
 
@@ -316,7 +317,7 @@ func (h *Handler) ReceivePage(w http.ResponseWriter, r *http.Request) {
 		"LimitReached":      limitReached,
 	}
 
-	h.templates.ExecuteTemplate(w, "receive.html", data)
+	h.renderPublic(w, r, "receive.html", data)
 }
 
 // ReceiveChallenge issues a proof-of-work challenge for a receive upload.
@@ -339,26 +340,39 @@ func (h *Handler) ReceiveChallenge(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReceiveUpload handles file uploads to a receive link
+// receiveError answers the public receive-upload endpoint with a JSON error in
+// the visitor's language. receive.js shows .error; until 2.5.2 these were
+// text/plain, so JSON.parse failed and every guest only ever saw the generic
+// "Upload failed." — the actual reason (wrong password, file type, size) was lost.
+func receiveError(w http.ResponseWriter, r *http.Request, status int, key string, vars map[string]string) {
+	msg := i18n.Format(i18n.Lang(r), key, vars)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Language", i18n.Lang(r))
+	w.Header().Add("Vary", "Accept-Language")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
 	link, ok := h.storage.GetReceiveLink(id)
 	if !ok {
-		http.Error(w, "Receive link not found or expired", http.StatusNotFound)
+		receiveError(w, r, http.StatusNotFound, "receive.err.notFound", nil)
 		return
 	}
 
 	// Check upload limit
 	if link.MaxUploads > 0 && link.CurrentUploads >= link.MaxUploads {
-		http.Error(w, "Upload limit reached", http.StatusForbidden)
+		receiveError(w, r, http.StatusForbidden, "receive.err.limit", nil)
 		return
 	}
 
 	// Per-IP rate limit: baseline abuse control on this public, anonymous
 	// endpoint (independent of the optional proof-of-work below).
 	if h.receiveLimiter != nil && !h.receiveLimiter.Allow(utils.GetClientIP(r)) {
-		http.Error(w, "Too many uploads. Please try again later.", http.StatusTooManyRequests)
+		receiveError(w, r, http.StatusTooManyRequests, "receive.err.rate", nil)
 		return
 	}
 
@@ -368,7 +382,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	if link.HasPassword {
 		clientIP := utils.GetClientIP(r)
 		if h.sharePassLimiter.isBlocked(id, clientIP) {
-			http.Error(w, "Too many password attempts. Please try again later.", http.StatusTooManyRequests)
+			receiveError(w, r, http.StatusTooManyRequests, "receive.err.pwRate", nil)
 			return
 		}
 		password := r.FormValue("password")
@@ -378,9 +392,9 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		if !auth.CheckPassword(password, link.Password) {
 			attempts := h.sharePassLimiter.recordFailure(id, clientIP)
 			if attempts >= sharePasswordMaxAttempts {
-				http.Error(w, "Too many password attempts. Please try again later.", http.StatusTooManyRequests)
+				receiveError(w, r, http.StatusTooManyRequests, "receive.err.pwRate", nil)
 			} else {
-				http.Error(w, "Invalid password", http.StatusUnauthorized)
+				receiveError(w, r, http.StatusUnauthorized, "receive.err.password", nil)
 			}
 			return
 		}
@@ -402,7 +416,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	// allocate 32 MB of RAM per request by stuffing many small form fields
 	// before MaxBytesReader kicked in.
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		http.Error(w, "File too large", http.StatusBadRequest)
+		receiveError(w, r, http.StatusBadRequest, "receive.err.tooLarge", nil)
 		return
 	}
 
@@ -410,14 +424,14 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	// touch the uploaded file so unsolved/bot requests are cheap to reject.
 	if h.pow != nil {
 		if err := h.pow.Verify(r.FormValue("pow_challenge"), r.FormValue("pow_solution")); err != nil {
-			http.Error(w, "Proof-of-work verification failed. Please retry.", http.StatusTooManyRequests)
+			receiveError(w, r, http.StatusTooManyRequests, "receive.err.pow", nil)
 			return
 		}
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, "No file uploaded", http.StatusBadRequest)
+		receiveError(w, r, http.StatusBadRequest, "receive.err.noFile", nil)
 		return
 	}
 	defer file.Close()
@@ -437,7 +451,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !allowed {
-			http.Error(w, fmt.Sprintf("File type %s not allowed", ext), http.StatusBadRequest)
+			receiveError(w, r, http.StatusBadRequest, "receive.err.fileType", map[string]string{"ext": ext})
 			return
 		}
 	}
@@ -446,10 +460,10 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	// quota, so an anonymous uploader can't be used to bypass a user's limit.
 	if link.UserID != "" {
 		if over, err := h.quotaExceededBy(link.UserID, header.Size); err != nil {
-			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
+			receiveError(w, r, http.StatusInternalServerError, "receive.err.quotaCheck", nil)
 			return
 		} else if over {
-			http.Error(w, "Upload rejected: owner storage quota exceeded", http.StatusRequestEntityTooLarge)
+			receiveError(w, r, http.StatusRequestEntityTooLarge, "receive.err.quota", nil)
 			return
 		}
 	}
@@ -466,7 +480,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	dest, err := createShareFile(destPath)
 	if err != nil {
 		log.Printf("Failed to create file %s: %v", destPath, err)
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		receiveError(w, r, http.StatusInternalServerError, "receive.err.save", nil)
 		return
 	}
 	defer dest.Close()
@@ -474,7 +488,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	size, err := io.Copy(dest, file)
 	if err != nil {
 		os.Remove(destPath)
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		receiveError(w, r, http.StatusInternalServerError, "receive.err.save", nil)
 		return
 	}
 
@@ -493,12 +507,12 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 			if scan.IsInfected(err) {
 				log.Printf("SECURITY: rejected malicious receive upload link=%s file=%q from ip=%s: %v",
 					id, header.Filename, clientIP, err)
-				http.Error(w, "File rejected: malware detected", http.StatusUnprocessableEntity)
+				receiveError(w, r, http.StatusUnprocessableEntity, "receive.err.malware", nil)
 				return
 			}
 			log.Printf("SECURITY: receive upload rejected, virus scan failed link=%s file=%q from ip=%s: %v",
 				id, header.Filename, clientIP, err)
-			http.Error(w, "Virus scan unavailable, upload rejected", http.StatusServiceUnavailable)
+			receiveError(w, r, http.StatusServiceUnavailable, "receive.err.scan", nil)
 			return
 		}
 	}
@@ -582,7 +596,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = h.storage.Delete(receivedFile.ShareID)
 		}
-		http.Error(w, "Failed to save upload", http.StatusInternalServerError)
+		receiveError(w, r, http.StatusInternalServerError, "receive.err.save", nil)
 		return
 	}
 
@@ -603,7 +617,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 			_ = h.storage.Delete(receivedFile.ShareID)
 		}
 		_ = h.storage.DeleteReceivedFile(id, receivedFile.ID)
-		http.Error(w, "Upload limit reached", http.StatusForbidden)
+		receiveError(w, r, http.StatusForbidden, "receive.err.limit", nil)
 		return
 	}
 

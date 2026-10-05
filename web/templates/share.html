@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CasaDrop - {{.FileName}}</title>
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="icon" type="image/png" href="/static/icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
@@ -363,7 +363,7 @@
 <body>
     <div class="card" id="share-root" data-share-id="{{.ID}}" data-has-password="{{.HasPassword}}">
         <div class="card-header">
-            <img src="/static/logo.png" alt="CasaDrop" style="height:160px;width:auto;">
+            <img src="/static/icon.png" alt="" style="height:88px;width:88px;display:block;margin:0 auto;border-radius:20px"><div style="font-weight:700;font-size:22px;letter-spacing:-0.01em;margin-top:10px;color:inherit">CasaDrop</div>
         </div>
         <div class="card-body">
             {{if .HasPassword}}
@@ -372,13 +372,13 @@
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
                     <path d="M7 11V7a5 5 0 0110 0v4"/>
                 </svg>
-                <h3>Password Protected</h3>
-                <p>Enter the password to access this file</p>
+                <h3>{{index .T "common.lockedTitle"}}</h3>
+                <p>{{index .T "share.lockedHint"}}</p>
                 <form class="password-form" id="password-form">
-                    <input type="password" id="share-password" placeholder="Enter password" autocomplete="off" autofocus>
-                    <button type="submit">Unlock</button>
+                    <input type="password" id="share-password" placeholder="{{index .T "common.passwordPlaceholder"}}" autocomplete="off" autofocus>
+                    <button type="submit">{{index .T "common.unlock"}}</button>
                 </form>
-                <div class="password-error" id="password-error">Incorrect password. Please try again.</div>
+                <div class="password-error" id="password-error">{{index .T "common.wrongPassword"}}</div>
             </div>
             {{end}}
 
@@ -406,7 +406,7 @@
                             </span>
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                Expires {{.ExpiresAt}}
+                                {{tf .T "common.expires" "date" (fdate .Lang .ExpiresAtTime)}}
                             </span>
                             <span class="meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -423,34 +423,32 @@
                          validated (see revealContent in share.js), so the locked
                          page never fires a 401 against /thumbnail or /stream. */}}
                     {{if .IsImage}}
-                    <img id="preview-image" {{if .HasPassword}}data-src{{else}}src{{end}}="/thumbnail/{{.ID}}" alt="{{.FileName}}" loading="lazy" style="cursor:zoom-in" title="Click for full resolution">
+                    <img id="preview-image" {{if .HasPassword}}data-src{{else}}src{{end}}="/thumbnail/{{.ID}}" alt="{{.FileName}}" loading="lazy" style="cursor:zoom-in" title="{{index .T "share.fullRes"}}">
                     {{end}}
                     {{if .IsVideo}}
                     <video id="media-preview" controls preload="metadata">
                         <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}"{{if .SourceType}} type="{{.SourceType}}"{{end}}>
-                        Your browser does not support video playback.
+                        {{index .T "share.noVideo"}}
                     </video>
                     {{end}}
                     {{if .IsAudio}}
                     <div class="audio-preview">
                         <audio id="media-preview" controls preload="metadata" style="width:100%">
                             <source {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}"{{if .SourceType}} type="{{.SourceType}}"{{end}}>
-                            Your browser does not support audio playback.
+                            {{index .T "share.noAudio"}}
                         </audio>
                     </div>
                     {{end}}
                     {{if .LimitedPlayback}}
                     <p class="media-note">
-                        This is a Matroska (MKV) file. Browsers play these only partially —
-                        audio tracks in AC-3, E-AC-3 or DTS have no browser decoder, so the
-                        video may run silently. Download the file for full playback.
+                        {{index .T "share.mkvHint"}}
                     </p>
                     {{end}}
                     <p class="media-note" id="media-error" style="display:none">
-                        Your browser cannot play this file. Use the download button instead.
+                        {{index .T "share.cannotPlay"}}
                     </p>
                     {{if .IsPDF}}
-                    <iframe {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" title="PDF Preview"></iframe>
+                    <iframe {{if .HasPassword}}data-src{{else}}src{{end}}="/stream/{{.ID}}" title="{{index .T "share.pdfPreview"}}"></iframe>
                     {{end}}
                 </div>
                 {{end}}
@@ -458,9 +456,9 @@
                 <div class="actions">
                     <a href="/d/{{.ID}}" class="btn-download" id="download-btn">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Download
+                        {{index .T "common.download"}}
                     </a>
-                    <button class="btn-qr" id="qr-toggle-btn" title="Show QR Code">
+                    <button class="btn-qr" id="qr-toggle-btn" title="{{index .T "share.showQR"}}">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/><rect x="14" y="18" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/></svg>
                     </button>
                 </div>
@@ -471,8 +469,8 @@
     <!-- QR Modal -->
     <div class="qr-overlay" id="qr-overlay">
         <div class="qr-modal">
-            <img src="/qr/{{.ID}}" alt="QR Code">
-            <p>Scan to download on another device</p>
+            <img src="/qr/{{.ID}}" alt="{{index .T "share.qr"}}">
+            <p>{{index .T "share.scanQR"}}</p>
         </div>
     </div>
 

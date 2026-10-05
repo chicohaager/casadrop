@@ -54,6 +54,7 @@ type StorageBackend interface {
 	GetSMTPConfig() (*models.SMTPConfig, error)
 	SaveSMTPConfig(config *models.SMTPConfig) error
 	SaveEmailTransfer(transfer *models.EmailTransferRecord) error
+	DeleteEmailTransfer(id string) error
 	GetEmailTransfersByShare(shareID string) ([]*models.EmailTransferRecord, error)
 	MarkEmailTransferDownloaded(shareID string) error
 	MarkEmailTransferNotified(shareID string) error
@@ -79,6 +80,9 @@ type StorageBackend interface {
 	// DropSharesTableForTest exists solely so a test can prove Ping() reads
 	// application data rather than answering a constant. No production caller.
 	DropSharesTableForTest() error
+	// DropEmailTransfersTableForTest lets a test make SaveEmailTransfer fail
+	// and prove that no e-mail goes out without its record. No production caller.
+	DropEmailTransfersTableForTest() error
 }
 
 // StorageStats contains storage statistics

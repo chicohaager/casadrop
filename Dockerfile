@@ -12,7 +12,7 @@
 # toolchain under QEMU. Because the binary is CGO-free, that cross-build is a
 # plain GOARCH switch — a multi-arch build stays about as fast as a single-arch
 # one.
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 # Provided automatically by BuildKit.
 ARG TARGETOS

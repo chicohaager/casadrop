@@ -1,6 +1,13 @@
 // folder.js — public folder-share browse page (CSP-safe, no inline scripts/handlers).
 // Server-rendered values arrive via data-* attributes on #folder-root.
 (function () {
+
+    // Strings for this page in the visitor's language, rendered server-side into a
+    // non-executable JSON block (keeps CSP script-src 'self'). English fallback per key.
+    var I18N = (function () {
+        try { return JSON.parse(document.getElementById('i18n-data').textContent) || {}; } catch (e) { return {}; }
+    })();
+    function t(key, fallback) { return I18N[key] || fallback; }
     var root = document.getElementById('folder-root');
     if (!root) return;
 
@@ -46,7 +53,12 @@
                 }
             })
             .then(function (data) {
-                if (data) renderContents(data);
+                if (data) {
+                    // same as the stored-password path: hide the spinner, show the list
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('file-list').style.display = 'block';
+                    renderContents(data);
+                }
             })
             .catch(function () {
                 document.getElementById('password-error').style.display = 'block';
@@ -79,7 +91,7 @@
             .catch(function (err) {
                 loading.style.display = 'none';
                 fetchError.style.display = 'block';
-                document.getElementById('fetch-error-text').textContent = 'Failed to load folder contents.';
+                document.getElementById('fetch-error-text').textContent = t('folder.loadFailed', 'Failed to load folder contents.');
             });
     }
 
@@ -88,7 +100,7 @@
         var parts = currentPath.split('/').filter(Boolean);
         var html = '<button class="breadcrumb-item' + (parts.length === 0 ? ' active' : '') + '" data-path="/">';
         html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>';
-        html += ' Root</button>';
+        html += ' ' + escapeHtml(t('folder.root', 'Root')) + '</button>';
 
         var buildPath = '';
         for (var i = 0; i < parts.length; i++) {
@@ -106,10 +118,12 @@
     function renderContents(data) {
         renderBreadcrumbs();
         var body = document.getElementById('file-list-body');
-        var items = data || [];
+        // /folder/{id}/contents answers {share_id, path, total_files, total_size, entries: [...]};
+        // a bare array is still accepted.
+        var items = Array.isArray(data) ? data : ((data && data.entries) || []);
 
         if (items.length === 0) {
-            body.innerHTML = '<div class="file-list-empty">This folder is empty</div>';
+            body.innerHTML = '<div class="file-list-empty">' + escapeHtml(t('folder.empty', 'This folder is empty')) + '</div>';
             return;
         }
 
@@ -123,7 +137,7 @@
         var html = '';
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
-            var name = item.file_name || item.name || 'Unknown';
+            var name = item.file_name || item.name || t('folder.unknown', 'Unknown');
             var isDir = item.is_directory;
             var size = isDir ? '--' : formatSize(item.file_size || 0);
             var relPath = item.relative_path || (currentPath === '/' ? '/' + name : currentPath + '/' + name);
