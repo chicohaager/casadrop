@@ -23,6 +23,7 @@ type EmailTransfer struct {
 	Title          string `json:"title,omitempty"`
 	Message        string `json:"message,omitempty"`
 	NotifyDownload bool   `json:"notify_download"`
+	Lang           string `json:"lang,omitempty"` // sender's UI language; all mails of this transfer use it
 }
 
 // EmailTransferRecord stores email transfer history in database
@@ -39,4 +40,5 @@ type EmailTransferRecord struct {
 	SentAt         string `json:"sent_at"`
 	DownloadedAt   string `json:"downloaded_at,omitempty"`
 	NotifiedAt     string `json:"notified_at,omitempty"`
+	Lang           string `json:"lang,omitempty"`
 }

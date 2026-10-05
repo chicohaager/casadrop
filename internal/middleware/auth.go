@@ -21,6 +21,7 @@ import (
 	"github.com/skip2/go-qrcode"
 	"golang.org/x/crypto/bcrypt"
 
+	"casadrop/internal/i18n"
 	"casadrop/internal/models"
 	"casadrop/internal/totp"
 	"casadrop/internal/utils"
@@ -976,7 +977,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderLoginPage(w, "", false, csrfToken)
+		aa.renderLoginPage(w, r, "", false, csrfToken)
 		return
 	}
 
@@ -986,7 +987,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// not just by hiding the form, so a direct POST can't use the password path.
 	if !aa.IsLocalAuthAllowed() {
 		aa.audit(AuditLoginFailed, clientIP, userAgent, "Local auth disabled (OIDC-only)")
-		aa.renderLoginPage(w, "Local login is disabled. Please sign in with SSO.", false)
+		aa.renderLoginPage(w, r, "login.err.localDisabled", false)
 		return
 	}
 
@@ -999,7 +1000,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderLoginPage(w, "Invalid or expired form. Please try again.", false, newToken)
+		aa.renderLoginPage(w, r, "login.err.form", false, newToken)
 		return
 	}
 
@@ -1011,7 +1012,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderLoginPage(w, "Too many attempts. Please wait.", false, newToken)
+		aa.renderLoginPage(w, r, "login.err.rate", false, newToken)
 		return
 	}
 
@@ -1029,13 +1030,13 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		msg := "Invalid credentials"
+		msg := "login.err.invalid"
 		if attempts >= MaxFailedAttempts-3 {
-			msg = "Invalid password. Warning: Account will be locked after more failed attempts."
+			msg = "login.err.warnLock"
 		}
 		if attempts >= MaxFailedAttempts {
 			aa.audit(AuditLoginLocked, clientIP, userAgent, "Account locked after max failed attempts")
-			msg = "Account locked due to too many failed attempts. Please try again later."
+			msg = "login.err.locked"
 		} else {
 			aa.audit(AuditLoginFailed, clientIP, userAgent, fmt.Sprintf("Failed login attempt %d/%d", attempts, MaxFailedAttempts))
 		}
@@ -1045,7 +1046,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderLoginPage(w, msg, false, newToken)
+		aa.renderLoginPage(w, r, msg, false, newToken)
 		return
 	}
 
@@ -1061,7 +1062,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
-			aa.renderLoginPage(w, "Enter your 6-digit 2FA code.", false, newToken)
+			aa.renderLoginPage(w, r, "login.err.totp", false, newToken)
 			return
 		}
 	}
@@ -1137,10 +1138,10 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		msg := "Invalid credentials"
+		msg := i18n.T(i18n.Lang(r), "login.err.invalid")
 		if attempts >= MaxFailedAttempts {
 			aa.audit(AuditLoginLocked, clientIP, userAgent, "Account locked after max failed attempts (JSON)")
-			msg = "Account locked due to too many failed attempts. Please try again later."
+			msg = i18n.T(i18n.Lang(r), "login.err.locked")
 		} else {
 			aa.audit(AuditLoginFailed, clientIP, userAgent, fmt.Sprintf("Failed JSON login attempt %d/%d", attempts, MaxFailedAttempts))
 		}
@@ -1159,7 +1160,7 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 			aa.audit(AuditLoginFailed, clientIP, userAgent, "Admin 2FA code missing/invalid (JSON)")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "2FA code required", "totpRequired": "true"})
+			json.NewEncoder(w).Encode(map[string]string{"error": i18n.T(i18n.Lang(r), "login.err.totp"), "totpRequired": "true"})
 			return
 		}
 	}
@@ -1239,7 +1240,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderSetupPage(w, "", csrfToken)
+		aa.renderSetupPage(w, r, "", csrfToken)
 		return
 	}
 
@@ -1253,7 +1254,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderSetupPage(w, "Invalid or expired form. Please try again.", newToken)
+		aa.renderSetupPage(w, r, "login.err.form", newToken)
 		return
 	}
 
@@ -1268,7 +1269,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderSetupPage(w, "Password must be at least 8 characters", newToken)
+		aa.renderSetupPage(w, r, "setup.err.short", newToken)
 		return
 	}
 
@@ -1278,7 +1279,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderSetupPage(w, "Passwords don't match", newToken)
+		aa.renderSetupPage(w, r, "setup.err.mismatch", newToken)
 		return
 	}
 
@@ -1295,7 +1296,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderSetupPage(w, "Invalid setup token. Find it in the server logs (e.g. `docker logs casadrop`).", newToken)
+		aa.renderSetupPage(w, r, "setup.err.token", newToken)
 		return
 	}
 
@@ -1308,7 +1309,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		aa.renderSetupPage(w, "Failed to save password", newToken)
+		aa.renderSetupPage(w, r, "setup.err.save", newToken)
 		return
 	}
 
@@ -1428,12 +1429,16 @@ func (aa *AdminAuth) IsLocalAuthAllowed() bool {
 	return !enabled || !localDisabled
 }
 
-func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, errorMsg string, isSetup bool, csrfToken ...string) {
+func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, r *http.Request, errorKey string, isSetup bool, csrfToken ...string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	lang := i18n.Lang(r)
+	tr := func(key string) string { return html.EscapeString(i18n.T(lang, key)) }
+	w.Header().Set("Content-Language", lang)
+	w.Header().Add("Vary", "Accept-Language")
 
 	errorHTML := ""
-	if errorMsg != "" {
-		errorHTML = `<div class="error">` + html.EscapeString(errorMsg) + `</div>`
+	if errorKey != "" {
+		errorHTML = `<div class="error">` + tr(errorKey) + `</div>`
 	}
 
 	// Get CSRF token (optional parameter for backwards compatibility)
@@ -1454,7 +1459,7 @@ func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, errorMsg string, isS
             <svg viewBox="0 0 24 24" width="20" height="20" style="margin-right: 8px; vertical-align: middle;">
                 <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
             </svg>
-            Login with SSO
+            ` + tr("login.sso") + `
         </a>`
 	}
 
@@ -1463,39 +1468,39 @@ func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, errorMsg string, isS
 	if localAuthAllowed {
 		dividerHTML := ""
 		if oidcEnabled {
-			dividerHTML = `<div class="divider"><span>or</span></div>`
+			dividerHTML = `<div class="divider"><span>` + tr("login.or") + `</span></div>`
 		}
 		passwordFormHTML = dividerHTML + `
         <form method="POST" action="/login">
             <input type="hidden" name="csrf_token" value="` + csrf + `">
             <div class="form-group">
-                <label for="email">Email <span style="opacity:.6;font-weight:400">(leave blank for admin)</span></label>
+                <label for="email">` + tr("login.email") + ` <span style="opacity:.6;font-weight:400">` + tr("login.emailHint") + `</span></label>
                 <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="username">
             </div>
             <div class="form-group">
-                <label for="password">Password</label>
+                <label for="password">` + tr("login.password") + `</label>
                 <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
             </div>
             <div class="form-group">
-                <label for="totp">2FA Code <span style="opacity:.6;font-weight:400">(if enabled)</span></label>
+                <label for="totp">` + tr("login.totp") + ` <span style="opacity:.6;font-weight:400">` + tr("login.totpHint") + `</span></label>
                 <input type="text" id="totp" name="totp" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6">
             </div>
-            <button type="submit">Login</button>
+            <button type="submit">` + tr("login.submit") + `</button>
         </form>`
 	}
 
 	// If only OIDC is enabled (local auth disabled), show different message
-	subtitle := "Admin Login"
+	subtitle := tr("login.subtitle")
 	if oidcEnabled && !localAuthAllowed {
-		subtitle = "Single Sign-On"
+		subtitle = tr("login.subtitleSSO")
 	}
 
 	html := `<!DOCTYPE html>
-<html lang="en">
+<html lang="` + lang + `">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login | CasaDrop</title>
+    <title>` + tr("login.pageTitle") + ` | CasaDrop</title>
     <link rel="stylesheet" href="/static/css/auth.css">
     <style>
         .sso-button {
@@ -1541,7 +1546,7 @@ func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, errorMsg string, isS
 <body>
     <div class="login-card">
         <div class="logo">
-            <img src="/static/logo.png" alt="CasaDrop" style="height:180px;width:auto;margin:-30px auto -10px auto;display:block;">
+            <img src="/static/icon.png" alt="" style="height:96px;width:96px;display:block;margin:0 auto;border-radius:22px"><div style="font-weight:700;font-size:26px;letter-spacing:-0.01em;margin-top:10px;color:inherit">CasaDrop</div>
         </div>
         <p class="subtitle">` + subtitle + `</p>
         ` + errorHTML + ssoButtonHTML + passwordFormHTML + `
@@ -1552,12 +1557,16 @@ func (aa *AdminAuth) renderLoginPage(w http.ResponseWriter, errorMsg string, isS
 	w.Write([]byte(html))
 }
 
-func (aa *AdminAuth) renderSetupPage(w http.ResponseWriter, errorMsg string, csrfToken ...string) {
+func (aa *AdminAuth) renderSetupPage(w http.ResponseWriter, r *http.Request, errorKey string, csrfToken ...string) {
+	lang := i18n.Lang(r)
+	tr := func(key string) string { return html.EscapeString(i18n.T(lang, key)) }
+	w.Header().Set("Content-Language", lang)
+	w.Header().Add("Vary", "Accept-Language")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	errorHTML := ""
-	if errorMsg != "" {
-		errorHTML = `<div class="error">` + html.EscapeString(errorMsg) + `</div>`
+	if errorKey != "" {
+		errorHTML = `<div class="error">` + tr(errorKey) + `</div>`
 	}
 
 	csrf := ""
@@ -1566,38 +1575,38 @@ func (aa *AdminAuth) renderSetupPage(w http.ResponseWriter, errorMsg string, csr
 	}
 
 	html := `<!DOCTYPE html>
-<html lang="en">
+<html lang="` + lang + `">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Setup | CasaDrop</title>
+    <title>` + tr("setup.pageTitle") + ` | CasaDrop</title>
     <link rel="stylesheet" href="/static/css/auth.css">
 </head>
 <body>
     <div class="setup-card">
         <div class="logo">
-            <img src="/static/logo.png" alt="CasaDrop" style="height:180px;width:auto;margin:-30px auto -10px auto;display:block;">
+            <img src="/static/icon.png" alt="" style="height:96px;width:96px;display:block;margin:0 auto;border-radius:22px"><div style="font-weight:700;font-size:26px;letter-spacing:-0.01em;margin-top:10px;color:inherit">CasaDrop</div>
         </div>
-        <h1>Welcome to CasaDrop</h1>
-        <p class="subtitle">Initial Setup</p>
-        <p class="hint">Create an admin password to secure your file sharing.</p>
-        <p class="hint">Enter the <strong>setup token</strong> printed in the server logs (e.g. <code>docker logs casadrop</code>).</p>
+        <h1>` + tr("setup.welcome") + `</h1>
+        <p class="subtitle">` + tr("setup.subtitle") + `</p>
+        <p class="hint">` + tr("setup.hint") + `</p>
+        <p class="hint">` + i18n.T(lang, "setup.tokenHintHTML") + `</p>
         ` + errorHTML + `
         <form method="POST" action="/setup">
             <input type="hidden" name="csrf_token" value="` + csrf + `">
             <div class="form-group">
-                <label for="setup_token">Setup token</label>
-                <input type="text" id="setup_token" name="setup_token" placeholder="From the server logs" required autocomplete="off">
+                <label for="setup_token">` + tr("setup.token") + `</label>
+                <input type="text" id="setup_token" name="setup_token" placeholder="` + tr("setup.tokenPlaceholder") + `" required autocomplete="off">
             </div>
             <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Min. 8 characters" required minlength="8">
+                <label for="password">` + tr("setup.password") + `</label>
+                <input type="password" id="password" name="password" placeholder="` + tr("setup.passwordPlaceholder") + `" required minlength="8">
             </div>
             <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
-                <input type="password" id="confirm_password" name="confirm_password" placeholder="Repeat password" required>
+                <label for="confirm_password">` + tr("setup.confirm") + `</label>
+                <input type="password" id="confirm_password" name="confirm_password" placeholder="` + tr("setup.confirmPlaceholder") + `" required>
             </div>
-            <button type="submit">Create Admin Account</button>
+            <button type="submit">` + tr("setup.submit") + `</button>
         </form>
     </div>
 </body>

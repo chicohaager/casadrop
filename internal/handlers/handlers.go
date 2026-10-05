@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"casadrop/internal/i18n"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -150,7 +151,7 @@ func (l *sharePasswordRateLimiter) resetAttempts(shareID, ip string) {
 }
 
 func New(s *storage.Storage, templatesDir string) (*Handler, error) {
-	tmpl, err := template.ParseGlob(filepath.Join(templatesDir, "*.html"))
+	tmpl, err := template.New("").Funcs(i18n.TemplateFuncs()).ParseGlob(filepath.Join(templatesDir, "*.html"))
 	if err != nil {
 		return nil, err
 	}
@@ -956,27 +957,44 @@ func (h *Handler) IndexPage(w http.ResponseWriter, r *http.Request) {
 	h.templates.ExecuteTemplate(w, "index.html", nil)
 }
 
+// renderPublic renders a page a recipient or guest sees (share, folder,
+// receive, not found) in the visitor's language: ?lang= or Accept-Language,
+// English as fallback. The string table goes to the template as .T and, via a
+// non-executable JSON block, to the page's script (CSP stays script-src 'self').
+func (h *Handler) renderPublic(w http.ResponseWriter, r *http.Request, name string, data map[string]interface{}) {
+	if data == nil {
+		data = map[string]interface{}{}
+	}
+	lang := i18n.Lang(r)
+	data["Lang"] = lang
+	data["T"] = i18n.Strings(lang)
+	w.Header().Set("Content-Language", lang)
+	w.Header().Add("Vary", "Accept-Language")
+	h.templates.ExecuteTemplate(w, name, data)
+}
+
 func (h *Handler) SharePage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
 	share, ok := h.storage.Get(id)
 	if !ok {
-		h.templates.ExecuteTemplate(w, "not_found.html", nil)
+		h.renderPublic(w, r, "not_found.html", nil)
 		return
 	}
 
 	// Check if this is a folder share
 	if share.IsDirectory {
 		data := map[string]interface{}{
-			"ID":          share.ID,
-			"FolderName":  share.OriginalName,
-			"TotalFiles":  share.TotalFiles,
-			"TotalSize":   utils.FormatFileSize(share.TotalSize),
-			"HasPassword": share.HasPassword,
-			"ExpiresAt":   share.ExpiresAt.Format("02.01.2006 15:04"),
+			"ID":            share.ID,
+			"FolderName":    share.OriginalName,
+			"TotalFiles":    share.TotalFiles,
+			"TotalSize":     utils.FormatFileSize(share.TotalSize),
+			"HasPassword":   share.HasPassword,
+			"ExpiresAt":     share.ExpiresAt.Format("02.01.2006 15:04"),
+			"ExpiresAtTime": share.ExpiresAt,
 		}
-		h.templates.ExecuteTemplate(w, "folder.html", data)
+		h.renderPublic(w, r, "folder.html", data)
 		return
 	}
 
@@ -988,13 +1006,14 @@ func (h *Handler) SharePage(w http.ResponseWriter, r *http.Request) {
 	ext := strings.ToLower(filepath.Ext(share.OriginalName))
 
 	data := map[string]interface{}{
-		"ID":          share.ID,
-		"FileName":    share.OriginalName,
-		"FileSize":    utils.FormatFileSize(share.FileSize),
-		"FileSizeRaw": share.FileSize,
-		"HasPassword": share.HasPassword,
-		"ExpiresAt":   share.ExpiresAt.Format("02.01.2006 15:04"),
-		"MimeType":    share.MimeType,
+		"ID":            share.ID,
+		"FileName":      share.OriginalName,
+		"FileSize":      utils.FormatFileSize(share.FileSize),
+		"FileSizeRaw":   share.FileSize,
+		"HasPassword":   share.HasPassword,
+		"ExpiresAt":     share.ExpiresAt.Format("02.01.2006 15:04"),
+		"ExpiresAtTime": share.ExpiresAt,
+		"MimeType":      share.MimeType,
 		// SourceType is "" for containers a browser cannot evaluate via
 		// canPlayType(). A <source> whose type the browser rejects is never
 		// fetched, so the attribute must be omitted rather than filled with a
@@ -1011,7 +1030,7 @@ func (h *Handler) SharePage(w http.ResponseWriter, r *http.Request) {
 		"FileExt":         ext,
 	}
 
-	h.templates.ExecuteTemplate(w, "share.html", data)
+	h.renderPublic(w, r, "share.html", data)
 }
 
 // TunnelConfig represents the user's network and admin configuration

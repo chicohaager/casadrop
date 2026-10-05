@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -113,9 +114,14 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 	s.fixDateTimeFormats()
 
 	// Run user migration for existing databases (adds user_id columns if needed)
+	// Fatal since 2.5.2: this used to log a warning and start anyway, and the
+	// server then ran without the columns its queries need — inserts into
+	// email_transfers failed on every send and the download/expiry mails
+	// silently never went out. A refused start with the reason is the honest
+	// outcome; the transaction rolls back, so nothing is half-migrated.
 	if err := s.migrateExistingTables(); err != nil {
-		log.Printf("Warning: User migration failed: %v", err)
-		// Continue anyway - columns might already exist
+		db.Close()
+		return nil, fmt.Errorf("database migration failed (columns of an older version could not be added): %w", err)
 	}
 
 	// Create indexes that depend on migrated columns
@@ -265,6 +271,7 @@ func (s *SQLiteStorage) initBaseSchema() error {
 		sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		downloaded_at DATETIME,
 		notified_at DATETIME,
+		lang TEXT NOT NULL DEFAULT '',
 		FOREIGN KEY (share_id) REFERENCES shares(id) ON DELETE CASCADE
 	);
 
@@ -1574,16 +1581,30 @@ func (s *SQLiteStorage) SaveEmailTransfer(transfer *models.EmailTransferRecord) 
 		INSERT INTO email_transfers (
 			id, share_id, recipient_email, recipient_name,
 			sender_email, sender_name, title, message,
-			notify_download, sent_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			notify_download, sent_at, lang
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := s.db.Exec(query,
 		transfer.ID, transfer.ShareID, transfer.RecipientEmail, transfer.RecipientName,
 		transfer.SenderEmail, transfer.SenderName, transfer.Title, transfer.Message,
-		transfer.NotifyDownload, transfer.SentAt,
+		transfer.NotifyDownload, transfer.SentAt, transfer.Lang,
 	)
 	return err
+}
+
+// DeleteEmailTransfer removes a transfer record by id. It is used when the
+// e-mail for a freshly saved record could not be sent, so no download or
+// expiry mail is ever sent for a share the recipient never received.
+func (s *SQLiteStorage) DeleteEmailTransfer(id string) error {
+	res, err := s.db.Exec(`DELETE FROM email_transfers WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n != 1 {
+		return fmt.Errorf("email transfer %s: %d rows deleted, want 1", id, n)
+	}
+	return nil
 }
 
 // GetEmailTransfersByShare retrieves email transfers for a share
@@ -1592,7 +1613,7 @@ func (s *SQLiteStorage) GetEmailTransfersByShare(shareID string) ([]*models.Emai
 		SELECT id, share_id, recipient_email, COALESCE(recipient_name, ''),
 			   sender_email, COALESCE(sender_name, ''), COALESCE(title, ''),
 			   COALESCE(message, ''), notify_download, sent_at,
-			   COALESCE(downloaded_at, ''), COALESCE(notified_at, '')
+			   COALESCE(downloaded_at, ''), COALESCE(notified_at, ''), COALESCE(lang, '')
 		FROM email_transfers
 		WHERE share_id = ?
 		ORDER BY sent_at DESC
@@ -1610,7 +1631,7 @@ func (s *SQLiteStorage) GetEmailTransfersByShare(shareID string) ([]*models.Emai
 		if err := rows.Scan(
 			&t.ID, &t.ShareID, &t.RecipientEmail, &t.RecipientName,
 			&t.SenderEmail, &t.SenderName, &t.Title, &t.Message,
-			&t.NotifyDownload, &t.SentAt, &t.DownloadedAt, &t.NotifiedAt,
+			&t.NotifyDownload, &t.SentAt, &t.DownloadedAt, &t.NotifiedAt, &t.Lang,
 		); err != nil {
 			continue
 		}
@@ -1651,7 +1672,7 @@ func (s *SQLiteStorage) GetPendingDownloadNotifications(shareID string) ([]*mode
 		SELECT id, share_id, recipient_email, COALESCE(recipient_name, ''),
 			   sender_email, COALESCE(sender_name, ''), COALESCE(title, ''),
 			   COALESCE(message, ''), notify_download, sent_at,
-			   COALESCE(downloaded_at, ''), COALESCE(notified_at, '')
+			   COALESCE(downloaded_at, ''), COALESCE(notified_at, ''), COALESCE(lang, '')
 		FROM email_transfers
 		WHERE share_id = ?
 		  AND notify_download = 1
@@ -1671,7 +1692,7 @@ func (s *SQLiteStorage) GetPendingDownloadNotifications(shareID string) ([]*mode
 		if err := rows.Scan(
 			&t.ID, &t.ShareID, &t.RecipientEmail, &t.RecipientName,
 			&t.SenderEmail, &t.SenderName, &t.Title, &t.Message,
-			&t.NotifyDownload, &t.SentAt, &t.DownloadedAt, &t.NotifiedAt,
+			&t.NotifyDownload, &t.SentAt, &t.DownloadedAt, &t.NotifiedAt, &t.Lang,
 		); err != nil {
 			continue
 		}
@@ -1778,5 +1799,11 @@ func (s *SQLiteStorage) fixDateTimeFormats() {
 // DropSharesTableForTest — see Storage.DropSharesTableForTest.
 func (s *SQLiteStorage) DropSharesTableForTest() error {
 	_, err := s.db.Exec(`DROP TABLE shares`)
+	return err
+}
+
+// DropEmailTransfersTableForTest — see StorageBackend.DropEmailTransfersTableForTest.
+func (s *SQLiteStorage) DropEmailTransfersTableForTest() error {
+	_, err := s.db.Exec(`DROP TABLE email_transfers`)
 	return err
 }

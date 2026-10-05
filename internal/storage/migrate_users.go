@@ -36,6 +36,7 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 		return err
 	}
 	defer tx.Rollback()
+	var done migrationLog
 
 	// Create users table
 	_, err = tx.Exec(`
@@ -87,20 +88,25 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 	}
 
 	// Add user_id column to shares if not exists
-	if err := addColumnIfNotExists(tx, "shares", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(tx, &done, "shares", "user_id", "TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, "shares", "user_email", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(tx, &done, "shares", "user_email", "TEXT"); err != nil {
 		return err
 	}
 
 	// Add user_id column to receive_links if not exists
-	if err := addColumnIfNotExists(tx, "receive_links", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(tx, &done, "receive_links", "user_id", "TEXT"); err != nil {
 		return err
 	}
 
 	// Per-user storage quota (v2.4). 0 = unlimited.
-	if err := addColumnIfNotExists(tx, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	// 2.5.2: e-mails go out in the sender's language; download/expiry mails are
+	// sent later from the stored record, so the language is stored with it.
+	if err := addColumnIfNotExists(tx, &done, "email_transfers", "lang", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfNotExists(tx, &done, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 
@@ -123,14 +129,18 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 			return err
 		}
 
-		log.Println("Assigned existing shares and receive links to admin user")
+		done = append(done, "Assigned existing shares and receive links to admin user")
 	}
 
 	// Create indexes for user_id columns
 	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
 	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	done.print()
+	return nil
 }
 
 // migrateExistingTables adds user_id columns if they don't exist
@@ -140,19 +150,25 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 		return err
 	}
 	defer tx.Rollback()
+	var done migrationLog
 
 	// Add columns if not exists
-	if err := addColumnIfNotExists(tx, "shares", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(tx, &done, "shares", "user_id", "TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, "shares", "user_email", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(tx, &done, "shares", "user_email", "TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, "receive_links", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(tx, &done, "receive_links", "user_id", "TEXT"); err != nil {
 		return err
 	}
 	// Per-user storage quota (v2.4). 0 = unlimited.
-	if err := addColumnIfNotExists(tx, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	// 2.5.2: e-mails go out in the sender's language; download/expiry mails are
+	// sent later from the stored record, so the language is stored with it.
+	if err := addColumnIfNotExists(tx, &done, "email_transfers", "lang", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfNotExists(tx, &done, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 
@@ -175,7 +191,11 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
 	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	done.print()
+	return nil
 }
 
 // allowedMigrationTables restricts which tables can be passed to
@@ -183,15 +203,27 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 // so we whitelist table identifiers to avoid any chance of SQL injection via
 // an attacker-controlled (or accidentally-controlled) table name.
 var allowedMigrationTables = map[string]struct{}{
-	"shares":        {},
-	"receive_links": {},
-	"users":         {},
-	"oidc_config":   {},
-	"api_keys":      {},
+	"shares":          {},
+	"receive_links":   {},
+	"users":           {},
+	"oidc_config":     {},
+	"api_keys":        {},
+	"email_transfers": {}, // 2.5.2: lang column
 }
 
 // addColumnIfNotExists adds a column to a table if it doesn't already exist
-func addColumnIfNotExists(tx *sql.Tx, table, column, dataType string) error {
+// migrationLog collects what a migration transaction changed. The lines are
+// printed only after a successful commit: logging "Added column …" right away
+// claimed changes that a later failure in the same transaction rolled back.
+type migrationLog []string
+
+func (m migrationLog) print() {
+	for _, line := range m {
+		log.Println(line)
+	}
+}
+
+func addColumnIfNotExists(tx *sql.Tx, done *migrationLog, table, column, dataType string) error {
 	if _, ok := allowedMigrationTables[table]; !ok {
 		return fmt.Errorf("addColumnIfNotExists: table %q is not in the migration whitelist", table)
 	}
@@ -210,20 +242,26 @@ func addColumnIfNotExists(tx *sql.Tx, table, column, dataType string) error {
 		var notNull, pk int
 		var defaultValue sql.NullString
 		if err := rows.Scan(&cid, &name, &typeName, &notNull, &defaultValue, &pk); err != nil {
-			continue
+			// Skipping the row could skip the very column we look for and turn
+			// "exists" into a failing ALTER (or hide a broken table).
+			return fmt.Errorf("read columns of %s: %w", table, err)
 		}
 		if name == column {
 			columnExists = true
 			break
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read columns of %s: %w", table, err)
+	}
+	rows.Close()
 
 	if !columnExists {
 		_, err = tx.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + dataType)
 		if err != nil {
 			return err
 		}
-		log.Printf("Added column %s to table %s", column, table)
+		*done = append(*done, fmt.Sprintf("Added column %s to table %s", column, table))
 	}
 
 	return nil

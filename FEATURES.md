@@ -284,9 +284,9 @@ CLOUDFLARE_TUNNEL_TOKEN=xxx docker compose --profile tunnel up -d
 - **Persistent** - Theme choice saved in browser
 
 ### Languages
-- **English** - Default language
-- **German (Deutsch)** - Full German translation
-- **Language Switcher** - EN/DE toggle buttons
+- **14 languages** - English (default), German, French, Spanish, Italian, Portuguese, Dutch, Polish, Russian, Japanese, Chinese, Korean, Turkish, Arabic (Arabic without right-to-left layout)
+- **Recipient pages and e-mails** - in the visitor's or the sender's language
+- **Language Switcher** - drop-down in the sidebar
 - **Persistent** - Language choice saved in browser
 
 ### Responsive Design

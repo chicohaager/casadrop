@@ -7,6 +7,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-10-05
+
+### Fixed
+- **Folder shares open again for the recipient.** The folder page showed only
+  "Failed to load folder contents." although the server answered 200 with the
+  files: `folder.js` expected a bare array, `/folder/{id}/contents` returns
+  `{…, entries: […]}`. With a password the list stayed hidden even after the
+  right password (the spinner/list toggle was missing on that path). Both fixed;
+  `tests/browser_folder_share_check.py` covers open and protected folders,
+  subfolders, breadcrumbs, file download and the remembered password (20 checks,
+  7 of them fail against the old script).
+- **Recipient and guest pages are now translated.** The share page, folder page,
+  receive-link upload page and the "not found" page were English-only (no i18n
+  at all, `lang="en"`), so a German recipient saw "Password Protected", "Unlock",
+  "Drag & drop a file here" even though the admin UI was German. They now follow
+  the visitor's browser (`Accept-Language`, q-values honoured), can be forced with
+  `?lang=de`, and fall back to English per key. Strings live in the new
+  `internal/i18n` package — one `locales/<lang>.json` per language, all **14
+  languages of the admin UI** (a test fails if the two sets ever differ); the receive and folder scripts get
+  theirs from a non-executable JSON block, so the CSP stays `script-src 'self'`. Responses carry
+  `Content-Language` and `Vary: Accept-Language`.
+- **German UI uses real umlauts.** 14 strings were written with ASCII
+  transliterations ("moeglich", "laeuft ab", "Groesse", "loeschen", "Primaer",
+  "Geschuetzt" …).
+- **"Copy", "Copy link" and the "Protected" badge are translated** — they were
+  hard-coded in English in the upload result, the share/receive lists and the
+  API-key dialog. New keys `common.copy` / `common.copyLink` in all 14 languages;
+  the badge reuses `stat.protected`.
+
+- **Receive-upload errors reach the guest — in their language.** The public
+  upload endpoint answered with `text/plain`, but `receive.js` reads a JSON
+  `error`; the parse failed silently and every guest, in every language, only
+  ever saw "Upload failed." — never the reason (wrong password, file type not
+  allowed, file too large, limit reached, quota, malware). It now answers
+  `{"error": "…"}` with the same status codes, translated via `Accept-Language`
+  (documented in `docs/api.md`).
+- **Whole sentences instead of glued fragments.** Texts such as "Max 20
+  uploads", "3 / 20 uploads used", "x.pdf has been uploaded." or "Expires …"
+  were built as "Max " + n + " uploads"; that cannot be right in languages with
+  other word order or plural rules. They are now complete sentences with named
+  slots (`{n}`, `{file}`, `{size}`, `{date}` …).
+- **Dates in the visitor's format.** The expiry date on the recipient pages was
+  always `02.01.2006 15:04`; it now follows the page language
+  (e.g. en `Oct 5, 2026, 2:15 PM`, ja `2026/10/05 14:15`).
+- **E-mails go out in the sender's language.** The share e-mail, the download
+  notification and the expiry warning were English-only. The admin UI sends its
+  language with the request (API clients: `lang` field, else `Accept-Language`);
+  it is stored with the transfer (`email_transfers.lang`, added by migration),
+  so the later download and expiry mails use it too. Records from before 2.5.2
+  fall back to English.
+- **E-mail headers are RFC 2047-encoded.** Subject and sender display name were
+  written as raw bytes; with localized default subjects (umlauts, CJK, Cyrillic,
+  Arabic) MTAs without SMTPUTF8 would mangle or flag them.
+- **Line breaks in the share e-mail message.** A multi-line message showed a
+  literal `<br>`; it is now a real line break (the text stays escaped).
+- **A failed database migration stops the start instead of being ignored.**
+  Adding the columns of a newer version used to log only a warning; the
+  migration transaction rolled back and the server ran without those columns —
+  for 2.5.2 that meant every e-mail record failed to save and the download and
+  expiry notifications silently never went out. CasaDrop now exits with the
+  reason in the log. Likewise a `shares.json` from very old versions that cannot
+  be migrated no longer leaves an empty database behind (which hid the JSON
+  data on every later start): the migration is all-or-nothing, `shares.json`
+  stays untouched and the next start retries. A share entry that could not be
+  saved is no longer skipped while the JSON is renamed to `.backup`.
+- **No e-mail without its record.** The transfer record (it drives the
+  download notification, the expiry warning and the history) used to be saved
+  after the e-mail was sent, with only a log line on failure — the sender saw
+  "sent" and the follow-up mails silently never came. It is now saved first: if
+  that fails, nothing is sent and the sender gets the reason; if sending fails,
+  the record is removed again, so the recipient never gets an expiry warning for
+  a share they were never sent. The send dialog shows the reason in the user's
+  language instead of the raw server response.
+- **Startup log no longer reports rolled-back columns.** "Added column …" was
+  logged inside the migration transaction, so a failed migration still claimed
+  columns it had rolled back. Changes are now logged after the commit.
+- **Admin UI complete in all 14 languages.** French, Spanish, Italian,
+  Portuguese, Dutch, Polish, Russian, Japanese, Chinese, Korean, Turkish and
+  Arabic had 107 of 234 strings; navigation, upload, settings, shares, Taildrop,
+  e-mail, sessions and the activity log fell back to English. All strings are
+  now translated, plus the texts that bypassed translation entirely: SMTP form
+  labels, the "could not load …" and "user management not available" messages,
+  theme toggle, role names, "Copied!", "QR Code", the API-key name placeholder
+  and the error after an expired session. Portuguese now uses Brazilian terms throughout (four strings were
+  European Portuguese).
+- **Relative times and dates in the chosen language.** "expires 5h" was glued
+  from two fragments with a de/en-only time format; it now uses the browser's
+  `Intl.RelativeTimeFormat` in the UI language ("Läuft ab in 5 Std.",
+  "5 時間後に期限切れ"). Session and activity dates follow the UI language,
+  not the browser's.
+- **Activity-log details translated on display.** Sign-in and session entries
+  ("Successful login (role=admin)", "Login rate limit exceeded", …) are shown in
+  the UI language; file sizes are formatted. The stored records and the CSV
+  export stay verbatim.
+- **Selection counter as a whole sentence** ("{n} selected") instead of number +
+  word.
+- **Folder breadcrumb "Root" translated.**
+- **Login and setup pages are translated.** `/login` and `/setup` are built in
+  Go (not from templates) and were English-only, including their error messages
+  and the JSON login errors the admin UI shows.
+- **Remaining English labels in the admin UI translated:** the "Folder",
+  "Expiring" and "Auto-share" badges and the "QR code", "Edit", "Delete",
+  "Remove", "Close" and "Refresh" buttons/tooltips (new `common.*` keys in all
+  14 languages; `data-i18n-title` now translates `title` attributes).
+
+### Known limitation
+- Arabic (`ar`) is fully translated but, like the whole admin UI, still laid out
+  left-to-right — right-to-left layout is not implemented yet.
+
+### Changed
+- **New CasaDrop icon** (the blue share icon from `assets/icon.png`) in the
+  sidebar, on the login and setup pages, on all recipient/guest pages and as the
+  favicon (`web/static/icon.png`, 512 px). The old green `logo.png` is kept for
+  the ZimaOS module build.
+
+### Security
+- **Go toolchain 1.25.11 → 1.27.1** (`go.mod`, both Dockerfiles). Go 1.25 is out
+  of support (go.dev lists 1.27.1 and 1.26.8), and `govulncheck` found 7
+  standard-library vulnerabilities on code paths CasaDrop actually calls
+  (crypto/tls, net/http, among others). With 1.27.1: 0.
+- **Dependencies with known vulnerabilities updated:** golang.org/x/crypto
+  0.19.0 → 0.57.0, x/sys 0.42.0 → 0.48.0, x/oauth2 0.15.0 → 0.37.0, x/image
+  0.43.0 → 0.46.0, google.golang.org/protobuf 1.31.0 → 1.36.12. They were not
+  reachable from CasaDrop's code (26 module findings → 1, a deprecated x/crypto
+  package with no fix, also not called). The minimum Go version in `go.mod` is
+  now 1.26 (required by x/crypto).
+
+
 ## [2.5.1] - 2026-09-15
 
 ### Fixed
