@@ -48,7 +48,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
 # scripts/entrypoint.sh does LAN/Tailscale/EasyTier auto-detection via
 # /sbin/ip, tailscale, easytier-cli, and su-exec. If you don't need that,
 # use Dockerfile.scratch for a ~3 MB image instead.
-FROM alpine:3.21
+FROM alpine:3.24
 
 # Minimal runtime utilities:
 #   ca-certificates → HTTPS (webhooks, OIDC)
