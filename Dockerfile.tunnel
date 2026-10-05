@@ -1,5 +1,5 @@
 # Tunnel container with shell support (runs the cloudflared supervisor wrapper).
-FROM alpine:3.21
+FROM alpine:3.24
 
 # Pin a cloudflared release for reproducible builds, e.g.
 #   docker build --build-arg CLOUDFLARED_VERSION=2025.1.0 -f Dockerfile.tunnel .
