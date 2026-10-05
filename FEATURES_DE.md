@@ -248,9 +248,9 @@ CLOUDFLARE_TUNNEL_TOKEN=xxx docker compose --profile tunnel up -d
 - **Persistent** - Theme-Wahl wird im Browser gespeichert
 
 ### Sprachen
-- **Englisch** - Standardsprache
-- **Deutsch** - Vollständige deutsche Übersetzung
-- **Sprachwechsler** - EN/DE Umschalt-Buttons
+- **14 Sprachen** - Englisch (Standard), Deutsch, Französisch, Spanisch, Italienisch, Portugiesisch, Niederländisch, Polnisch, Russisch, Japanisch, Chinesisch, Koreanisch, Türkisch, Arabisch (Arabisch ohne Rechts-nach-links-Layout)
+- **Empfängerseiten und E-Mails** - in der Sprache des Besuchers bzw. des Absenders
+- **Sprachwechsler** - Auswahlliste in der Seitenleiste
 - **Persistent** - Sprachwahl wird im Browser gespeichert
 
 ### Responsives Design

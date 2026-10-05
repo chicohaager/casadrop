@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -18,9 +19,11 @@ func New(dataDir string) (*Storage, error) {
 	// Check if migration is needed
 	if CheckMigrationNeeded(dataDir) {
 		log.Println("Migration from JSON to SQLite needed...")
+		// Fatal since 2.5.2: continuing created a fresh, empty shares.db, and
+		// because a database now existed the JSON data was never migrated on
+		// any later start — the shares looked lost.
 		if err := MigrateJSONToSQLite(dataDir); err != nil {
-			log.Printf("Warning: Migration failed: %v", err)
-			// Continue anyway - will create fresh database
+			return nil, fmt.Errorf("migration from shares.json failed, shares.json left untouched: %w", err)
 		}
 	}
 
@@ -266,6 +269,11 @@ func (s *Storage) SaveEmailTransfer(transfer *models.EmailTransferRecord) error 
 	return s.backend.SaveEmailTransfer(transfer)
 }
 
+// DeleteEmailTransfer removes a transfer record whose e-mail could not be sent.
+func (s *Storage) DeleteEmailTransfer(id string) error {
+	return s.backend.DeleteEmailTransfer(id)
+}
+
 // GetEmailTransfersByShare returns all email transfers for a share
 func (s *Storage) GetEmailTransfersByShare(shareID string) ([]*models.EmailTransferRecord, error) {
 	return s.backend.GetEmailTransfersByShare(shareID)
@@ -318,6 +326,11 @@ func (s *Storage) UpdateAPIKeyLastUsed(id string) {
 // answering `select 1`; there is no production caller.
 func (s *Storage) DropSharesTableForTest() error {
 	return s.backend.DropSharesTableForTest()
+}
+
+// DropEmailTransfersTableForTest — see StorageBackend.DropEmailTransfersTableForTest.
+func (s *Storage) DropEmailTransfersTableForTest() error {
+	return s.backend.DropEmailTransfersTableForTest()
 }
 
 // RecordEvent appends one row to the activity log

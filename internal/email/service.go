@@ -2,11 +2,15 @@ package email
 
 import (
 	"bytes"
+	"casadrop/internal/i18n"
 	"crypto/tls"
 	"fmt"
 	"html/template"
+	"mime"
+	"net/mail"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"casadrop/internal/models"
 )
@@ -97,11 +101,7 @@ func (s *Service) SendTransferEmail(transfer *models.EmailTransfer, downloadURL 
 
 	subject := transfer.Title
 	if subject == "" {
-		if transfer.SenderName != "" {
-			subject = fmt.Sprintf("%s shared a file with you", transfer.SenderName)
-		} else {
-			subject = fmt.Sprintf("%s shared a file with you", transfer.SenderEmail)
-		}
+		subject = i18n.Format(transfer.Lang, "email.transfer.subject", map[string]string{"sender": senderLabel(transfer)})
 	}
 
 	body, err := s.buildTransferEmailHTML(transfer, downloadURL, fileName, fileSize)
@@ -110,6 +110,23 @@ func (s *Service) SendTransferEmail(transfer *models.EmailTransfer, downloadURL 
 	}
 
 	return s.sendEmail(transfer.RecipientEmail, subject, body)
+}
+
+// langOrDefault is the value for <html lang> — the fallback when a stored
+// transfer predates 2.5.2 and has no language.
+func langOrDefault(lang string) string {
+	if i18n.Supported(lang) {
+		return lang
+	}
+	return i18n.Fallback
+}
+
+// senderLabel is how the sender is named in the mail: name, else address.
+func senderLabel(transfer *models.EmailTransfer) string {
+	if transfer.SenderName != "" {
+		return transfer.SenderName
+	}
+	return transfer.SenderEmail
 }
 
 // applySenderFallback fills empty sender fields from the configured SMTP
@@ -127,49 +144,56 @@ func (s *Service) applySenderFallback(transfer *models.EmailTransfer) {
 }
 
 // SendDownloadNotification sends notification to sender when file is downloaded
-func (s *Service) SendDownloadNotification(senderEmail, senderName, recipientEmail, fileName string) error {
+func (s *Service) SendDownloadNotification(lang, senderEmail, senderName, recipientEmail, fileName string) error {
 	if !s.IsEnabled() {
 		return fmt.Errorf("email service is not configured")
 	}
 
-	subject := "Your file has been downloaded"
-	body := s.buildDownloadNotificationHTML(senderName, recipientEmail, fileName)
+	subject := i18n.T(lang, "email.download.subject")
+	body := s.buildDownloadNotificationHTML(lang, senderName, recipientEmail, fileName)
 
 	return s.sendEmail(senderEmail, subject, body)
 }
 
 // SendExpiryWarning sends an expiry warning email to the recipient
-func (s *Service) SendExpiryWarning(recipientEmail, recipientName, fileName string, expiresAt interface{}) error {
+func (s *Service) SendExpiryWarning(lang, recipientEmail, recipientName, fileName string, expiresAt time.Time) error {
 	if !s.IsEnabled() {
 		return fmt.Errorf("email service is not configured")
 	}
 
-	subject := fmt.Sprintf("File expiring soon: %s", fileName)
+	subject := i18n.Format(lang, "email.expiry.subject", map[string]string{"file": fileName})
 
-	// Format expiry time
-	expiryStr := fmt.Sprintf("%v", expiresAt)
+	body := buildExpiryWarningHTML(lang, recipientEmail, recipientName, fileName, expiresAt)
 
+	return s.sendEmail(recipientEmail, subject, body)
+}
+
+// buildExpiryWarningHTML renders the expiry warning in lang (sender's language).
+func buildExpiryWarningHTML(lang, recipientEmail, recipientName, fileName string, expiresAt time.Time) string {
+	expiryStr := i18n.FormatTime(lang, expiresAt)
 	nameOrEmail := recipientName
 	if nameOrEmail == "" {
 		nameOrEmail = recipientEmail
 	}
-
-	body := fmt.Sprintf(`<!DOCTYPE html>
-<html>
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="%s">
 <head><meta charset="UTF-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <div style="background: #1a1a2e; color: #eee; padding: 30px; border-radius: 12px;">
-    <h2 style="color: #ff9800; margin-top: 0;">File Expiring Soon</h2>
-    <p>Hi %s,</p>
-    <p>The shared file <strong>%s</strong> will expire on <strong>%s</strong>.</p>
-    <p>Please download it before it expires if you still need it.</p>
+    <h2 style="color: #ff9800; margin-top: 0;">%s</h2>
+    <p>%s</p>
+    <p>%s</p>
+    <p>%s</p>
     <hr style="border-color: #333; margin: 20px 0;">
-    <p style="color: #888; font-size: 12px;">This is an automated notification from CasaDrop.</p>
+    <p style="color: #888; font-size: 12px;">%s</p>
   </div>
 </body>
-</html>`, template.HTMLEscapeString(nameOrEmail), template.HTMLEscapeString(fileName), template.HTMLEscapeString(expiryStr))
-
-	return s.sendEmail(recipientEmail, subject, body)
+</html>`, langOrDefault(lang),
+		template.HTMLEscapeString(i18n.T(lang, "email.expiry.headline")),
+		template.HTMLEscapeString(i18n.Format(lang, "email.expiry.greeting", map[string]string{"name": nameOrEmail})),
+		strings.NewReplacer("{file}", "<strong>"+template.HTMLEscapeString(fileName)+"</strong>", "{date}", "<strong>"+template.HTMLEscapeString(expiryStr)+"</strong>").Replace(template.HTMLEscapeString(i18n.T(lang, "email.expiry.text"))),
+		template.HTMLEscapeString(i18n.T(lang, "email.expiry.hint")),
+		template.HTMLEscapeString(i18n.T(lang, "email.expiry.footer")))
 }
 
 // stripHeaderValue removes CR and LF so a user-controlled value (e.g. the
@@ -179,19 +203,22 @@ func stripHeaderValue(v string) string {
 	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
 }
 
-func (s *Service) sendEmail(to, subject, htmlBody string) error {
-	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
-
+// buildMessage renders headers + body. Header values are CR/LF-stripped and
+// non-ASCII ones RFC 2047-encoded (subject, sender display name).
+func (s *Service) buildMessage(to, subject, htmlBody string) []byte {
 	// Build email headers
 	fromHeader := s.config.FromEmail
 	if s.config.FromName != "" {
-		fromHeader = fmt.Sprintf("%s <%s>", s.config.FromName, s.config.FromEmail)
+		// RFC 2047: a non-ASCII display name must be encoded (mail.Address does it).
+		fromHeader = (&mail.Address{Name: stripHeaderValue(s.config.FromName), Address: s.config.FromEmail}).String()
 	}
 
 	headers := make(map[string]string)
 	headers["From"] = fromHeader
 	headers["To"] = to
-	headers["Subject"] = subject
+	// RFC 2047: since 2.5.2 the default subject is in the sender's language
+	// (umlauts, CJK, Cyrillic, Arabic); raw 8-bit headers get mangled by MTAs.
+	headers["Subject"] = mime.QEncoding.Encode("utf-8", stripHeaderValue(subject))
 	headers["MIME-Version"] = "1.0"
 	headers["Content-Type"] = "text/html; charset=UTF-8"
 
@@ -205,6 +232,13 @@ func (s *Service) sendEmail(to, subject, htmlBody string) error {
 	}
 	msg.WriteString("\r\n")
 	msg.WriteString(htmlBody)
+	return msg.Bytes()
+}
+
+func (s *Service) sendEmail(to, subject, htmlBody string) error {
+	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+
+	msg := s.buildMessage(to, subject, htmlBody)
 
 	var client *smtp.Client
 	var err error
@@ -263,7 +297,7 @@ func (s *Service) sendEmail(to, subject, htmlBody string) error {
 		return fmt.Errorf("DATA failed: %w", err)
 	}
 
-	_, err = w.Write(msg.Bytes())
+	_, err = w.Write(msg)
 	if err != nil {
 		return fmt.Errorf("write failed: %w", err)
 	}
@@ -278,7 +312,7 @@ func (s *Service) sendEmail(to, subject, htmlBody string) error {
 
 func (s *Service) buildTransferEmailHTML(transfer *models.EmailTransfer, downloadURL, fileName, fileSize string) (string, error) {
 	tmpl := `<!DOCTYPE html>
-<html>
+<html lang="{{.Lang}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -310,7 +344,7 @@ func (s *Service) buildTransferEmailHTML(transfer *models.EmailTransfer, downloa
                     <tr>
                         <td style="padding: 20px 40px 20px; text-align: center;">
                             <h1 style="margin: 0; color: #f1f5f9; font-size: 22px; font-weight: 600;">
-                                {{if .SenderName}}{{.SenderName}}{{else}}{{.SenderEmail}}{{end}} shared a file with you
+                                {{.Headline}}
                             </h1>
                         </td>
                     </tr>
@@ -351,7 +385,7 @@ func (s *Service) buildTransferEmailHTML(transfer *models.EmailTransfer, downloa
                     <tr>
                         <td style="padding: 0 40px 40px; text-align: center;">
                             <a href="{{.DownloadURL}}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; text-decoration: none; padding: 16px 48px; border-radius: 10px; font-weight: 600; font-size: 16px;">
-                                Download File
+                                {{.Button}}
                             </a>
                         </td>
                     </tr>
@@ -360,7 +394,7 @@ func (s *Service) buildTransferEmailHTML(transfer *models.EmailTransfer, downloa
                     <tr>
                         <td style="padding: 20px 40px; background-color: #1a2740; text-align: center;">
                             <p style="margin: 0; color: #64748b; font-size: 12px;">
-                                Sent via CasaDrop - Secure File Sharing
+                                {{.Footer}}
                             </p>
                         </td>
                     </tr>
@@ -379,17 +413,25 @@ func (s *Service) buildTransferEmailHTML(transfer *models.EmailTransfer, downloa
 	data := struct {
 		SenderName  string
 		SenderEmail string
-		Message     string
+		Message     template.HTML
 		FileName    string
 		FileSize    string
 		DownloadURL string
+		Headline    string
+		Button      string
+		Footer      string
+		Lang        string
 	}{
 		SenderName:  transfer.SenderName,
 		SenderEmail: transfer.SenderEmail,
-		Message:     strings.ReplaceAll(transfer.Message, "\n", "<br>"),
+		Message:     template.HTML(strings.ReplaceAll(template.HTMLEscapeString(transfer.Message), "\n", "<br>")),
 		FileName:    fileName,
 		FileSize:    fileSize,
 		DownloadURL: downloadURL,
+		Headline:    i18n.Format(transfer.Lang, "email.transfer.subject", map[string]string{"sender": senderLabel(transfer)}),
+		Button:      i18n.T(transfer.Lang, "email.transfer.button"),
+		Footer:      i18n.T(transfer.Lang, "email.footer"),
+		Lang:        langOrDefault(transfer.Lang),
 	}
 
 	var buf bytes.Buffer
@@ -400,9 +442,14 @@ func (s *Service) buildTransferEmailHTML(transfer *models.EmailTransfer, downloa
 	return buf.String(), nil
 }
 
-func (s *Service) buildDownloadNotificationHTML(senderName, recipientEmail, fileName string) string {
+func (s *Service) buildDownloadNotificationHTML(lang, senderName, recipientEmail, fileName string) string {
+	strong := func(v string) string {
+		return `<strong style="color: #f1f5f9;">` + template.HTMLEscapeString(v) + `</strong>`
+	}
+	text := strings.NewReplacer("{recipient}", strong(recipientEmail), "{file}", strong(fileName)).
+		Replace(template.HTMLEscapeString(i18n.T(lang, "email.download.text")))
 	return fmt.Sprintf(`<!DOCTYPE html>
-<html>
+<html lang="%s">
 <head>
     <meta charset="UTF-8">
 </head>
@@ -434,17 +481,16 @@ func (s *Service) buildDownloadNotificationHTML(senderName, recipientEmail, file
                             <div style="width: 80px; height: 80px; background: rgba(34, 197, 94, 0.15); border-radius: 50%%; margin: 0 auto 24px; line-height: 80px;">
                                 <span style="font-size: 40px;">✓</span>
                             </div>
-                            <h1 style="margin: 0 0 16px; color: #f1f5f9; font-size: 24px;">Your file was downloaded!</h1>
+                            <h1 style="margin: 0 0 16px; color: #f1f5f9; font-size: 24px;">%s</h1>
                             <p style="margin: 0; color: #94a3b8; font-size: 16px; line-height: 1.6;">
-                                <strong style="color: #f1f5f9;">%s</strong> has downloaded<br>
-                                <strong style="color: #f1f5f9;">%s</strong>
+                                %s
                             </p>
                         </td>
                     </tr>
                     <tr>
                         <td style="padding: 20px 40px; background-color: #1a2740; text-align: center;">
                             <p style="margin: 0; color: #64748b; font-size: 12px;">
-                                Sent via CasaDrop - Secure File Sharing
+                                %s
                             </p>
                         </td>
                     </tr>
@@ -453,5 +499,5 @@ func (s *Service) buildDownloadNotificationHTML(senderName, recipientEmail, file
         </tr>
     </table>
 </body>
-</html>`, template.HTMLEscapeString(recipientEmail), template.HTMLEscapeString(fileName))
+</html>`, langOrDefault(lang), template.HTMLEscapeString(i18n.T(lang, "email.download.headline")), text, template.HTMLEscapeString(i18n.T(lang, "email.footer")))
 }
