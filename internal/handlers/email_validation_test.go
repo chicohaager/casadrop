@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -17,9 +18,9 @@ import (
 // the send stage instead of being rejected at validation.
 func TestSendEmailTransferDoesNotRequireSender(t *testing.T) {
 	store := newEmailTestStore(t)
-	h := NewEmailHandler(store)
+	h := NewEmailHandler(t.Context(), store)
 
-	store.Save(&models.Share{
+	store.Save(t.Context(), &models.Share{
 		ID:           "share-1",
 		FileName:     "doc.pdf",
 		OriginalName: "doc.pdf",
@@ -30,7 +31,7 @@ func TestSendEmailTransferDoesNotRequireSender(t *testing.T) {
 	// Exactly what the frontend sends: no sender_email.
 	body := `{"share_id":"share-1","recipient_email":"someone@example.com","message":"hi"}`
 	rr := httptest.NewRecorder()
-	h.SendEmailTransfer(rr, httptest.NewRequest("POST", "/api/email/send", strings.NewReader(body)))
+	h.SendEmailTransfer(rr, httptest.NewRequest(http.MethodPost, "/api/email/send", strings.NewReader(body)))
 
 	// SMTP is not configured in this test, so the send itself fails (500). The
 	// point is that it is NOT the 400 validation rejection the user hit.
@@ -44,7 +45,7 @@ func TestSendEmailTransferDoesNotRequireSender(t *testing.T) {
 
 func TestSendEmailTransferStillRequiresRecipientAndShare(t *testing.T) {
 	store := newEmailTestStore(t)
-	h := NewEmailHandler(store)
+	h := NewEmailHandler(t.Context(), store)
 
 	for _, body := range []string{
 		`{"recipient_email":"a@example.com"}`,  // no share_id
@@ -52,7 +53,7 @@ func TestSendEmailTransferStillRequiresRecipientAndShare(t *testing.T) {
 		`{"share_id":"","recipient_email":""}`, // both empty
 	} {
 		rr := httptest.NewRecorder()
-		h.SendEmailTransfer(rr, httptest.NewRequest("POST", "/api/email/send", strings.NewReader(body)))
+		h.SendEmailTransfer(rr, httptest.NewRequest(http.MethodPost, "/api/email/send", strings.NewReader(body)))
 		if rr.Code != 400 {
 			t.Errorf("payload %q: got %d, want 400", body, rr.Code)
 		}

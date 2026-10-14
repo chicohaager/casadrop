@@ -3,6 +3,7 @@ package scan
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -100,7 +101,11 @@ func TestScanFile_Infected(t *testing.T) {
 	if !IsInfected(err) {
 		t.Fatalf("expected InfectedError, got %v", err)
 	}
-	if sig := err.(*InfectedError).Signature; sig != "Eicar-Test-Signature" {
+	if sig := func() *InfectedError {
+		target := &InfectedError{}
+		_ = errors.As(err, &target)
+		return target
+	}().Signature; sig != "Eicar-Test-Signature" {
 		t.Fatalf("signature = %q, want Eicar-Test-Signature", sig)
 	}
 }

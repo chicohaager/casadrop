@@ -228,7 +228,7 @@ func (s *Service) buildMessage(to, subject, htmlBody string) []byte {
 		// Subject in particular derives from attacker-controlled transfer
 		// title/sender fields; a raw "\r\n" would inject arbitrary MIME headers
 		// and a forged body into the outbound message.
-		msg.WriteString(fmt.Sprintf("%s: %s\r\n", k, stripHeaderValue(v)))
+		fmt.Fprintf(&msg, "%s: %s\r\n", k, stripHeaderValue(v))
 	}
 	msg.WriteString("\r\n")
 	msg.WriteString(htmlBody)

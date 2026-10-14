@@ -10,7 +10,7 @@ import (
 func recordAt(t *testing.T, store *Storage, at time.Time, kind models.EventKind, shareID string) *models.Event {
 	t.Helper()
 	e := &models.Event{At: at, Kind: kind, ShareID: shareID, IP: "192.0.2.10", UserAgent: "test-agent"}
-	if err := store.RecordEvent(e); err != nil {
+	if err := store.RecordEvent(t.Context(), e); err != nil {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 	return e
@@ -21,7 +21,7 @@ func TestRecordEventFillsIDAndTime(t *testing.T) {
 	defer cleanup()
 
 	e := &models.Event{Kind: models.EventShareDownloaded, ShareID: "abc"}
-	if err := store.RecordEvent(e); err != nil {
+	if err := store.RecordEvent(t.Context(), e); err != nil {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 	if e.ID == "" {
@@ -31,7 +31,7 @@ func TestRecordEventFillsIDAndTime(t *testing.T) {
 		t.Error("expected a timestamp to be assigned")
 	}
 
-	events, total, err := store.ListEvents(models.EventFilter{ShareID: "abc"})
+	events, total, err := store.ListEvents(t.Context(), models.EventFilter{ShareID: "abc"})
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
@@ -53,10 +53,10 @@ func TestRecordEventRequiresKind(t *testing.T) {
 	store, cleanup := setupTestStorage(t)
 	defer cleanup()
 
-	if err := store.RecordEvent(&models.Event{ShareID: "abc"}); err == nil {
+	if err := store.RecordEvent(t.Context(), &models.Event{ShareID: "abc"}); err == nil {
 		t.Error("expected an error for an event without a kind")
 	}
-	if err := store.RecordEvent(nil); err == nil {
+	if err := store.RecordEvent(t.Context(), nil); err == nil {
 		t.Error("expected an error for a nil event")
 	}
 }
@@ -72,7 +72,7 @@ func TestListEventsFiltersAndPages(t *testing.T) {
 	recordAt(t, store, base, models.EventLoginFailed, "")
 
 	t.Run("by share", func(t *testing.T) {
-		events, total, err := store.ListEvents(models.EventFilter{ShareID: "s1"})
+		events, total, err := store.ListEvents(t.Context(), models.EventFilter{ShareID: "s1"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +86,7 @@ func TestListEventsFiltersAndPages(t *testing.T) {
 	})
 
 	t.Run("by kind", func(t *testing.T) {
-		_, total, err := store.ListEvents(models.EventFilter{Kind: models.EventShareDownloaded})
+		_, total, err := store.ListEvents(t.Context(), models.EventFilter{Kind: models.EventShareDownloaded})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestListEventsFiltersAndPages(t *testing.T) {
 
 	t.Run("by time window", func(t *testing.T) {
 		// Since is inclusive, Until exclusive — exactly the two middle rows.
-		events, total, err := store.ListEvents(models.EventFilter{
+		events, total, err := store.ListEvents(t.Context(), models.EventFilter{
 			Since: base.Add(-2 * time.Hour),
 			Until: base,
 		})
@@ -111,7 +111,7 @@ func TestListEventsFiltersAndPages(t *testing.T) {
 		// compare as RFC3339 text and silently return the wrong rows. Guard it:
 		// the same window expressed in a non-UTC zone must give the same answer.
 		berlin := time.FixedZone("CEST", 2*3600)
-		_, totalLocal, err := store.ListEvents(models.EventFilter{
+		_, totalLocal, err := store.ListEvents(t.Context(), models.EventFilter{
 			Since: base.Add(-2 * time.Hour).In(berlin),
 			Until: base.In(berlin),
 		})
@@ -124,11 +124,11 @@ func TestListEventsFiltersAndPages(t *testing.T) {
 	})
 
 	t.Run("paging", func(t *testing.T) {
-		page1, total, err := store.ListEvents(models.EventFilter{Limit: 3})
+		page1, total, err := store.ListEvents(t.Context(), models.EventFilter{Limit: 3})
 		if err != nil {
 			t.Fatal(err)
 		}
-		page2, _, err := store.ListEvents(models.EventFilter{Limit: 3, Offset: 3})
+		page2, _, err := store.ListEvents(t.Context(), models.EventFilter{Limit: 3, Offset: 3})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,18 +147,18 @@ func TestPurgeEventsBefore(t *testing.T) {
 	recordAt(t, store, now.Add(-10*24*time.Hour), models.EventShareDownloaded, "recent")
 
 	// Positive control before the purge: both rows are there.
-	if _, total, _ := store.ListEvents(models.EventFilter{}); total != 2 {
+	if _, total, _ := store.ListEvents(t.Context(), models.EventFilter{}); total != 2 {
 		t.Fatalf("expected 2 rows before purge, got %d", total)
 	}
 
-	deleted, err := store.PurgeEventsBefore(now.Add(-90 * 24 * time.Hour))
+	deleted, err := store.PurgeEventsBefore(t.Context(), now.Add(-90*24*time.Hour))
 	if err != nil {
 		t.Fatalf("PurgeEventsBefore: %v", err)
 	}
 	if deleted != 1 {
 		t.Errorf("expected 1 row purged, got %d", deleted)
 	}
-	events, total, _ := store.ListEvents(models.EventFilter{})
+	events, total, _ := store.ListEvents(t.Context(), models.EventFilter{})
 	if total != 1 || events[0].ShareID != "recent" {
 		t.Errorf("wrong row survived: total=%d first=%+v", total, events[0])
 	}

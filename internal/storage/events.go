@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ const maxEventPageSize = 500
 // RecordEvent appends one row to the activity log. A missing ID or timestamp is
 // filled in here so callers can pass a bare Event; the caller's values win when
 // present (the middleware sink already knows when its event happened).
-func (s *SQLiteStorage) RecordEvent(event *models.Event) error {
+func (s *SQLiteStorage) RecordEvent(ctx context.Context, event *models.Event) error {
 	if event == nil {
 		return fmt.Errorf("record event: nil event")
 	}
@@ -37,7 +38,7 @@ func (s *SQLiteStorage) RecordEvent(event *models.Event) error {
 		event.At = time.Now()
 	}
 
-	_, err := s.db.Exec(`
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO events (id, at, kind, actor_id, actor_email, share_id, link_id, ip, user_agent, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		event.ID, event.At.UTC().Format(sqliteTimeLayout), string(event.Kind),
@@ -50,11 +51,11 @@ func (s *SQLiteStorage) RecordEvent(event *models.Event) error {
 // ListEvents returns one page of the activity log, newest first, plus the
 // total number of rows matching the filter (so the UI can page without a
 // second round trip). Limit is clamped to maxEventPageSize; 0 means "a page".
-func (s *SQLiteStorage) ListEvents(filter models.EventFilter) ([]*models.Event, int, error) {
+func (s *SQLiteStorage) ListEvents(ctx context.Context, filter models.EventFilter) ([]*models.Event, int, error) {
 	where, args := buildEventWhere(filter)
 
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM events"+where, args...).Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events"+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -67,7 +68,7 @@ func (s *SQLiteStorage) ListEvents(filter models.EventFilter) ([]*models.Event, 
 		offset = 0
 	}
 
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, at, kind, actor_id, actor_email, share_id, link_id, ip, user_agent, detail
 		FROM events`+where+`
 		ORDER BY at DESC, id DESC
@@ -93,8 +94,8 @@ func (s *SQLiteStorage) ListEvents(filter models.EventFilter) ([]*models.Event, 
 
 // PurgeEventsBefore deletes every row older than cutoff and reports how many
 // went. Retention is the caller's policy; this only executes it.
-func (s *SQLiteStorage) PurgeEventsBefore(cutoff time.Time) (int64, error) {
-	res, err := s.db.Exec("DELETE FROM events WHERE at < ?", cutoff.UTC().Format(sqliteTimeLayout))
+func (s *SQLiteStorage) PurgeEventsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE at < ?", cutoff.UTC().Format(sqliteTimeLayout))
 	if err != nil {
 		return 0, err
 	}

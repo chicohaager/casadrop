@@ -26,12 +26,12 @@ func TestCreateMultipleLocalUsers(t *testing.T) {
 	}
 
 	for _, u := range local {
-		if err := store.CreateUser(u); err != nil {
+		if err := store.CreateUser(t.Context(), u); err != nil {
 			t.Fatalf("CreateUser(%s, role=%s): %v", u.Email, u.Role, err)
 		}
 	}
 
-	users, err := store.GetAllUsers()
+	users, err := store.GetAllUsers(t.Context())
 	if err != nil {
 		t.Fatalf("GetAllUsers: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestCreateMultipleLocalUsers(t *testing.T) {
 	// Updating a local user must not resurrect the empty-string collision.
 	u := local[1]
 	u.Name = "Two Renamed"
-	if err := store.UpdateUser(u); err != nil {
+	if err := store.UpdateUser(t.Context(), u); err != nil {
 		t.Fatalf("UpdateUser(%s): %v", u.Email, err)
 	}
 }
@@ -69,14 +69,16 @@ func TestLookupsPreserveQuota(t *testing.T) {
 	sso := &models.User{ID: "q1", Email: "sso@example.com", Name: "SSO",
 		Role: models.RoleUser, OIDCSubject: "sub-1", OIDCIssuer: "https://idp.example.com",
 		IsActive: true, CreatedAt: time.Now().UTC(), QuotaBytes: quota}
-	if err := store.CreateUser(sso); err != nil {
+	if err := store.CreateUser(t.Context(), sso); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
 	lookups := map[string]func() (*models.User, error){
-		"GetUserByOIDC":  func() (*models.User, error) { return store.GetUserByOIDC("sub-1", "https://idp.example.com") },
-		"GetUserByEmail": func() (*models.User, error) { return store.GetUserByEmail("sso@example.com") },
-		"GetUser":        func() (*models.User, error) { return store.GetUser("q1") },
+		"GetUserByOIDC": func() (*models.User, error) {
+			return store.GetUserByOIDC(t.Context(), "sub-1", "https://idp.example.com")
+		},
+		"GetUserByEmail": func() (*models.User, error) { return store.GetUserByEmail(t.Context(), "sso@example.com") },
+		"GetUser":        func() (*models.User, error) { return store.GetUser(t.Context(), "q1") },
 	}
 
 	for name, lookup := range lookups {
@@ -91,10 +93,10 @@ func TestLookupsPreserveQuota(t *testing.T) {
 		// Simulate the login write-back and confirm the quota survives it.
 		now := time.Now().UTC()
 		got.LastLoginAt = &now
-		if err := store.UpdateUser(got); err != nil {
+		if err := store.UpdateUser(t.Context(), got); err != nil {
 			t.Fatalf("%s: UpdateUser: %v", name, err)
 		}
-		after, err := store.GetUser("q1")
+		after, err := store.GetUser(t.Context(), "q1")
 		if err != nil || after == nil {
 			t.Fatalf("%s: reload: %v", name, err)
 		}
@@ -115,18 +117,18 @@ func TestOIDCIdentityStillUnique(t *testing.T) {
 	first := &models.User{ID: "o1", Email: "sso1@example.com", Name: "SSO One",
 		Role: models.RoleUser, OIDCSubject: "sub-123", OIDCIssuer: "https://idp.example.com",
 		IsActive: true, CreatedAt: time.Now().UTC()}
-	if err := store.CreateUser(first); err != nil {
+	if err := store.CreateUser(t.Context(), first); err != nil {
 		t.Fatalf("CreateUser(first OIDC user): %v", err)
 	}
 
 	dup := &models.User{ID: "o2", Email: "sso2@example.com", Name: "SSO Dup",
 		Role: models.RoleUser, OIDCSubject: "sub-123", OIDCIssuer: "https://idp.example.com",
 		IsActive: true, CreatedAt: time.Now().UTC()}
-	if err := store.CreateUser(dup); err == nil {
+	if err := store.CreateUser(t.Context(), dup); err == nil {
 		t.Fatal("expected duplicate (subject, issuer) to be rejected, got nil error")
 	}
 
-	found, err := store.GetUserByOIDC("sub-123", "https://idp.example.com")
+	found, err := store.GetUserByOIDC(t.Context(), "sub-123", "https://idp.example.com")
 	if err != nil {
 		t.Fatalf("GetUserByOIDC: %v", err)
 	}

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
@@ -11,7 +12,7 @@ import (
 
 type fakeUserStore struct{ users map[string]*models.User }
 
-func (f *fakeUserStore) GetUserByEmail(email string) (*models.User, error) {
+func (f *fakeUserStore) GetUserByEmail(_ context.Context, email string) (*models.User, error) {
 	return f.users[email], nil // (nil, nil) for unknown — mirrors real storage
 }
 
@@ -40,7 +41,7 @@ func TestResolveLogin_PerUserRole(t *testing.T) {
 	viewer := mkUser(t, "u1", "viewer@example.com", models.RoleViewer, "correct-horse", true)
 	aa := newAuthWithUsers(t, "adminpw", viewer)
 
-	id, email, role, ok := aa.resolveLogin("viewer@example.com", "correct-horse")
+	id, email, role, ok := aa.resolveLogin(t.Context(), "viewer@example.com", "correct-horse")
 	if !ok {
 		t.Fatal("valid per-user credentials were rejected")
 	}
@@ -53,7 +54,7 @@ func TestResolveLogin_WrongPasswordFails(t *testing.T) {
 	user := mkUser(t, "u1", "user@example.com", models.RoleUser, "right", true)
 	aa := newAuthWithUsers(t, "", user)
 
-	if _, _, _, ok := aa.resolveLogin("user@example.com", "wrong"); ok {
+	if _, _, _, ok := aa.resolveLogin(t.Context(), "user@example.com", "wrong"); ok {
 		t.Fatal("wrong password must not authenticate")
 	}
 }
@@ -62,7 +63,7 @@ func TestResolveLogin_InactiveUserFails(t *testing.T) {
 	user := mkUser(t, "u1", "ghost@example.com", models.RoleUser, "secret", false)
 	aa := newAuthWithUsers(t, "", user)
 
-	if _, _, _, ok := aa.resolveLogin("ghost@example.com", "secret"); ok {
+	if _, _, _, ok := aa.resolveLogin(t.Context(), "ghost@example.com", "secret"); ok {
 		t.Fatal("inactive user must not authenticate")
 	}
 }
@@ -71,12 +72,12 @@ func TestResolveLogin_AdminPasswordFallback(t *testing.T) {
 	aa := newAuthWithUsers(t, "adminpw") // no users
 
 	// Blank email + admin password → admin session (backward compatible).
-	_, _, role, ok := aa.resolveLogin("", "adminpw")
+	_, _, role, ok := aa.resolveLogin(t.Context(), "", "adminpw")
 	if !ok || role != models.RoleAdmin {
 		t.Fatalf("admin password fallback failed: ok=%v role=%q", ok, role)
 	}
 
-	if _, _, _, ok := aa.resolveLogin("", "nope"); ok {
+	if _, _, _, ok := aa.resolveLogin(t.Context(), "", "nope"); ok {
 		t.Fatal("wrong admin password must not authenticate")
 	}
 }
@@ -85,7 +86,7 @@ func TestResolveLogin_AdminPasswordFallback(t *testing.T) {
 // just because the typed password happens not to match anything.
 func TestResolveLogin_UnknownEmailNoSession(t *testing.T) {
 	aa := newAuthWithUsers(t, "adminpw")
-	if _, _, _, ok := aa.resolveLogin("nobody@example.com", "not-the-admin-pw"); ok {
+	if _, _, _, ok := aa.resolveLogin(t.Context(), "nobody@example.com", "not-the-admin-pw"); ok {
 		t.Fatal("unknown email with wrong password must be rejected")
 	}
 }

@@ -62,7 +62,7 @@ func TestBrowseFilesMarksImages(t *testing.T) {
 
 	root := hostBrowseFixture(t)
 
-	req := httptest.NewRequest("GET", "/api/browse?path="+root, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/browse?path="+root, nil)
 	rec := httptest.NewRecorder()
 	handler.BrowseFiles(rec, req)
 
@@ -102,7 +102,7 @@ func TestHostThumbnailServesImage(t *testing.T) {
 
 	root := hostBrowseFixture(t)
 
-	req := httptest.NewRequest("GET", "/api/browse/thumbnail?path="+filepath.Join(root, "photo.png"), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/browse/thumbnail?path="+filepath.Join(root, "photo.png"), nil)
 	rec := httptest.NewRecorder()
 	handler.HostThumbnail(rec, req)
 
@@ -146,7 +146,7 @@ func TestHostThumbnailRejects(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/browse/thumbnail?path="+tc.path, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/browse/thumbnail?path="+tc.path, nil)
 			rec := httptest.NewRecorder()
 			handler.HostThumbnail(rec, req)
 			if rec.Code != tc.want {

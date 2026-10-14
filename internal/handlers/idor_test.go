@@ -21,7 +21,7 @@ func TestOwnerlessShareIsAdminOnly(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	handler.storage.Save(&models.Share{
+	handler.storage.Save(t.Context(), &models.Share{
 		ID:           "ownerless",
 		FileName:     "f.txt",
 		OriginalName: "f.txt",

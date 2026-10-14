@@ -63,14 +63,14 @@ func TestPublicPagesFollowAcceptLanguage(t *testing.T) {
 	h, store, cleanup := setupRealTemplateHandler(t)
 	defer cleanup()
 
-	if err := store.Save(&models.Share{
+	if err := store.Save(t.Context(), &models.Share{
 		ID: "pw0001", FileName: "pw0001.jpg", OriginalName: "Photo.jpg", FileSize: 10,
 		MimeType: "image/jpeg", HasPassword: true, Password: "x",
 		ExpiresAt: time.Now().Add(24 * time.Hour), CreatedAt: time.Now(),
 	}); err != nil {
 		t.Fatalf("seed share: %v", err)
 	}
-	if err := store.SaveReceiveLink(&models.ReceiveLink{
+	if err := store.SaveReceiveLink(t.Context(), &models.ReceiveLink{
 		ID: "rcv001", Name: "Fotos", MaxUploads: 20, CreatedAt: time.Now(),
 	}); err != nil {
 		t.Fatalf("seed receive link: %v", err)
@@ -122,7 +122,7 @@ func TestPublicPagesFollowAcceptLanguage(t *testing.T) {
 	})
 
 	t.Run("folder page in German, script strings included", func(t *testing.T) {
-		if err := store.Save(&models.Share{
+		if err := store.Save(t.Context(), &models.Share{
 			ID: "dir001", FileName: "dir001", OriginalName: "Fotos", IsDirectory: true, TotalFiles: 3,
 			ExpiresAt: time.Now().Add(24 * time.Hour), CreatedAt: time.Now(),
 		}); err != nil {

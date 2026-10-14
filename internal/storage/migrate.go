@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,6 +13,9 @@ import (
 
 // MigrateJSONToSQLite migrates data from JSON file to SQLite database
 func MigrateJSONToSQLite(dataDir string) error {
+	// One-off start-up migration with no caller context.
+	ctx := context.Background()
+
 	jsonPath := filepath.Join(dataDir, "shares.json")
 	dbPath := filepath.Join(dataDir, "shares.db")
 	backupPath := filepath.Join(dataDir, "shares.json.backup")
@@ -58,7 +62,7 @@ func MigrateJSONToSQLite(dataDir string) error {
 		if share == nil {
 			err = fmt.Errorf("share %s: empty entry in shares.json", id)
 		} else {
-			err = sqliteStorage.Save(share)
+			err = sqliteStorage.Save(ctx, share)
 		}
 		if err != nil {
 			sqliteStorage.Close()

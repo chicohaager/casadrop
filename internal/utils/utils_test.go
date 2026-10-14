@@ -2,6 +2,7 @@ package utils
 
 import (
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
@@ -73,7 +74,7 @@ func TestGetClientIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = tt.remoteAddr
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)
@@ -169,7 +170,7 @@ func TestGetBaseURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "http://"+tt.host+"/", nil)
+			req := httptest.NewRequest(http.MethodGet, "http://"+tt.host+"/", nil)
 			req.Host = tt.host
 			req.RemoteAddr = tt.remoteAddr
 			for k, v := range tt.headers {
@@ -286,7 +287,7 @@ func TestPreferredPublicBaseURL(t *testing.T) {
 	trustedProxiesOnce.Do(func() {})
 
 	// Public host via X-Forwarded-Host (from a trusted proxy) → used for links.
-	r := httptest.NewRequest("GET", "http://backend/", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://backend/", nil)
 	r.RemoteAddr = "127.0.0.1:12345"
 	r.Header.Set("X-Forwarded-Host", "casadrop.example.com")
 	r.Header.Set("X-Forwarded-Proto", "https")
@@ -294,7 +295,7 @@ func TestPreferredPublicBaseURL(t *testing.T) {
 		t.Errorf("public XFH: got %q", got)
 	}
 	// Local/LAN host → empty (caller falls back to primary network).
-	r2 := httptest.NewRequest("GET", "http://192.168.10.50:8086/", nil)
+	r2 := httptest.NewRequest(http.MethodGet, "http://192.168.10.50:8086/", nil)
 	if got := PreferredPublicBaseURL(r2); got != "" {
 		t.Errorf("LAN host: got %q, want empty", got)
 	}

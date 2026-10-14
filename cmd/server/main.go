@@ -18,6 +18,9 @@ import (
 )
 
 func main() {
+	// Process-lifetime context for start-up work and background notifiers.
+	ctx := context.Background()
+
 	// Configuration from environment
 	port := getEnv("PORT", "8080")
 	dataDir := getEnv("DATA_DIR", "./data")
@@ -72,14 +75,14 @@ func main() {
 		log.Fatalf("Activity log: %v", err)
 	}
 	activityLog := audit.New(store, retention)
-	activityLog.Start()
+	activityLog.Start(ctx)
 	h.SetAudit(activityLog)
 	adminAuth.SetAuditSink(activityLog.AuthSink)
 
 	// Initialize Email handler and start background expiry notifier
-	emailHandler := handlers.NewEmailHandler(store)
+	emailHandler := handlers.NewEmailHandler(ctx, store)
 	h.SetEmailHandler(emailHandler)
-	emailHandler.StartExpiryNotifier()
+	emailHandler.StartExpiryNotifier(ctx)
 
 	// Rate limiter for public download endpoint
 	downloadLimiter := middleware.NewRateLimiter(10, time.Minute)
@@ -112,8 +115,14 @@ func main() {
 	logStartupBanner(port, adminAuth, oidcProvider)
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
+		Addr: ":" + port,
+		// A client disconnect must not cancel the request context: handlers
+		// read after they counted or deleted (download notifications, bulk
+		// delete) and would stop half way. Before context plumbing they ran
+		// to completion; this keeps that.
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			router.ServeHTTP(w, r.WithContext(context.WithoutCancel(r.Context())))
+		}),
 	}
 
 	// Graceful shutdown. We stop background workers AFTER srv.Shutdown()

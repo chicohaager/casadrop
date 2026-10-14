@@ -77,7 +77,7 @@ func renderSharePage(t *testing.T, h *Handler, id string) string {
 
 func seedShare(t *testing.T, store *storage.Storage, id, name, mime string) {
 	t.Helper()
-	if err := store.Save(&models.Share{
+	if err := store.Save(t.Context(), &models.Share{
 		ID:           id,
 		FileName:     id + filepath.Ext(name),
 		OriginalName: name,
@@ -213,7 +213,7 @@ func TestUploadPersistsRefinedMimeType(t *testing.T) {
 				t.Fatalf("upload: status %d, body %q", rec.Code, rec.Body.String())
 			}
 
-			shares := store.GetAll()
+			shares := store.GetAll(t.Context())
 			var got string
 			for _, s := range shares {
 				if s.OriginalName == c.name {

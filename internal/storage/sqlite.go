@@ -33,19 +33,19 @@ type SQLiteStorage struct {
 	// deleted. It is the only producer of the "expire" webhook event; without
 	// it the on_expire config flag has no effect at all.
 	expiryMu     sync.RWMutex
-	expiryNotify func(*models.Share)
+	expiryNotify func(context.Context, *models.Share)
 }
 
 // SetExpiryNotifier registers a callback invoked for every share removed by the
 // expiry cleanup, after the row has been deleted. Pass nil to unregister.
 // The callback runs on the cleanup goroutine, so it must not block.
-func (s *SQLiteStorage) SetExpiryNotifier(fn func(*models.Share)) {
+func (s *SQLiteStorage) SetExpiryNotifier(fn func(context.Context, *models.Share)) {
 	s.expiryMu.Lock()
 	s.expiryNotify = fn
 	s.expiryMu.Unlock()
 }
 
-func (s *SQLiteStorage) expiryNotifier() func(*models.Share) {
+func (s *SQLiteStorage) expiryNotifier() func(context.Context, *models.Share) {
 	s.expiryMu.RLock()
 	defer s.expiryMu.RUnlock()
 	return s.expiryNotify
@@ -53,6 +53,9 @@ func (s *SQLiteStorage) expiryNotifier() func(*models.Share) {
 
 // NewSQLiteStorage creates a new SQLite storage backend
 func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
+	// Start-up has no caller context; schema setup and migrations run to completion.
+	ctx := context.Background()
+
 	uploadsDir := filepath.Join(dataDir, "uploads")
 	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 		return nil, err
@@ -84,17 +87,17 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 	db.SetConnMaxIdleTime(15 * time.Minute) // Close idle connections after 15 min
 
 	// Enable foreign keys
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
 		return nil, err
 	}
 
 	// Ensure WAL mode is set (in case DB was created with different mode)
-	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = WAL"); err != nil {
 		log.Printf("Warning: Failed to set WAL mode: %v", err)
 	}
 
 	// Checkpoint WAL on startup to consolidate any pending writes
-	if _, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 		log.Printf("Warning: Failed to checkpoint WAL on startup: %v", err)
 	}
 
@@ -106,12 +109,12 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 	}
 
 	// Initialize base schema (without user_id indexes that might fail on old DBs)
-	if err := s.initBaseSchema(); err != nil {
+	if err := s.initBaseSchema(ctx); err != nil {
 		return nil, err
 	}
 
 	// Fix timezone format in existing dates (migration)
-	s.fixDateTimeFormats()
+	s.fixDateTimeFormats(ctx)
 
 	// Run user migration for existing databases (adds user_id columns if needed)
 	// Fatal since 2.5.2: this used to log a warning and start anyway, and the
@@ -119,20 +122,20 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 	// email_transfers failed on every send and the download/expiry mails
 	// silently never went out. A refused start with the reason is the honest
 	// outcome; the transaction rolls back, so nothing is half-migrated.
-	if err := s.migrateExistingTables(); err != nil {
+	if err := s.migrateExistingTables(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("database migration failed (columns of an older version could not be added): %w", err)
 	}
 
 	// Create indexes that depend on migrated columns
-	if err := s.createUserIndexes(); err != nil {
+	if err := s.createUserIndexes(ctx); err != nil {
 		log.Printf("Warning: Failed to create user indexes: %v", err)
 	}
 
 	// Correct mime_type rows written before the sniffer got extension-based
 	// disambiguation (FLAC/M4A/untagged MP3 stored as octet-stream and thus
 	// previewable nowhere; Matroska stored as video/webm).
-	if err := s.migrateMimeTypes(); err != nil {
+	if err := s.migrateMimeTypes(ctx); err != nil {
 		log.Printf("Warning: MIME migration failed: %v", err)
 	}
 
@@ -144,7 +147,7 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 
 // initBaseSchema creates the database tables if they don't exist
 // Note: user_id columns and indexes are handled by migration for compatibility
-func (s *SQLiteStorage) initBaseSchema() error {
+func (s *SQLiteStorage) initBaseSchema(ctx context.Context) error {
 	schema := `
 	-- Users table (v2.1 multi-user)
 	CREATE TABLE IF NOT EXISTS users (
@@ -311,19 +314,19 @@ func (s *SQLiteStorage) initBaseSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_events_share_at ON events(share_id, at);
 	`
 
-	_, err := s.db.Exec(schema)
+	_, err := s.db.ExecContext(ctx, schema)
 	return err
 }
 
 // createUserIndexes creates indexes on user_id columns after migration
-func (s *SQLiteStorage) createUserIndexes() error {
+func (s *SQLiteStorage) createUserIndexes(ctx context.Context) error {
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)",
 	}
 
 	for _, idx := range indexes {
-		if _, err := s.db.Exec(idx); err != nil {
+		if _, err := s.db.ExecContext(ctx, idx); err != nil {
 			log.Printf("Warning: Failed to create index: %v", err)
 			// Continue with other indexes
 		}
@@ -391,7 +394,7 @@ func fmtTimePtr(t *time.Time) interface{} {
 }
 
 // Save saves or updates a share
-func (s *SQLiteStorage) Save(share *models.Share) error {
+func (s *SQLiteStorage) Save(ctx context.Context, share *models.Share) error {
 	query := `
 		INSERT INTO shares (
 			id, file_name, original_name, file_size, mime_type,
@@ -425,7 +428,7 @@ func (s *SQLiteStorage) Save(share *models.Share) error {
 	expiresAt := share.ExpiresAt.UTC().Format("2006-01-02 15:04:05")
 	createdAt := share.CreatedAt.UTC().Format("2006-01-02 15:04:05")
 
-	_, err := s.db.Exec(query,
+	_, err := s.db.ExecContext(ctx, query,
 		share.ID, share.FileName, share.OriginalName, share.FileSize, share.MimeType,
 		share.Password, share.HasPassword, expiresAt, createdAt,
 		share.Downloads, share.MaxDownloads, share.SourcePath, share.IsSymlink,
@@ -436,7 +439,7 @@ func (s *SQLiteStorage) Save(share *models.Share) error {
 }
 
 // Get retrieves a share by ID
-func (s *SQLiteStorage) Get(id string) (*models.Share, bool) {
+func (s *SQLiteStorage) Get(ctx context.Context, id string) (*models.Share, bool) {
 	// Use strftime to normalize datetime comparison - handles both formats
 	query := `
 		SELECT id, file_name, original_name, file_size, mime_type,
@@ -449,7 +452,7 @@ func (s *SQLiteStorage) Get(id string) (*models.Share, bool) {
 	`
 
 	share := &models.Share{}
-	err := s.db.QueryRow(query, id).Scan(
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&share.ID, &share.FileName, &share.OriginalName, &share.FileSize, &share.MimeType,
 		&share.Password, &share.HasPassword, &share.ExpiresAt, &share.CreatedAt,
 		&share.Downloads, &share.MaxDownloads, &share.SourcePath, &share.IsSymlink,
@@ -469,7 +472,7 @@ func (s *SQLiteStorage) Get(id string) (*models.Share, bool) {
 }
 
 // GetAll returns all non-expired shares
-func (s *SQLiteStorage) GetAll() []*models.Share {
+func (s *SQLiteStorage) GetAll(ctx context.Context) []*models.Share {
 	query := `
 		SELECT id, file_name, original_name, file_size, mime_type,
 			   password_hash, has_password, expires_at, created_at,
@@ -481,7 +484,7 @@ func (s *SQLiteStorage) GetAll() []*models.Share {
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.db.Query(query)
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		log.Printf("Error getting all shares: %v", err)
 		return nil
@@ -511,12 +514,12 @@ func (s *SQLiteStorage) GetAll() []*models.Share {
 }
 
 // Delete removes a share and its file
-func (s *SQLiteStorage) Delete(id string) error {
+func (s *SQLiteStorage) Delete(ctx context.Context, id string) error {
 	// Get the share first to delete the file
-	share, ok := s.Get(id)
+	share, ok := s.Get(ctx, id)
 	if !ok {
 		// Still try to delete from DB in case it's expired
-		_, err := s.db.Exec("DELETE FROM shares WHERE id = ?", id)
+		_, err := s.db.ExecContext(ctx, "DELETE FROM shares WHERE id = ?", id)
 		return err
 	}
 
@@ -530,15 +533,15 @@ func (s *SQLiteStorage) Delete(id string) error {
 	}
 
 	// Delete from database
-	_, err := s.db.Exec("DELETE FROM shares WHERE id = ?", id)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM shares WHERE id = ?", id)
 	return err
 }
 
 // IncrementDownloads atomically increments the download counter.
 // Returns (true, nil) if the increment succeeded, (false, nil) if the
 // download limit was already reached, or (false, err) on database error.
-func (s *SQLiteStorage) IncrementDownloads(id string) (bool, error) {
-	result, err := s.db.Exec(
+func (s *SQLiteStorage) IncrementDownloads(ctx context.Context, id string) (bool, error) {
+	result, err := s.db.ExecContext(ctx,
 		`UPDATE shares SET downloads = downloads + 1
 		 WHERE id = ? AND (max_downloads = 0 OR downloads < max_downloads)`,
 		id,
@@ -556,7 +559,7 @@ func (s *SQLiteStorage) IncrementDownloads(id string) (bool, error) {
 // ============= Query Operations =============
 
 // GetExpiringSoon returns shares expiring within the given duration
-func (s *SQLiteStorage) GetExpiringSoon(within time.Duration) ([]*models.Share, error) {
+func (s *SQLiteStorage) GetExpiringSoon(ctx context.Context, within time.Duration) ([]*models.Share, error) {
 	// Format deadline the same way Save() formats expires_at so the string
 	// comparison inside datetime() lines up across drivers. modernc.org/sqlite
 	// binds time.Time as RFC3339Nano ("…T…Z"), which SQLite *can* parse but
@@ -576,7 +579,7 @@ func (s *SQLiteStorage) GetExpiringSoon(within time.Duration) ([]*models.Share, 
 		ORDER BY expires_at ASC
 	`
 
-	rows, err := s.db.Query(query, deadline)
+	rows, err := s.db.QueryContext(ctx, query, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +607,7 @@ func (s *SQLiteStorage) GetExpiringSoon(within time.Duration) ([]*models.Share, 
 }
 
 // GetByDateRange returns shares created within the date range
-func (s *SQLiteStorage) GetByDateRange(from, to time.Time) ([]*models.Share, error) {
+func (s *SQLiteStorage) GetByDateRange(ctx context.Context, from, to time.Time) ([]*models.Share, error) {
 	query := `
 		SELECT id, file_name, original_name, file_size, mime_type,
 			   password_hash, has_password, expires_at, created_at,
@@ -619,7 +622,7 @@ func (s *SQLiteStorage) GetByDateRange(from, to time.Time) ([]*models.Share, err
 	// Bind the same textual format the column is stored in, so the string
 	// comparison is valid (a time.Time bound here could serialize as RFC3339
 	// and mis-compare against the space-separated stored values).
-	rows, err := s.db.Query(query, fmtTime(from), fmtTime(to))
+	rows, err := s.db.QueryContext(ctx, query, fmtTime(from), fmtTime(to))
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +650,7 @@ func (s *SQLiteStorage) GetByDateRange(from, to time.Time) ([]*models.Share, err
 }
 
 // Search searches for shares by filename
-func (s *SQLiteStorage) Search(query string) ([]*models.Share, error) {
+func (s *SQLiteStorage) Search(ctx context.Context, query string) ([]*models.Share, error) {
 	searchQuery := `
 		SELECT id, file_name, original_name, file_size, mime_type,
 			   password_hash, has_password, expires_at, created_at,
@@ -665,7 +668,7 @@ func (s *SQLiteStorage) Search(query string) ([]*models.Share, error) {
 	// escape char declared via ESCAPE above.
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query)
 	searchPattern := "%" + escaped + "%"
-	rows, err := s.db.Query(searchQuery, searchPattern, searchPattern)
+	rows, err := s.db.QueryContext(ctx, searchQuery, searchPattern, searchPattern)
 	if err != nil {
 		return nil, err
 	}
@@ -693,11 +696,11 @@ func (s *SQLiteStorage) Search(query string) ([]*models.Share, error) {
 }
 
 // GetStats returns storage statistics
-func (s *SQLiteStorage) GetStats() (*StorageStats, error) {
+func (s *SQLiteStorage) GetStats(ctx context.Context) (*StorageStats, error) {
 	stats := &StorageStats{}
 
 	// Count active shares
-	err := s.db.QueryRow(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(downloads), 0), COALESCE(SUM(file_size), 0)
 		FROM shares WHERE datetime(substr(expires_at, 1, 19)) > datetime('now')
 	`).Scan(&stats.TotalShares, &stats.TotalDownloads, &stats.TotalSize)
@@ -707,7 +710,7 @@ func (s *SQLiteStorage) GetStats() (*StorageStats, error) {
 
 	// Count expiring soon (within 24h)
 	deadline := time.Now().Add(24 * time.Hour).UTC().Format("2006-01-02 15:04:05")
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM shares
 		WHERE datetime(substr(expires_at, 1, 19)) > datetime('now')
 		  AND datetime(substr(expires_at, 1, 19)) <= datetime(?)
@@ -722,14 +725,14 @@ func (s *SQLiteStorage) GetStats() (*StorageStats, error) {
 // ============= Folder Operations =============
 
 // SaveFolderContents saves folder contents for a share
-func (s *SQLiteStorage) SaveFolderContents(shareID string, contents []*models.FolderEntry) error {
-	tx, err := s.db.Begin()
+func (s *SQLiteStorage) SaveFolderContents(ctx context.Context, shareID string, contents []*models.FolderEntry) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`
+	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO folder_contents (id, share_id, relative_path, file_name, file_size, mime_type, is_directory)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`)
@@ -739,7 +742,7 @@ func (s *SQLiteStorage) SaveFolderContents(shareID string, contents []*models.Fo
 	defer stmt.Close()
 
 	for _, entry := range contents {
-		_, err := stmt.Exec(entry.ID, shareID, entry.RelativePath, entry.FileName, entry.FileSize, entry.MimeType, entry.IsDirectory)
+		_, err := stmt.ExecContext(ctx, entry.ID, shareID, entry.RelativePath, entry.FileName, entry.FileSize, entry.MimeType, entry.IsDirectory)
 		if err != nil {
 			return err
 		}
@@ -749,7 +752,7 @@ func (s *SQLiteStorage) SaveFolderContents(shareID string, contents []*models.Fo
 }
 
 // GetFolderContents returns folder contents for a share at a specific path
-func (s *SQLiteStorage) GetFolderContents(shareID string, path string) ([]*models.FolderEntry, error) {
+func (s *SQLiteStorage) GetFolderContents(ctx context.Context, shareID string, path string) ([]*models.FolderEntry, error) {
 	// Normalize path
 	if path == "" {
 		path = "/"
@@ -769,7 +772,7 @@ func (s *SQLiteStorage) GetFolderContents(shareID string, path string) ([]*model
 	directChildren := path + "%"
 	nestedChildren := path + "%/%"
 
-	rows, err := s.db.Query(query, shareID, directChildren, nestedChildren)
+	rows, err := s.db.QueryContext(ctx, query, shareID, directChildren, nestedChildren)
 	if err != nil {
 		return nil, err
 	}
@@ -791,15 +794,15 @@ func (s *SQLiteStorage) GetFolderContents(shareID string, path string) ([]*model
 }
 
 // DeleteFolderContents removes all folder contents for a share
-func (s *SQLiteStorage) DeleteFolderContents(shareID string) error {
-	_, err := s.db.Exec("DELETE FROM folder_contents WHERE share_id = ?", shareID)
+func (s *SQLiteStorage) DeleteFolderContents(ctx context.Context, shareID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM folder_contents WHERE share_id = ?", shareID)
 	return err
 }
 
 // ============= Receive Link Operations =============
 
 // SaveReceiveLink saves a receive link
-func (s *SQLiteStorage) SaveReceiveLink(link *models.ReceiveLink) error {
+func (s *SQLiteStorage) SaveReceiveLink(ctx context.Context, link *models.ReceiveLink) error {
 	query := `
 		INSERT OR REPLACE INTO receive_links (
 			id, name, password_hash, has_password, expires_at, created_at,
@@ -810,7 +813,7 @@ func (s *SQLiteStorage) SaveReceiveLink(link *models.ReceiveLink) error {
 
 	expiresAt := fmtTimePtr(link.ExpiresAt)
 
-	_, err := s.db.Exec(query,
+	_, err := s.db.ExecContext(ctx, query,
 		link.ID, link.Name, link.Password, link.HasPassword, expiresAt, fmtTime(link.CreatedAt),
 		link.MaxUploads, link.MaxFileSize, link.AllowedExtensions, link.AutoShare,
 		link.WebhookURL, link.CurrentUploads, link.TotalSize, link.UserID,
@@ -819,7 +822,7 @@ func (s *SQLiteStorage) SaveReceiveLink(link *models.ReceiveLink) error {
 }
 
 // GetReceiveLink retrieves a receive link by ID
-func (s *SQLiteStorage) GetReceiveLink(id string) (*models.ReceiveLink, bool) {
+func (s *SQLiteStorage) GetReceiveLink(ctx context.Context, id string) (*models.ReceiveLink, bool) {
 	query := `
 		SELECT id, name, password_hash, has_password, expires_at, created_at,
 			   max_uploads, max_file_size, allowed_extensions, auto_share,
@@ -831,7 +834,7 @@ func (s *SQLiteStorage) GetReceiveLink(id string) (*models.ReceiveLink, bool) {
 	link := &models.ReceiveLink{}
 	var expiresAt sql.NullTime
 
-	err := s.db.QueryRow(query, id).Scan(
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&link.ID, &link.Name, &link.Password, &link.HasPassword, &expiresAt, &link.CreatedAt,
 		&link.MaxUploads, &link.MaxFileSize, &link.AllowedExtensions, &link.AutoShare,
 		&link.WebhookURL, &link.CurrentUploads, &link.TotalSize, &link.UserID,
@@ -853,7 +856,7 @@ func (s *SQLiteStorage) GetReceiveLink(id string) (*models.ReceiveLink, bool) {
 }
 
 // GetAllReceiveLinks returns all non-expired receive links
-func (s *SQLiteStorage) GetAllReceiveLinks() ([]*models.ReceiveLink, error) {
+func (s *SQLiteStorage) GetAllReceiveLinks(ctx context.Context) ([]*models.ReceiveLink, error) {
 	query := `
 		SELECT id, name, password_hash, has_password, expires_at, created_at,
 			   max_uploads, max_file_size, allowed_extensions, auto_share,
@@ -863,7 +866,7 @@ func (s *SQLiteStorage) GetAllReceiveLinks() ([]*models.ReceiveLink, error) {
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.db.Query(query)
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -896,9 +899,9 @@ func (s *SQLiteStorage) GetAllReceiveLinks() ([]*models.ReceiveLink, error) {
 }
 
 // DeleteReceiveLink removes a receive link
-func (s *SQLiteStorage) DeleteReceiveLink(id string) error {
+func (s *SQLiteStorage) DeleteReceiveLink(ctx context.Context, id string) error {
 	// Delete received files first (cascade will handle it, but also delete actual files)
-	files, _ := s.GetReceivedFiles(id)
+	files, _ := s.GetReceivedFiles(ctx, id)
 	for _, file := range files {
 		filePath := filepath.Join(s.uploadsDir, "received", id, file.FileName)
 		os.Remove(filePath)
@@ -907,15 +910,15 @@ func (s *SQLiteStorage) DeleteReceiveLink(id string) error {
 	// Remove the received directory
 	os.RemoveAll(filepath.Join(s.uploadsDir, "received", id))
 
-	_, err := s.db.Exec("DELETE FROM receive_links WHERE id = ?", id)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM receive_links WHERE id = ?", id)
 	return err
 }
 
 // IncrementReceiveLinkUploads atomically increments the upload counter.
 // Returns (true, nil) if the increment succeeded, (false, nil) if the
 // upload limit was already reached, or (false, err) on database error.
-func (s *SQLiteStorage) IncrementReceiveLinkUploads(id string) (bool, error) {
-	result, err := s.db.Exec(
+func (s *SQLiteStorage) IncrementReceiveLinkUploads(ctx context.Context, id string) (bool, error) {
+	result, err := s.db.ExecContext(ctx,
 		`UPDATE receive_links SET current_uploads = current_uploads + 1
 		 WHERE id = ? AND (max_uploads = 0 OR current_uploads < max_uploads)`,
 		id,
@@ -933,19 +936,19 @@ func (s *SQLiteStorage) IncrementReceiveLinkUploads(id string) (bool, error) {
 // ============= Received Files Operations =============
 
 // SaveReceivedFile saves a received file record
-func (s *SQLiteStorage) SaveReceivedFile(file *models.ReceivedFile) error {
+func (s *SQLiteStorage) SaveReceivedFile(ctx context.Context, file *models.ReceivedFile) error {
 	// Insert the file row and bump the link's running total_size in ONE
 	// transaction. total_size feeds GetUserUsage (quota accounting), so the two
 	// must not drift: a crash/error between two separate Execs would leave the
 	// file counted in received_files but not in total_size. DeleteReceivedFile
 	// already uses a transaction for the reverse operation.
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO received_files (
 			id, receive_link_id, file_name, original_name, file_size,
 			mime_type, uploader_ip, uploader_agent, created_at, share_id
@@ -956,7 +959,7 @@ func (s *SQLiteStorage) SaveReceivedFile(file *models.ReceivedFile) error {
 		return err
 	}
 
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(ctx,
 		"UPDATE receive_links SET total_size = total_size + ? WHERE id = ?",
 		file.FileSize, file.ReceiveLinkID,
 	); err != nil {
@@ -967,7 +970,7 @@ func (s *SQLiteStorage) SaveReceivedFile(file *models.ReceivedFile) error {
 }
 
 // GetReceivedFiles returns all files for a receive link
-func (s *SQLiteStorage) GetReceivedFiles(linkID string) ([]*models.ReceivedFile, error) {
+func (s *SQLiteStorage) GetReceivedFiles(ctx context.Context, linkID string) ([]*models.ReceivedFile, error) {
 	query := `
 		SELECT id, receive_link_id, file_name, original_name, file_size,
 			   COALESCE(mime_type, ''), COALESCE(uploader_ip, ''), COALESCE(uploader_agent, ''),
@@ -977,7 +980,7 @@ func (s *SQLiteStorage) GetReceivedFiles(linkID string) ([]*models.ReceivedFile,
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.db.Query(query, linkID)
+	rows, err := s.db.QueryContext(ctx, query, linkID)
 	if err != nil {
 		return nil, err
 	}
@@ -1003,8 +1006,8 @@ func (s *SQLiteStorage) GetReceivedFiles(linkID string) ([]*models.ReceivedFile,
 
 // DeleteReceivedFile removes a received file using a transaction to keep
 // the received_files table and the receive_links.total_size in sync.
-func (s *SQLiteStorage) DeleteReceivedFile(linkID, fileID string) error {
-	tx, err := s.db.Begin()
+func (s *SQLiteStorage) DeleteReceivedFile(ctx context.Context, linkID, fileID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -1013,7 +1016,7 @@ func (s *SQLiteStorage) DeleteReceivedFile(linkID, fileID string) error {
 	// Get file info first
 	var fileName string
 	var fileSize int64
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(ctx,
 		"SELECT file_name, file_size FROM received_files WHERE id = ? AND receive_link_id = ?",
 		fileID, linkID,
 	).Scan(&fileName, &fileSize)
@@ -1022,13 +1025,13 @@ func (s *SQLiteStorage) DeleteReceivedFile(linkID, fileID string) error {
 	}
 
 	// Delete the DB record
-	_, err = tx.Exec("DELETE FROM received_files WHERE id = ? AND receive_link_id = ?", fileID, linkID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM received_files WHERE id = ? AND receive_link_id = ?", fileID, linkID)
 	if err != nil {
 		return err
 	}
 
 	// Update total size
-	_, err = tx.Exec("UPDATE receive_links SET total_size = MAX(0, total_size - ?) WHERE id = ?", fileSize, linkID)
+	_, err = tx.ExecContext(ctx, "UPDATE receive_links SET total_size = MAX(0, total_size - ?) WHERE id = ?", fileSize, linkID)
 	if err != nil {
 		return err
 	}
@@ -1061,7 +1064,7 @@ func nullIfEmpty(s string) interface{} {
 }
 
 // CreateUser creates a new user
-func (s *SQLiteStorage) CreateUser(user *models.User) error {
+func (s *SQLiteStorage) CreateUser(ctx context.Context, user *models.User) error {
 	query := `
 		INSERT INTO users (
 			id, email, name, role, password_hash,
@@ -1071,7 +1074,7 @@ func (s *SQLiteStorage) CreateUser(user *models.User) error {
 
 	lastLoginAt := fmtTimePtr(user.LastLoginAt)
 
-	_, err := s.db.Exec(query,
+	_, err := s.db.ExecContext(ctx, query,
 		user.ID, user.Email, user.Name, user.Role, user.PasswordHash,
 		nullIfEmpty(user.OIDCSubject), nullIfEmpty(user.OIDCIssuer),
 		user.IsActive, fmtTime(user.CreatedAt), lastLoginAt, user.QuotaBytes,
@@ -1080,7 +1083,7 @@ func (s *SQLiteStorage) CreateUser(user *models.User) error {
 }
 
 // GetUser retrieves a user by ID
-func (s *SQLiteStorage) GetUser(id string) (*models.User, error) {
+func (s *SQLiteStorage) GetUser(ctx context.Context, id string) (*models.User, error) {
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
@@ -1092,7 +1095,7 @@ func (s *SQLiteStorage) GetUser(id string) (*models.User, error) {
 	user := &models.User{}
 	var lastLoginAt sql.NullTime
 
-	err := s.db.QueryRow(query, id).Scan(
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
 		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt, &user.QuotaBytes,
 	)
@@ -1112,7 +1115,7 @@ func (s *SQLiteStorage) GetUser(id string) (*models.User, error) {
 }
 
 // GetUserByEmail retrieves a user by email
-func (s *SQLiteStorage) GetUserByEmail(email string) (*models.User, error) {
+func (s *SQLiteStorage) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	// quota_bytes MUST be selected here: callers (the OIDC login path) load a
 	// user through this query and hand the very same struct back to UpdateUser,
 	// which persists every column. Omitting it would write back a zeroed quota
@@ -1128,7 +1131,7 @@ func (s *SQLiteStorage) GetUserByEmail(email string) (*models.User, error) {
 	user := &models.User{}
 	var lastLoginAt sql.NullTime
 
-	err := s.db.QueryRow(query, email).Scan(
+	err := s.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
 		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
 		&user.QuotaBytes,
@@ -1149,7 +1152,7 @@ func (s *SQLiteStorage) GetUserByEmail(email string) (*models.User, error) {
 }
 
 // GetUserByOIDC retrieves a user by OIDC subject and issuer
-func (s *SQLiteStorage) GetUserByOIDC(subject, issuer string) (*models.User, error) {
+func (s *SQLiteStorage) GetUserByOIDC(ctx context.Context, subject, issuer string) (*models.User, error) {
 	// quota_bytes MUST be selected — see the note in GetUserByEmail. This is the
 	// query the SSO login path uses before writing the user back.
 	query := `
@@ -1163,7 +1166,7 @@ func (s *SQLiteStorage) GetUserByOIDC(subject, issuer string) (*models.User, err
 	user := &models.User{}
 	var lastLoginAt sql.NullTime
 
-	err := s.db.QueryRow(query, subject, issuer).Scan(
+	err := s.db.QueryRowContext(ctx, query, subject, issuer).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
 		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
 		&user.QuotaBytes,
@@ -1184,7 +1187,7 @@ func (s *SQLiteStorage) GetUserByOIDC(subject, issuer string) (*models.User, err
 }
 
 // GetAllUsers returns all users
-func (s *SQLiteStorage) GetAllUsers() ([]*models.User, error) {
+func (s *SQLiteStorage) GetAllUsers(ctx context.Context) ([]*models.User, error) {
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
@@ -1193,7 +1196,7 @@ func (s *SQLiteStorage) GetAllUsers() ([]*models.User, error) {
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.db.Query(query)
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -1225,7 +1228,7 @@ func (s *SQLiteStorage) GetAllUsers() ([]*models.User, error) {
 }
 
 // UpdateUser updates an existing user
-func (s *SQLiteStorage) UpdateUser(user *models.User) error {
+func (s *SQLiteStorage) UpdateUser(ctx context.Context, user *models.User) error {
 	query := `
 		UPDATE users SET
 			email = ?, name = ?, role = ?, password_hash = ?,
@@ -1235,7 +1238,7 @@ func (s *SQLiteStorage) UpdateUser(user *models.User) error {
 
 	lastLoginAt := fmtTimePtr(user.LastLoginAt)
 
-	_, err := s.db.Exec(query,
+	_, err := s.db.ExecContext(ctx, query,
 		user.Email, user.Name, user.Role, user.PasswordHash,
 		nullIfEmpty(user.OIDCSubject), nullIfEmpty(user.OIDCIssuer),
 		user.IsActive, lastLoginAt, user.QuotaBytes,
@@ -1245,10 +1248,10 @@ func (s *SQLiteStorage) UpdateUser(user *models.User) error {
 }
 
 // DeleteUser removes a user
-func (s *SQLiteStorage) DeleteUser(id string) error {
+func (s *SQLiteStorage) DeleteUser(ctx context.Context, id string) error {
 	// Note: This doesn't delete user's shares/receive links
 	// They will remain but be "orphaned" (user_id will point to non-existent user)
-	_, err := s.db.Exec("DELETE FROM users WHERE id = ?", id)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM users WHERE id = ?", id)
 	return err
 }
 
@@ -1257,16 +1260,16 @@ func (s *SQLiteStorage) DeleteUser(id string) error {
 // Symlink shares (is_symlink=1) and in-place folder shares (is_directory=1)
 // reference host files on disk without copying, so they consume no managed
 // storage and are excluded — matching what actually lives under data/uploads.
-func (s *SQLiteStorage) GetUserUsage(userID string) (int64, error) {
+func (s *SQLiteStorage) GetUserUsage(ctx context.Context, userID string) (int64, error) {
 	var shareBytes, receivedBytes int64
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(file_size), 0) FROM shares
 		 WHERE user_id = ? AND is_symlink = 0 AND is_directory = 0`, userID,
 	).Scan(&shareBytes)
 	if err != nil {
 		return 0, err
 	}
-	err = s.db.QueryRow(
+	err = s.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(total_size), 0) FROM receive_links WHERE user_id = ?`, userID,
 	).Scan(&receivedBytes)
 	if err != nil {
@@ -1276,7 +1279,7 @@ func (s *SQLiteStorage) GetUserUsage(userID string) (int64, error) {
 }
 
 // GetSharesByUser returns all non-expired shares for a user
-func (s *SQLiteStorage) GetSharesByUser(userID string) []*models.Share {
+func (s *SQLiteStorage) GetSharesByUser(ctx context.Context, userID string) []*models.Share {
 	query := `
 		SELECT id, file_name, original_name, file_size, mime_type,
 			   password_hash, has_password, expires_at, created_at,
@@ -1288,7 +1291,7 @@ func (s *SQLiteStorage) GetSharesByUser(userID string) []*models.Share {
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.db.Query(query, userID)
+	rows, err := s.db.QueryContext(ctx, query, userID)
 	if err != nil {
 		log.Printf("Error getting shares for user %s: %v", userID, err)
 		return nil
@@ -1317,7 +1320,7 @@ func (s *SQLiteStorage) GetSharesByUser(userID string) []*models.Share {
 }
 
 // GetReceiveLinksByUser returns all non-expired receive links for a user
-func (s *SQLiteStorage) GetReceiveLinksByUser(userID string) ([]*models.ReceiveLink, error) {
+func (s *SQLiteStorage) GetReceiveLinksByUser(ctx context.Context, userID string) ([]*models.ReceiveLink, error) {
 	query := `
 		SELECT id, name, password_hash, has_password, expires_at, created_at,
 			   max_uploads, max_file_size, allowed_extensions, auto_share,
@@ -1327,7 +1330,7 @@ func (s *SQLiteStorage) GetReceiveLinksByUser(userID string) ([]*models.ReceiveL
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.db.Query(query, userID)
+	rows, err := s.db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1362,6 +1365,8 @@ func (s *SQLiteStorage) GetReceiveLinksByUser(userID string) ([]*models.ReceiveL
 // ============= Cleanup =============
 
 func (s *SQLiteStorage) cleanupExpired() {
+	// Background loop with no caller; it stops via stopCleanup, not via ctx.
+	ctx := context.Background()
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -1370,8 +1375,8 @@ func (s *SQLiteStorage) cleanupExpired() {
 		case <-s.stopCleanup:
 			return
 		case <-ticker.C:
-			s.cleanupExpiredShares()
-			s.cleanupExpiredReceiveLinks()
+			s.cleanupExpiredShares(ctx)
+			s.cleanupExpiredReceiveLinks(ctx)
 		}
 	}
 }
@@ -1379,15 +1384,15 @@ func (s *SQLiteStorage) cleanupExpired() {
 // RunExpiryCleanup runs one expiry sweep immediately instead of waiting for the
 // hourly ticker. Exported so the wiring from cleanup to the expire webhook can
 // be exercised end to end rather than one half at a time.
-func (s *SQLiteStorage) RunExpiryCleanup() {
-	s.cleanupExpiredShares()
-	s.cleanupExpiredReceiveLinks()
+func (s *SQLiteStorage) RunExpiryCleanup(ctx context.Context) {
+	s.cleanupExpiredShares(ctx)
+	s.cleanupExpiredReceiveLinks(ctx)
 }
 
-func (s *SQLiteStorage) cleanupExpiredShares() {
+func (s *SQLiteStorage) cleanupExpiredShares(ctx context.Context) {
 	// Get expired shares to delete files. original_name and downloads are
 	// selected only to populate the expiry webhook payload.
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, file_name, is_directory, COALESCE(original_name, ''), COALESCE(downloads, 0)
 		FROM shares WHERE datetime(substr(expires_at, 1, 19)) <= datetime('now')
 	`)
@@ -1432,7 +1437,7 @@ func (s *SQLiteStorage) cleanupExpiredShares() {
 	// disk because it was never in expiredIDs. Newly-expired rows are picked up
 	// (file and all) on the next cleanup pass instead.
 	if len(expiredIDs) > 0 {
-		if _, err := s.db.Exec(
+		if _, err := s.db.ExecContext(ctx,
 			"DELETE FROM shares WHERE id IN ("+sqlPlaceholders(len(expiredIDs))+")",
 			toAnySlice(expiredIDs)...,
 		); err != nil {
@@ -1444,7 +1449,7 @@ func (s *SQLiteStorage) cleanupExpiredShares() {
 			// the statement failed.
 			if notify := s.expiryNotifier(); notify != nil {
 				for _, share := range expired {
-					notify(share)
+					notify(ctx, share)
 				}
 			}
 		}
@@ -1468,9 +1473,9 @@ func toAnySlice(ss []string) []any {
 	return out
 }
 
-func (s *SQLiteStorage) cleanupExpiredReceiveLinks() {
+func (s *SQLiteStorage) cleanupExpiredReceiveLinks(ctx context.Context) {
 	// Get expired receive links
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id FROM receive_links WHERE expires_at IS NOT NULL AND datetime(substr(expires_at, 1, 19)) <= datetime('now')
 	`)
 	if err != nil {
@@ -1500,7 +1505,7 @@ func (s *SQLiteStorage) cleanupExpiredReceiveLinks() {
 		// Delete exactly the collected IDs, not a re-evaluated now() predicate,
 		// so a link that expires mid-cleanup isn't removed from the DB while its
 		// received-files directory is left orphaned (see cleanupExpiredShares).
-		if _, err := s.db.Exec(
+		if _, err := s.db.ExecContext(ctx,
 			"DELETE FROM receive_links WHERE id IN ("+sqlPlaceholders(len(expiredIDs))+")",
 			toAnySlice(expiredIDs)...,
 		); err != nil {
@@ -1514,7 +1519,7 @@ func (s *SQLiteStorage) cleanupExpiredReceiveLinks() {
 // ============= SMTP Config Operations =============
 
 // GetSMTPConfig retrieves the SMTP configuration
-func (s *SQLiteStorage) GetSMTPConfig() (*models.SMTPConfig, error) {
+func (s *SQLiteStorage) GetSMTPConfig(ctx context.Context) (*models.SMTPConfig, error) {
 	query := `
 		SELECT enabled, COALESCE(host, ''), COALESCE(port, 587),
 			   COALESCE(username, ''), COALESCE(password, ''),
@@ -1524,7 +1529,7 @@ func (s *SQLiteStorage) GetSMTPConfig() (*models.SMTPConfig, error) {
 	`
 
 	config := &models.SMTPConfig{}
-	err := s.db.QueryRow(query).Scan(
+	err := s.db.QueryRowContext(ctx, query).Scan(
 		&config.Enabled, &config.Host, &config.Port,
 		&config.Username, &config.Password,
 		&config.FromEmail, &config.FromName,
@@ -1547,7 +1552,7 @@ func (s *SQLiteStorage) GetSMTPConfig() (*models.SMTPConfig, error) {
 }
 
 // SaveSMTPConfig saves the SMTP configuration
-func (s *SQLiteStorage) SaveSMTPConfig(config *models.SMTPConfig) error {
+func (s *SQLiteStorage) SaveSMTPConfig(ctx context.Context, config *models.SMTPConfig) error {
 	query := `
 		INSERT INTO smtp_config (id, enabled, host, port, username, password, from_email, from_name, use_tls, use_starttls, updated_at)
 		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -1564,7 +1569,7 @@ func (s *SQLiteStorage) SaveSMTPConfig(config *models.SMTPConfig) error {
 			updated_at = CURRENT_TIMESTAMP
 	`
 
-	_, err := s.db.Exec(query,
+	_, err := s.db.ExecContext(ctx, query,
 		config.Enabled, config.Host, config.Port,
 		config.Username, config.Password,
 		config.FromEmail, config.FromName,
@@ -1576,7 +1581,7 @@ func (s *SQLiteStorage) SaveSMTPConfig(config *models.SMTPConfig) error {
 // ============= Email Transfer Operations =============
 
 // SaveEmailTransfer saves an email transfer record
-func (s *SQLiteStorage) SaveEmailTransfer(transfer *models.EmailTransferRecord) error {
+func (s *SQLiteStorage) SaveEmailTransfer(ctx context.Context, transfer *models.EmailTransferRecord) error {
 	query := `
 		INSERT INTO email_transfers (
 			id, share_id, recipient_email, recipient_name,
@@ -1585,7 +1590,7 @@ func (s *SQLiteStorage) SaveEmailTransfer(transfer *models.EmailTransferRecord) 
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := s.db.Exec(query,
+	_, err := s.db.ExecContext(ctx, query,
 		transfer.ID, transfer.ShareID, transfer.RecipientEmail, transfer.RecipientName,
 		transfer.SenderEmail, transfer.SenderName, transfer.Title, transfer.Message,
 		transfer.NotifyDownload, transfer.SentAt, transfer.Lang,
@@ -1596,8 +1601,8 @@ func (s *SQLiteStorage) SaveEmailTransfer(transfer *models.EmailTransferRecord) 
 // DeleteEmailTransfer removes a transfer record by id. It is used when the
 // e-mail for a freshly saved record could not be sent, so no download or
 // expiry mail is ever sent for a share the recipient never received.
-func (s *SQLiteStorage) DeleteEmailTransfer(id string) error {
-	res, err := s.db.Exec(`DELETE FROM email_transfers WHERE id = ?`, id)
+func (s *SQLiteStorage) DeleteEmailTransfer(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM email_transfers WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -1608,7 +1613,7 @@ func (s *SQLiteStorage) DeleteEmailTransfer(id string) error {
 }
 
 // GetEmailTransfersByShare retrieves email transfers for a share
-func (s *SQLiteStorage) GetEmailTransfersByShare(shareID string) ([]*models.EmailTransferRecord, error) {
+func (s *SQLiteStorage) GetEmailTransfersByShare(ctx context.Context, shareID string) ([]*models.EmailTransferRecord, error) {
 	query := `
 		SELECT id, share_id, recipient_email, COALESCE(recipient_name, ''),
 			   sender_email, COALESCE(sender_name, ''), COALESCE(title, ''),
@@ -1619,7 +1624,7 @@ func (s *SQLiteStorage) GetEmailTransfersByShare(shareID string) ([]*models.Emai
 		ORDER BY sent_at DESC
 	`
 
-	rows, err := s.db.Query(query, shareID)
+	rows, err := s.db.QueryContext(ctx, query, shareID)
 	if err != nil {
 		return nil, err
 	}
@@ -1645,29 +1650,29 @@ func (s *SQLiteStorage) GetEmailTransfersByShare(shareID string) ([]*models.Emai
 }
 
 // MarkEmailTransferDownloaded marks an email transfer as downloaded
-func (s *SQLiteStorage) MarkEmailTransferDownloaded(shareID string) error {
+func (s *SQLiteStorage) MarkEmailTransferDownloaded(ctx context.Context, shareID string) error {
 	query := `
 		UPDATE email_transfers
 		SET downloaded_at = CURRENT_TIMESTAMP
 		WHERE share_id = ? AND downloaded_at IS NULL
 	`
-	_, err := s.db.Exec(query, shareID)
+	_, err := s.db.ExecContext(ctx, query, shareID)
 	return err
 }
 
 // MarkEmailTransferNotified marks an email transfer notification as sent
-func (s *SQLiteStorage) MarkEmailTransferNotified(shareID string) error {
+func (s *SQLiteStorage) MarkEmailTransferNotified(ctx context.Context, shareID string) error {
 	query := `
 		UPDATE email_transfers
 		SET notified_at = CURRENT_TIMESTAMP
 		WHERE share_id = ? AND notified_at IS NULL
 	`
-	_, err := s.db.Exec(query, shareID)
+	_, err := s.db.ExecContext(ctx, query, shareID)
 	return err
 }
 
 // GetPendingDownloadNotifications gets transfers that need download notification
-func (s *SQLiteStorage) GetPendingDownloadNotifications(shareID string) ([]*models.EmailTransferRecord, error) {
+func (s *SQLiteStorage) GetPendingDownloadNotifications(ctx context.Context, shareID string) ([]*models.EmailTransferRecord, error) {
 	query := `
 		SELECT id, share_id, recipient_email, COALESCE(recipient_name, ''),
 			   sender_email, COALESCE(sender_name, ''), COALESCE(title, ''),
@@ -1680,7 +1685,7 @@ func (s *SQLiteStorage) GetPendingDownloadNotifications(shareID string) ([]*mode
 		  AND notified_at IS NULL
 	`
 
-	rows, err := s.db.Query(query, shareID)
+	rows, err := s.db.QueryContext(ctx, query, shareID)
 	if err != nil {
 		return nil, err
 	}
@@ -1708,8 +1713,8 @@ func (s *SQLiteStorage) GetPendingDownloadNotifications(shareID string) ([]*mode
 // ============= API Key Operations =============
 
 // CreateAPIKey creates a new API key record
-func (s *SQLiteStorage) CreateAPIKey(id, name, keyHash, prefix, userID, role string) error {
-	_, err := s.db.Exec(
+func (s *SQLiteStorage) CreateAPIKey(ctx context.Context, id, name, keyHash, prefix, userID, role string) error {
+	_, err := s.db.ExecContext(ctx,
 		"INSERT INTO api_keys (id, name, key_hash, prefix, user_id, role, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
 		id, name, keyHash, prefix, userID, role, time.Now().UTC(),
 	)
@@ -1717,8 +1722,8 @@ func (s *SQLiteStorage) CreateAPIKey(id, name, keyHash, prefix, userID, role str
 }
 
 // GetAPIKeyByHash looks up an API key by its SHA-256 hash
-func (s *SQLiteStorage) GetAPIKeyByHash(keyHash string) (id, name, userID, role string, isActive bool, err error) {
-	err = s.db.QueryRow(
+func (s *SQLiteStorage) GetAPIKeyByHash(ctx context.Context, keyHash string) (id, name, userID, role string, isActive bool, err error) {
+	err = s.db.QueryRowContext(ctx,
 		"SELECT id, name, COALESCE(user_id, ''), role, is_active FROM api_keys WHERE key_hash = ?",
 		keyHash,
 	).Scan(&id, &name, &userID, &role, &isActive)
@@ -1729,8 +1734,8 @@ func (s *SQLiteStorage) GetAPIKeyByHash(keyHash string) (id, name, userID, role 
 }
 
 // ListAPIKeys returns all API keys (without hashes)
-func (s *SQLiteStorage) ListAPIKeys() ([]map[string]interface{}, error) {
-	rows, err := s.db.Query("SELECT id, name, prefix, COALESCE(user_id, ''), role, created_at, last_used_at, is_active FROM api_keys ORDER BY created_at DESC")
+func (s *SQLiteStorage) ListAPIKeys(ctx context.Context) ([]map[string]interface{}, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, name, prefix, COALESCE(user_id, ''), role, created_at, last_used_at, is_active FROM api_keys ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -1761,20 +1766,20 @@ func (s *SQLiteStorage) ListAPIKeys() ([]map[string]interface{}, error) {
 }
 
 // DeleteAPIKey removes an API key
-func (s *SQLiteStorage) DeleteAPIKey(id string) error {
-	_, err := s.db.Exec("DELETE FROM api_keys WHERE id = ?", id)
+func (s *SQLiteStorage) DeleteAPIKey(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM api_keys WHERE id = ?", id)
 	return err
 }
 
 // UpdateAPIKeyLastUsed updates the last_used_at timestamp for an API key
-func (s *SQLiteStorage) UpdateAPIKeyLastUsed(id string) {
-	s.db.Exec("UPDATE api_keys SET last_used_at = ? WHERE id = ?", time.Now().UTC(), id)
+func (s *SQLiteStorage) UpdateAPIKeyLastUsed(ctx context.Context, id string) {
+	s.db.ExecContext(ctx, "UPDATE api_keys SET last_used_at = ? WHERE id = ?", time.Now().UTC(), id)
 }
 
 // fixDateTimeFormats fixes timezone format in existing dates
-func (s *SQLiteStorage) fixDateTimeFormats() {
+func (s *SQLiteStorage) fixDateTimeFormats(ctx context.Context) {
 	// Update shares table - remove timezone suffix from expires_at and created_at
-	_, err := s.db.Exec(`
+	_, err := s.db.ExecContext(ctx, `
 		UPDATE shares 
 		SET expires_at = substr(expires_at, 1, 19),
 		    created_at = substr(created_at, 1, 19)
@@ -1785,7 +1790,7 @@ func (s *SQLiteStorage) fixDateTimeFormats() {
 	}
 
 	// Update receive_links table
-	_, err = s.db.Exec(`
+	_, err = s.db.ExecContext(ctx, `
 		UPDATE receive_links 
 		SET expires_at = substr(expires_at, 1, 19),
 		    created_at = substr(created_at, 1, 19)
@@ -1797,13 +1802,13 @@ func (s *SQLiteStorage) fixDateTimeFormats() {
 }
 
 // DropSharesTableForTest — see Storage.DropSharesTableForTest.
-func (s *SQLiteStorage) DropSharesTableForTest() error {
-	_, err := s.db.Exec(`DROP TABLE shares`)
+func (s *SQLiteStorage) DropSharesTableForTest(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DROP TABLE shares`)
 	return err
 }
 
 // DropEmailTransfersTableForTest — see StorageBackend.DropEmailTransfersTableForTest.
-func (s *SQLiteStorage) DropEmailTransfersTableForTest() error {
-	_, err := s.db.Exec(`DROP TABLE email_transfers`)
+func (s *SQLiteStorage) DropEmailTransfersTableForTest(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DROP TABLE email_transfers`)
 	return err
 }

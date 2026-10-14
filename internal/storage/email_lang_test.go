@@ -19,15 +19,15 @@ func TestEmailTransferKeepsLanguage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if err := st.Save(&models.Share{ID: "sh0001", FileName: "f", OriginalName: "f.pdf", FileSize: 1,
+	if err := st.Save(t.Context(), &models.Share{ID: "sh0001", FileName: "f", OriginalName: "f.pdf", FileSize: 1,
 		ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SaveEmailTransfer(&models.EmailTransferRecord{ID: "t1", ShareID: "sh0001", RecipientEmail: "r@example.org",
+	if err := st.SaveEmailTransfer(t.Context(), &models.EmailTransferRecord{ID: "t1", ShareID: "sh0001", RecipientEmail: "r@example.org",
 		SenderEmail: "s@example.org", SentAt: time.Now().UTC().Format(time.RFC3339), Lang: "fr"}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.GetEmailTransfersByShare("sh0001")
+	got, err := st.GetEmailTransfersByShare(t.Context(), "sh0001")
 	if err != nil || len(got) != 1 {
 		t.Fatalf("read back: %v, %d records", err, len(got))
 	}

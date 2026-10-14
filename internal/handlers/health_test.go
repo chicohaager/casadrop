@@ -74,7 +74,7 @@ func TestReadyzQueriesTheRealTable(t *testing.T) {
 		t.Fatalf("baseline /readyz: status %d, want 200", rec.Code)
 	}
 
-	if err := store.DropSharesTableForTest(); err != nil {
+	if err := store.DropSharesTableForTest(t.Context()); err != nil {
 		t.Fatalf("drop table: %v", err)
 	}
 

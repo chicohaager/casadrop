@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -288,7 +289,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// known before we write anything to disk).
 	user := middleware.GetUserFromContext(r.Context())
 	if user != nil {
-		if over, err := h.quotaExceededBy(user.ID, header.Size); err != nil {
+		if over, err := h.quotaExceededBy(r.Context(), user.ID, header.Size); err != nil {
 			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
 			return
 		} else if over {
@@ -363,7 +364,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		share.UserEmail = user.Email
 	}
 
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err != nil {
 		os.Remove(destPath)
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
@@ -413,7 +414,7 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Per-user storage quota preflight — reject before any chunk is written.
 	if user := middleware.GetUserFromContext(r.Context()); user != nil {
-		if over, err := h.quotaExceededBy(user.ID, req.TotalSize); err != nil {
+		if over, err := h.quotaExceededBy(r.Context(), user.ID, req.TotalSize); err != nil {
 			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
 			return
 		} else if over {
@@ -720,7 +721,7 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 	// could understate totalSize at init, so we verify against real bytes here
 	// and roll back the assembled file if it would exceed the quota.
 	if user := middleware.GetUserFromContext(r.Context()); user != nil {
-		if over, err := h.quotaExceededBy(user.ID, totalSize); err != nil {
+		if over, err := h.quotaExceededBy(r.Context(), user.ID, totalSize); err != nil {
 			os.Remove(destPath)
 			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
 			return
@@ -770,7 +771,7 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 		share.UserEmail = user.Email
 	}
 
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err != nil {
 		os.Remove(destPath)
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
@@ -860,7 +861,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 		// (quotaExceededBy). Swallowing the error here (the old `err == nil`
 		// pattern) left quotaCap=0 (unlimited) on a transient DB/lock error,
 		// letting a whole batch bypass a nearly-full quota.
-		u, err := h.storage.GetUser(user.ID)
+		u, err := h.storage.GetUser(r.Context(), user.ID)
 		if err != nil {
 			http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
 			return
@@ -869,7 +870,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 			quotaCap = u.QuotaBytes
 		}
 		if quotaCap > 0 {
-			used, err := h.storage.GetUserUsage(user.ID)
+			used, err := h.storage.GetUserUsage(r.Context(), user.ID)
 			if err != nil {
 				http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
 				return
@@ -948,7 +949,7 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 			share.UserEmail = user.Email
 		}
 
-		if err := h.storage.Save(share); err != nil {
+		if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err != nil {
 			os.Remove(destPath)
 			errors = append(errors, fmt.Sprintf("%s: failed to save share", fileHeader.Filename))
 			failedCount++

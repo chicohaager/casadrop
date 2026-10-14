@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -63,10 +64,7 @@ func NewUserService(storage storage.StorageBackend) *UserService {
 	}
 
 	// Auto-provision is enabled by default
-	autoProvision := true
-	if os.Getenv(EnvOIDCAutoProvision) == "false" {
-		autoProvision = false
-	}
+	autoProvision := !(os.Getenv(EnvOIDCAutoProvision) == "false")
 
 	return &UserService{
 		storage:       storage,
@@ -101,9 +99,9 @@ func (s *UserService) allowAutoProvision(issuer string) error {
 }
 
 // FindOrCreateOIDCUser finds an existing user by OIDC credentials or creates a new one
-func (s *UserService) FindOrCreateOIDCUser(userInfo *UserInfo) (*models.User, error) {
+func (s *UserService) FindOrCreateOIDCUser(ctx context.Context, userInfo *UserInfo) (*models.User, error) {
 	// First try to find by OIDC subject+issuer
-	user, err := s.storage.GetUserByOIDC(userInfo.Subject, userInfo.Issuer)
+	user, err := s.storage.GetUserByOIDC(ctx, userInfo.Subject, userInfo.Issuer)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +118,7 @@ func (s *UserService) FindOrCreateOIDCUser(userInfo *UserInfo) (*models.User, er
 		if userInfo.Name != "" && userInfo.Name != user.Name {
 			user.Name = userInfo.Name
 		}
-		if err := s.storage.UpdateUser(user); err != nil {
+		if err := s.storage.UpdateUser(ctx, user); err != nil {
 			log.Printf("OIDC: failed to update user %s on login: %v", user.ID, err)
 		}
 		return user, nil
@@ -130,7 +128,7 @@ func (s *UserService) FindOrCreateOIDCUser(userInfo *UserInfo) (*models.User, er
 	// the address is verified — otherwise a malicious or misconfigured provider
 	// could claim an existing admin's email and take over the account.
 	if userInfo.Email != "" && userInfo.EmailVerified {
-		user, err = s.storage.GetUserByEmail(userInfo.Email)
+		user, err = s.storage.GetUserByEmail(ctx, userInfo.Email)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +138,7 @@ func (s *UserService) FindOrCreateOIDCUser(userInfo *UserInfo) (*models.User, er
 			user.OIDCIssuer = userInfo.Issuer
 			now := time.Now().UTC()
 			user.LastLoginAt = &now
-			if err := s.storage.UpdateUser(user); err != nil {
+			if err := s.storage.UpdateUser(ctx, user); err != nil {
 				return nil, err
 			}
 			return user, nil
@@ -191,7 +189,7 @@ func (s *UserService) FindOrCreateOIDCUser(userInfo *UserInfo) (*models.User, er
 		user.Name = "User"
 	}
 
-	if err := s.storage.CreateUser(user); err != nil {
+	if err := s.storage.CreateUser(ctx, user); err != nil {
 		return nil, err
 	}
 

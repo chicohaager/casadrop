@@ -65,13 +65,13 @@ func TestShareCRUD(t *testing.T) {
 	}
 
 	// Test Save
-	err := store.Save(share)
+	err := store.Save(t.Context(), share)
 	if err != nil {
 		t.Fatalf("Failed to save share: %v", err)
 	}
 
 	// Test Get
-	retrieved, found := store.Get("test-share-1")
+	retrieved, found := store.Get(t.Context(), "test-share-1")
 	if !found {
 		t.Fatal("Share not found after save")
 	}
@@ -83,27 +83,27 @@ func TestShareCRUD(t *testing.T) {
 	}
 
 	// Test GetAll
-	all := store.GetAll()
+	all := store.GetAll(t.Context())
 	if len(all) != 1 {
 		t.Errorf("Expected 1 share, got %d", len(all))
 	}
 
 	// Test IncrementDownloads
-	_, err = store.IncrementDownloads("test-share-1")
+	_, err = store.IncrementDownloads(t.Context(), "test-share-1")
 	if err != nil {
 		t.Fatalf("Failed to increment downloads: %v", err)
 	}
-	retrieved, _ = store.Get("test-share-1")
+	retrieved, _ = store.Get(t.Context(), "test-share-1")
 	if retrieved.Downloads != 1 {
 		t.Errorf("Downloads not incremented: got %d, want 1", retrieved.Downloads)
 	}
 
 	// Test Delete
-	err = store.Delete("test-share-1")
+	err = store.Delete(t.Context(), "test-share-1")
 	if err != nil {
 		t.Fatalf("Failed to delete share: %v", err)
 	}
-	_, found = store.Get("test-share-1")
+	_, found = store.Get(t.Context(), "test-share-1")
 	if found {
 		t.Error("Share still found after delete")
 	}
@@ -122,12 +122,12 @@ func TestShareWithPassword(t *testing.T) {
 		CreatedAt:   time.Now(),
 	}
 
-	err := store.Save(share)
+	err := store.Save(t.Context(), share)
 	if err != nil {
 		t.Fatalf("Failed to save share with password: %v", err)
 	}
 
-	retrieved, found := store.Get("password-share")
+	retrieved, found := store.Get(t.Context(), "password-share")
 	if !found {
 		t.Fatal("Share not found")
 	}
@@ -166,12 +166,12 @@ func TestGetExpiringSoon(t *testing.T) {
 	}
 
 	for _, s := range shares {
-		if err := store.Save(s); err != nil {
+		if err := store.Save(t.Context(), s); err != nil {
 			t.Fatalf("Failed to save share: %v", err)
 		}
 	}
 
-	expiring, err := store.GetExpiringSoon(24 * time.Hour)
+	expiring, err := store.GetExpiringSoon(t.Context(), 24*time.Hour)
 	if err != nil {
 		t.Fatalf("GetExpiringSoon failed: %v", err)
 	}
@@ -196,11 +196,11 @@ func TestSearch(t *testing.T) {
 	}
 
 	for _, s := range shares {
-		store.Save(s)
+		store.Save(t.Context(), s)
 	}
 
 	// Search for "report"
-	results, err := store.Search("report")
+	results, err := store.Search(t.Context(), "report")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	// Search for "data"
-	results, err = store.Search("data")
+	results, err = store.Search(t.Context(), "data")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	// Search for ".pdf"
-	results, err = store.Search(".pdf")
+	results, err = store.Search(t.Context(), ".pdf")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -239,10 +239,10 @@ func TestGetStats(t *testing.T) {
 	}
 
 	for _, s := range shares {
-		store.Save(s)
+		store.Save(t.Context(), s)
 	}
 
-	stats, err := store.GetStats()
+	stats, err := store.GetStats(t.Context())
 	if err != nil {
 		t.Fatalf("GetStats failed: %v", err)
 	}
@@ -274,13 +274,13 @@ func TestReceiveLinkCRUD(t *testing.T) {
 	}
 
 	// Test Save
-	err := store.SaveReceiveLink(link)
+	err := store.SaveReceiveLink(t.Context(), link)
 	if err != nil {
 		t.Fatalf("Failed to save receive link: %v", err)
 	}
 
 	// Test Get
-	retrieved, found := store.GetReceiveLink("recv-1")
+	retrieved, found := store.GetReceiveLink(t.Context(), "recv-1")
 	if !found {
 		t.Fatal("Receive link not found")
 	}
@@ -289,7 +289,7 @@ func TestReceiveLinkCRUD(t *testing.T) {
 	}
 
 	// Test GetAll
-	all, err := store.GetAllReceiveLinks()
+	all, err := store.GetAllReceiveLinks(t.Context())
 	if err != nil {
 		t.Fatalf("GetAllReceiveLinks failed: %v", err)
 	}
@@ -298,21 +298,21 @@ func TestReceiveLinkCRUD(t *testing.T) {
 	}
 
 	// Test IncrementUploads
-	_, err = store.IncrementReceiveLinkUploads("recv-1")
+	_, err = store.IncrementReceiveLinkUploads(t.Context(), "recv-1")
 	if err != nil {
 		t.Fatalf("Failed to increment uploads: %v", err)
 	}
-	retrieved, _ = store.GetReceiveLink("recv-1")
+	retrieved, _ = store.GetReceiveLink(t.Context(), "recv-1")
 	if retrieved.CurrentUploads != 1 {
 		t.Errorf("CurrentUploads not incremented: got %d, want 1", retrieved.CurrentUploads)
 	}
 
 	// Test Delete
-	err = store.DeleteReceiveLink("recv-1")
+	err = store.DeleteReceiveLink(t.Context(), "recv-1")
 	if err != nil {
 		t.Fatalf("Failed to delete receive link: %v", err)
 	}
-	_, found = store.GetReceiveLink("recv-1")
+	_, found = store.GetReceiveLink(t.Context(), "recv-1")
 	if found {
 		t.Error("Receive link still found after delete")
 	}
@@ -328,7 +328,7 @@ func TestReceivedFileCRUD(t *testing.T) {
 		Name:      "Upload Link",
 		CreatedAt: time.Now(),
 	}
-	store.SaveReceiveLink(link)
+	store.SaveReceiveLink(t.Context(), link)
 
 	// Create received files
 	files := []*models.ReceivedFile{
@@ -337,14 +337,14 @@ func TestReceivedFileCRUD(t *testing.T) {
 	}
 
 	for _, f := range files {
-		err := store.SaveReceivedFile(f)
+		err := store.SaveReceivedFile(t.Context(), f)
 		if err != nil {
 			t.Fatalf("Failed to save received file: %v", err)
 		}
 	}
 
 	// Test GetReceivedFiles
-	retrieved, err := store.GetReceivedFiles("recv-for-files")
+	retrieved, err := store.GetReceivedFiles(t.Context(), "recv-for-files")
 	if err != nil {
 		t.Fatalf("GetReceivedFiles failed: %v", err)
 	}
@@ -353,11 +353,11 @@ func TestReceivedFileCRUD(t *testing.T) {
 	}
 
 	// Test DeleteReceivedFile
-	err = store.DeleteReceivedFile("recv-for-files", "file1")
+	err = store.DeleteReceivedFile(t.Context(), "recv-for-files", "file1")
 	if err != nil {
 		t.Fatalf("Failed to delete received file: %v", err)
 	}
-	retrieved, _ = store.GetReceivedFiles("recv-for-files")
+	retrieved, _ = store.GetReceivedFiles(t.Context(), "recv-for-files")
 	if len(retrieved) != 1 {
 		t.Errorf("Expected 1 file after delete, got %d", len(retrieved))
 	}
@@ -375,7 +375,7 @@ func TestFolderContents(t *testing.T) {
 		ExpiresAt:   time.Now().Add(24 * time.Hour),
 		CreatedAt:   time.Now(),
 	}
-	store.Save(share)
+	store.Save(t.Context(), share)
 
 	// Add folder contents
 	// Note: The implementation uses trailing slashes for nested paths
@@ -388,13 +388,13 @@ func TestFolderContents(t *testing.T) {
 		{ID: "e4", ShareID: "folder-share", RelativePath: "/subfolder/", FileName: "photo3.jpg", FileSize: 3000, IsDirectory: false},
 	}
 
-	err := store.SaveFolderContents("folder-share", contents)
+	err := store.SaveFolderContents(t.Context(), "folder-share", contents)
 	if err != nil {
 		t.Fatalf("Failed to save folder contents: %v", err)
 	}
 
 	// Test GetFolderContents for root
-	rootContents, err := store.GetFolderContents("folder-share", "/")
+	rootContents, err := store.GetFolderContents(t.Context(), "folder-share", "/")
 	if err != nil {
 		t.Fatalf("GetFolderContents failed: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestFolderContents(t *testing.T) {
 	}
 
 	// Test GetFolderContents for subfolder
-	subContents, err := store.GetFolderContents("folder-share", "/subfolder")
+	subContents, err := store.GetFolderContents(t.Context(), "folder-share", "/subfolder")
 	if err != nil {
 		t.Fatalf("GetFolderContents for subfolder failed: %v", err)
 	}
@@ -412,11 +412,11 @@ func TestFolderContents(t *testing.T) {
 	}
 
 	// Test DeleteFolderContents
-	err = store.DeleteFolderContents("folder-share")
+	err = store.DeleteFolderContents(t.Context(), "folder-share")
 	if err != nil {
 		t.Fatalf("DeleteFolderContents failed: %v", err)
 	}
-	rootContents, _ = store.GetFolderContents("folder-share", "/")
+	rootContents, _ = store.GetFolderContents(t.Context(), "folder-share", "/")
 	if len(rootContents) != 0 {
 		t.Errorf("Expected 0 items after delete, got %d", len(rootContents))
 	}
@@ -452,7 +452,7 @@ func TestConcurrentAccess(t *testing.T) {
 				ExpiresAt: time.Now().Add(24 * time.Hour),
 				CreatedAt: time.Now(),
 			}
-			store.Save(share)
+			store.Save(t.Context(), share)
 			done <- true
 		}(i)
 	}
@@ -463,7 +463,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	// Verify all shares exist
-	all := store.GetAll()
+	all := store.GetAll(t.Context())
 	if len(all) != 10 {
 		t.Errorf("Expected 10 shares after concurrent writes, got %d", len(all))
 	}
@@ -474,7 +474,7 @@ func TestDeleteNonExistent(t *testing.T) {
 	defer cleanup()
 
 	// Delete non-existent share should not error
-	err := store.Delete("nonexistent-share")
+	err := store.Delete(t.Context(), "nonexistent-share")
 	if err != nil {
 		t.Errorf("Delete non-existent share should not error: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestIncrementDownloadsNonExistent(t *testing.T) {
 	defer cleanup()
 
 	// Increment non-existent share should not error (returns false, no rows affected)
-	allowed, err := store.IncrementDownloads("nonexistent-share")
+	allowed, err := store.IncrementDownloads(t.Context(), "nonexistent-share")
 	if err != nil {
 		t.Errorf("IncrementDownloads non-existent share should not error: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestGetNonExistent(t *testing.T) {
 	store, cleanup := setupTestStorage(t)
 	defer cleanup()
 
-	_, found := store.Get("nonexistent-share")
+	_, found := store.Get(t.Context(), "nonexistent-share")
 	if found {
 		t.Error("Get should return false for non-existent share")
 	}
@@ -518,14 +518,14 @@ func TestUpdateShare(t *testing.T) {
 		CreatedAt:    time.Now(),
 		Downloads:    0,
 	}
-	store.Save(share)
+	store.Save(t.Context(), share)
 
 	// Update by saving again with same ID
 	share.OriginalName = "Updated.txt"
 	share.Downloads = 5
-	store.Save(share)
+	store.Save(t.Context(), share)
 
-	retrieved, found := store.Get("update-test")
+	retrieved, found := store.Get(t.Context(), "update-test")
 	if !found {
 		t.Fatal("Share not found after update")
 	}
@@ -549,11 +549,11 @@ func TestGetExpiredShares(t *testing.T) {
 	}
 
 	for _, s := range shares {
-		store.Save(s)
+		store.Save(t.Context(), s)
 	}
 
 	// GetAll may filter expired shares - check we get at least the valid one
-	all := store.GetAll()
+	all := store.GetAll(t.Context())
 	if len(all) < 1 {
 		t.Errorf("Expected at least 1 share, got %d", len(all))
 	}
@@ -582,10 +582,10 @@ func TestSearchCaseInsensitive(t *testing.T) {
 		ExpiresAt:    time.Now().Add(24 * time.Hour),
 		CreatedAt:    time.Now(),
 	}
-	store.Save(share)
+	store.Save(t.Context(), share)
 
 	// Search should be case-insensitive
-	results, err := store.Search("mydocument")
+	results, err := store.Search(t.Context(), "mydocument")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -593,7 +593,7 @@ func TestSearchCaseInsensitive(t *testing.T) {
 		t.Errorf("Expected 1 result for case-insensitive search, got %d", len(results))
 	}
 
-	results, err = store.Search("MYDOCUMENT")
+	results, err = store.Search(t.Context(), "MYDOCUMENT")
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -615,11 +615,11 @@ func TestReceiveLinkExpiration(t *testing.T) {
 	}
 
 	for _, l := range links {
-		store.SaveReceiveLink(l)
+		store.SaveReceiveLink(t.Context(), l)
 	}
 
 	// GetAllReceiveLinks should return valid links
-	all, err := store.GetAllReceiveLinks()
+	all, err := store.GetAllReceiveLinks(t.Context())
 	if err != nil {
 		t.Fatalf("GetAllReceiveLinks failed: %v", err)
 	}
@@ -639,14 +639,14 @@ func TestMultipleIncrements(t *testing.T) {
 		CreatedAt: time.Now(),
 		Downloads: 0,
 	}
-	store.Save(share)
+	store.Save(t.Context(), share)
 
 	// Increment multiple times
 	for i := 0; i < 5; i++ {
-		_, _ = store.IncrementDownloads("increment-test")
+		_, _ = store.IncrementDownloads(t.Context(), "increment-test")
 	}
 
-	retrieved, _ := store.Get("increment-test")
+	retrieved, _ := store.Get(t.Context(), "increment-test")
 	if retrieved.Downloads != 5 {
 		t.Errorf("Expected 5 downloads, got %d", retrieved.Downloads)
 	}

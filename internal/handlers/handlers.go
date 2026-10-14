@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"casadrop/internal/i18n"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -224,9 +225,9 @@ func New(s *storage.Storage, templatesDir string) (*Handler, error) {
 // onShareExpired is the storage layer's expiry callback: it fans one expired
 // share out to the webhook and the activity log. It runs on the cleanup
 // goroutine, so neither branch may block.
-func (h *Handler) onShareExpired(share *models.Share) {
+func (h *Handler) onShareExpired(ctx context.Context, share *models.Share) {
 	h.webhook.NotifyExpire(share)
-	h.recordSystem(models.EventShareExpired, models.Event{
+	h.recordSystem(ctx, models.EventShareExpired, models.Event{
 		ShareID: share.ID,
 		Detail:  share.OriginalName,
 	})
@@ -277,9 +278,9 @@ func (h *Handler) recordShareCreated(r *http.Request, share *models.Share) {
 }
 
 // recordSystem writes an activity-log entry with no request behind it; nil-safe.
-func (h *Handler) recordSystem(kind models.EventKind, event models.Event) {
+func (h *Handler) recordSystem(ctx context.Context, kind models.EventKind, event models.Event) {
 	if h.events != nil {
-		h.events.RecordSystem(kind, event)
+		h.events.RecordSystem(ctx, kind, event)
 	}
 }
 
@@ -287,18 +288,18 @@ func (h *Handler) recordSystem(kind models.EventKind, event models.Event) {
 // over their storage quota. It is a no-op (false) for single-user/admin mode
 // (empty userID) and for users with no quota set (0 = unlimited). A DB error is
 // surfaced so callers reject the upload rather than bypass the quota silently.
-func (h *Handler) quotaExceededBy(userID string, incoming int64) (bool, error) {
+func (h *Handler) quotaExceededBy(ctx context.Context, userID string, incoming int64) (bool, error) {
 	if userID == "" {
 		return false, nil
 	}
-	u, err := h.storage.GetUser(userID)
+	u, err := h.storage.GetUser(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	if u == nil || u.QuotaBytes <= 0 {
 		return false, nil
 	}
-	used, err := h.storage.GetUserUsage(userID)
+	used, err := h.storage.GetUserUsage(ctx, userID)
 	if err != nil {
 		return false, err
 	}
@@ -459,7 +460,7 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 	// share references the host file in place and is exempt.
 	if !req.UseSymlink {
 		if user := middleware.GetUserFromContext(r.Context()); user != nil {
-			if over, err := h.quotaExceededBy(user.ID, fileInfo.Size()); err != nil {
+			if over, err := h.quotaExceededBy(r.Context(), user.ID, fileInfo.Size()); err != nil {
 				http.Error(w, "Failed to check storage quota", http.StatusInternalServerError)
 				return
 			} else if over {
@@ -563,7 +564,7 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 		share.UserEmail = user.Email
 	}
 
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err != nil {
 		os.Remove(destPath)
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
@@ -731,10 +732,10 @@ func (h *Handler) ListShares(w http.ResponseWriter, r *http.Request) {
 	var shares []*models.Share
 	if user == nil || user.Role == models.RoleAdmin {
 		// Admin or unauthenticated (legacy) sees all shares
-		shares = h.storage.GetAll()
+		shares = h.storage.GetAll(r.Context())
 	} else {
 		// Regular users only see their own shares
-		shares = h.storage.GetSharesByUser(user.ID)
+		shares = h.storage.GetSharesByUser(r.Context(), user.ID)
 	}
 
 	responses := make([]models.ShareResponse, len(shares))
@@ -752,9 +753,9 @@ func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	var shares []*models.Share
 	if user == nil || user.Role == models.RoleAdmin {
-		shares = h.storage.GetAll()
+		shares = h.storage.GetAll(r.Context())
 	} else {
-		shares = h.storage.GetSharesByUser(user.ID)
+		shares = h.storage.GetSharesByUser(r.Context(), user.ID)
 	}
 
 	stats := struct {
@@ -790,7 +791,7 @@ func (h *Handler) DeleteShare(w http.ResponseWriter, r *http.Request) {
 
 	// Check ownership
 	user := middleware.GetUserFromContext(r.Context())
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		// Not visible (missing or already expired). Don't fall through to an
 		// unconditional delete — that skipped the ownership check below and let
@@ -810,7 +811,7 @@ func (h *Handler) DeleteShare(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.storage.Delete(id); err != nil {
+	if err := h.storage.Delete(context.WithoutCancel(r.Context()), id); err != nil {
 		http.Error(w, "Failed to delete share", http.StatusInternalServerError)
 		return
 	}
@@ -823,7 +824,7 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -850,7 +851,7 @@ func (h *Handler) UpdateShare(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	// Get existing share
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -905,7 +906,7 @@ func (h *Handler) UpdateShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save (INSERT OR REPLACE preserves all other fields)
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err != nil {
 		http.Error(w, "Failed to update share", http.StatusInternalServerError)
 		return
 	}
@@ -932,7 +933,7 @@ func (h *Handler) BulkDeleteShares(w http.ResponseWriter, r *http.Request) {
 	errors := 0
 
 	for _, id := range req.IDs {
-		share, ok := h.storage.Get(id)
+		share, ok := h.storage.Get(r.Context(), id)
 		if !ok {
 			errors++
 			continue
@@ -944,7 +945,7 @@ func (h *Handler) BulkDeleteShares(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if err := h.storage.Delete(id); err != nil {
+		if err := h.storage.Delete(context.WithoutCancel(r.Context()), id); err != nil {
 			errors++
 			continue
 		}
@@ -985,7 +986,7 @@ func (h *Handler) SharePage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		h.renderPublic(w, r, "not_found.html", nil)
 		return

@@ -14,7 +14,7 @@ func TestOIDCLogoutInvalidatesServerSession(t *testing.T) {
 	sc := &mockSessionCreator{}
 	h := NewHandlers(nil, sc) // provider nil: logout must work regardless
 
-	req := httptest.NewRequest("GET", "/auth/oidc/logout", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/logout", nil)
 	req.AddCookie(&http.Cookie{Name: "casadrop_session", Value: "raw-session-token"})
 	rec := httptest.NewRecorder()
 
@@ -35,7 +35,7 @@ func TestOIDCLogoutInvalidatesServerSession(t *testing.T) {
 func TestOIDCLogoutNilProviderNoPanic(t *testing.T) {
 	h := NewHandlers(nil, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/auth/oidc/logout", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/logout", nil)
 	rec := httptest.NewRecorder()
 
 	// Must not panic and must fall back to /login.

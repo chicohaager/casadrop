@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -40,7 +41,7 @@ func multipartBody(t *testing.T, field, name string, content []byte, fields map[
 // handler (CreateReceiveLink) does.
 func saveLink(t *testing.T, h *Handler, link *models.ReceiveLink) {
 	t.Helper()
-	if err := h.storage.SaveReceiveLink(link); err != nil {
+	if err := h.storage.SaveReceiveLink(context.Background(), link); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(h.storage.UploadsDir(), "received", link.ID), 0755); err != nil {
@@ -84,7 +85,7 @@ func TestReceiveSizeLimitHoldsForPasswordLinks(t *testing.T) {
 		if rec.Code == http.StatusOK {
 			t.Errorf("password=%v: 50 KB file on a 1 KB link accepted (200)", withPW)
 		}
-		files, _ := h.storage.GetReceivedFiles(link.ID)
+		files, _ := h.storage.GetReceivedFiles(context.Background(), link.ID)
 		if len(files) != 0 {
 			t.Errorf("password=%v: %d file(s) stored despite size cap", withPW, len(files))
 		}
@@ -130,11 +131,11 @@ func TestReceiveAutoShareIsHardLink(t *testing.T) {
 	if rec := postReceive(h, "as", body, ct); rec.Code != http.StatusOK {
 		t.Fatalf("upload: %d %s", rec.Code, rec.Body.String())
 	}
-	files, _ := h.storage.GetReceivedFiles("as")
+	files, _ := h.storage.GetReceivedFiles(context.Background(), "as")
 	if len(files) != 1 || files[0].ShareID == "" {
 		t.Fatalf("want 1 received file with auto-share, got %+v", files)
 	}
-	share, ok := h.storage.Get(files[0].ShareID)
+	share, ok := h.storage.Get(context.Background(), files[0].ShareID)
 	if !ok {
 		t.Fatal("auto-share not stored")
 	}

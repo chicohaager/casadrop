@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestCleanupExpiredSharesNotifies(t *testing.T) {
 
 	var mu sync.Mutex
 	var seen []*models.Share
-	s.SetExpiryNotifier(func(sh *models.Share) {
+	s.SetExpiryNotifier(func(_ context.Context, sh *models.Share) {
 		mu.Lock()
 		defer mu.Unlock()
 		seen = append(seen, sh)
@@ -51,12 +52,12 @@ func TestCleanupExpiredSharesNotifies(t *testing.T) {
 		CreatedAt:    time.Now(),
 	}
 	for _, sh := range []*models.Share{expired, alive} {
-		if err := s.Save(sh); err != nil {
+		if err := s.Save(t.Context(), sh); err != nil {
 			t.Fatalf("Save(%s): %v", sh.ID, err)
 		}
 	}
 
-	s.cleanupExpiredShares()
+	s.cleanupExpiredShares(t.Context())
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -75,7 +76,7 @@ func TestCleanupExpiredSharesNotifies(t *testing.T) {
 		t.Errorf("notified Downloads = %d, want 3", seen[0].Downloads)
 	}
 	// And the unexpired share must survive untouched.
-	if _, ok := s.Get("keep-1"); !ok {
+	if _, ok := s.Get(t.Context(), "keep-1"); !ok {
 		t.Error("an unexpired share was deleted by the cleanup")
 	}
 }
@@ -84,16 +85,16 @@ func TestCleanupExpiredSharesNotifies(t *testing.T) {
 func TestCleanupExpiredSharesWithoutNotifier(t *testing.T) {
 	s := newTestSQLite(t)
 
-	if err := s.Save(&models.Share{
+	if err := s.Save(t.Context(), &models.Share{
 		ID: "gone-2", FileName: "gone-2.txt", OriginalName: "x.txt",
 		ExpiresAt: time.Now().Add(-time.Hour), CreatedAt: time.Now().Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	s.cleanupExpiredShares() // must not panic
+	s.cleanupExpiredShares(t.Context()) // must not panic
 
-	if _, ok := s.Get("gone-2"); ok {
+	if _, ok := s.Get(t.Context(), "gone-2"); ok {
 		t.Error("expired share should have been deleted")
 	}
 }
@@ -107,7 +108,7 @@ func TestStorageSetExpiryNotifierReportsWiring(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	if !st.SetExpiryNotifier(func(*models.Share) {}) {
+	if !st.SetExpiryNotifier(func(context.Context, *models.Share) {}) {
 		t.Error("SetExpiryNotifier returned false for the SQLite backend, which supports it")
 	}
 }

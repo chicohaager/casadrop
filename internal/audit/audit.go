@@ -7,6 +7,7 @@
 package audit
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -39,8 +40,8 @@ const maxUserAgentLen = 256
 // Store is the slice of the storage layer the recorder needs. Kept minimal so a
 // test can supply a fake without the whole SQLite backend.
 type Store interface {
-	RecordEvent(event *models.Event) error
-	PurgeEventsBefore(cutoff time.Time) (int64, error)
+	RecordEvent(ctx context.Context, event *models.Event) error
+	PurgeEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // Recorder writes events and enforces retention. Zero-value is not usable;
@@ -92,7 +93,11 @@ func (r *Recorder) Retention() time.Duration { return r.retention }
 // log could not be written.
 func (r *Recorder) Record(req *http.Request, kind models.EventKind, event models.Event) {
 	event.Kind = kind
+	// The write must outlive the request: an event for something that already
+	// happened is not dropped because the client went away.
+	ctx := context.Background()
 	if req != nil {
+		ctx = context.WithoutCancel(req.Context())
 		event.IP = utils.GetClientIP(req)
 		event.UserAgent = truncate(req.Header.Get("User-Agent"), maxUserAgentLen)
 		if user := middleware.GetUserFromContext(req.Context()); user != nil {
@@ -106,14 +111,14 @@ func (r *Recorder) Record(req *http.Request, kind models.EventKind, event models
 			}
 		}
 	}
-	r.write(&event)
+	r.write(ctx, &event)
 }
 
 // RecordSystem writes an event with no request behind it — an expiry sweep, a
 // scheduled job. Actor, address and agent stay empty on purpose.
-func (r *Recorder) RecordSystem(kind models.EventKind, event models.Event) {
+func (r *Recorder) RecordSystem(ctx context.Context, kind models.EventKind, event models.Event) {
 	event.Kind = kind
-	r.write(&event)
+	r.write(ctx, &event)
 }
 
 // AuthSink adapts the auth middleware's audit callback to the activity log. It
@@ -121,12 +126,15 @@ func (r *Recorder) RecordSystem(kind models.EventKind, event models.Event) {
 // apart silently: an unmapped type lands as EventSecurity with the original
 // name in Detail, never dropped.
 func (r *Recorder) AuthSink(eventType middleware.AuditEventType, ip, userAgent, details string) {
+	// The middleware's sink carries no context; security events are written
+	// regardless of the request that raised them.
+	ctx := context.Background()
 	kind, ok := authKinds[eventType]
 	if !ok {
 		kind = models.EventSecurity
 		details = string(eventType) + ": " + details
 	}
-	r.write(&models.Event{
+	r.write(ctx, &models.Event{
 		Kind:      kind,
 		IP:        ip,
 		UserAgent: truncate(userAgent, maxUserAgentLen),
@@ -145,12 +153,12 @@ var authKinds = map[middleware.AuditEventType]models.EventKind{
 
 // Start runs the retention sweep until Stop is called. With retention 0 it
 // returns immediately: there is nothing to sweep.
-func (r *Recorder) Start() {
+func (r *Recorder) Start(ctx context.Context) {
 	if r.retention == 0 {
 		return
 	}
 	go func() {
-		r.purge()
+		r.purge(ctx)
 		ticker := time.NewTicker(purgeInterval)
 		defer ticker.Stop()
 		for {
@@ -158,7 +166,7 @@ func (r *Recorder) Start() {
 			case <-r.stop:
 				return
 			case <-ticker.C:
-				r.purge()
+				r.purge(ctx)
 			}
 		}
 	}()
@@ -171,15 +179,15 @@ func (r *Recorder) Stop() {
 
 // Purge runs one retention sweep now and reports how many rows went. Exposed
 // so the policy can be tested without waiting a day.
-func (r *Recorder) Purge() (int64, error) {
+func (r *Recorder) Purge(ctx context.Context) (int64, error) {
 	if r.retention == 0 {
 		return 0, nil
 	}
-	return r.store.PurgeEventsBefore(time.Now().Add(-r.retention))
+	return r.store.PurgeEventsBefore(ctx, time.Now().Add(-r.retention))
 }
 
-func (r *Recorder) purge() {
-	n, err := r.Purge()
+func (r *Recorder) purge(ctx context.Context) {
+	n, err := r.Purge(ctx)
 	if err != nil {
 		log.Printf("Activity log: retention sweep failed: %v", err)
 		return
@@ -189,8 +197,8 @@ func (r *Recorder) purge() {
 	}
 }
 
-func (r *Recorder) write(event *models.Event) {
-	if err := r.store.RecordEvent(event); err != nil {
+func (r *Recorder) write(ctx context.Context, event *models.Event) {
+	if err := r.store.RecordEvent(ctx, event); err != nil {
 		log.Printf("Activity log: failed to record %s: %v", event.Kind, err)
 	}
 }

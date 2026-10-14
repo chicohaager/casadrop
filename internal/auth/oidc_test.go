@@ -224,7 +224,7 @@ func TestHandlers_StatusHandler(t *testing.T) {
 
 	handlers := NewHandlers(provider, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/api/auth/oidc/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/status", nil)
 	rec := httptest.NewRecorder()
 
 	handlers.StatusHandler(rec, req)
@@ -245,7 +245,7 @@ func TestHandlers_StatusHandler(t *testing.T) {
 func TestHandlers_StatusHandler_NilProvider(t *testing.T) {
 	handlers := NewHandlers(nil, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/api/auth/oidc/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/status", nil)
 	rec := httptest.NewRecorder()
 
 	handlers.StatusHandler(rec, req)
@@ -266,7 +266,7 @@ func TestHandlers_LoginHandler_Disabled(t *testing.T) {
 
 	handlers := NewHandlers(provider, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/auth/oidc/login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/login", nil)
 	rec := httptest.NewRecorder()
 
 	handlers.LoginHandler(rec, req)
@@ -282,7 +282,7 @@ func TestHandlers_CallbackHandler_Disabled(t *testing.T) {
 
 	handlers := NewHandlers(provider, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/auth/oidc/callback?code=test&state=test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback?code=test&state=test", nil)
 	rec := httptest.NewRecorder()
 
 	handlers.CallbackHandler(rec, req)
@@ -302,7 +302,7 @@ func TestHandlers_ConfigHandler_EnvProtection(t *testing.T) {
 	os.Setenv(EnvOIDCEnabled, "true")
 	defer os.Unsetenv(EnvOIDCEnabled)
 
-	req := httptest.NewRequest("POST", "/api/auth/oidc/config", strings.NewReader(`{"enabled":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/oidc/config", strings.NewReader(`{"enabled":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -324,7 +324,7 @@ func TestHandlers_ConfigHandler_GET(t *testing.T) {
 
 	handlers := NewHandlers(provider, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/api/auth/oidc/config", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/config", nil)
 	rec := httptest.NewRecorder()
 
 	handlers.ConfigHandler(rec, req)
@@ -345,7 +345,7 @@ func TestHandlers_LogoutHandler(t *testing.T) {
 
 	handlers := NewHandlers(provider, &mockSessionCreator{})
 
-	req := httptest.NewRequest("GET", "/auth/oidc/logout", nil)
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/logout", nil)
 	rec := httptest.NewRecorder()
 
 	handlers.LogoutHandler(rec, req)
@@ -404,7 +404,7 @@ func TestHandlers_getClientIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = tt.remoteAddr
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)

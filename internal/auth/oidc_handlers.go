@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"html"
@@ -152,7 +153,7 @@ func (h *Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	var token string
 	var sessionErr error
 	if h.userService != nil {
-		user, err := h.userService.FindOrCreateOIDCUser(userInfo)
+		user, err := h.userService.FindOrCreateOIDCUser(context.WithoutCancel(r.Context()), userInfo)
 		if err != nil {
 			log.Printf("OIDC: Failed to find/create user: %v", err)
 			h.renderError(w, "Failed to provision user account")

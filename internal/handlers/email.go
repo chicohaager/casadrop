@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"casadrop/internal/i18n"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -30,9 +31,9 @@ type EmailHandler struct {
 }
 
 // NewEmailHandler creates a new email handler
-func NewEmailHandler(store *storage.Storage) *EmailHandler {
+func NewEmailHandler(ctx context.Context, store *storage.Storage) *EmailHandler {
 	// Load SMTP config and create email service
-	smtpConfig, err := store.GetSMTPConfig()
+	smtpConfig, err := store.GetSMTPConfig(ctx)
 	if err != nil {
 		log.Printf("Warning: Failed to load SMTP config: %v", err)
 		smtpConfig = &models.SMTPConfig{}
@@ -60,7 +61,7 @@ func (h *EmailHandler) Stop() {
 
 // GetSMTPConfig returns the current SMTP configuration
 func (h *EmailHandler) GetSMTPConfig(w http.ResponseWriter, r *http.Request) {
-	config, err := h.storage.GetSMTPConfig()
+	config, err := h.storage.GetSMTPConfig(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -83,13 +84,13 @@ func (h *EmailHandler) SaveSMTPConfig(w http.ResponseWriter, r *http.Request) {
 
 	// If password is empty, keep the existing one
 	if config.Password == "" {
-		existingConfig, err := h.storage.GetSMTPConfig()
+		existingConfig, err := h.storage.GetSMTPConfig(r.Context())
 		if err == nil && existingConfig != nil {
 			config.Password = existingConfig.Password
 		}
 	}
 
-	if err := h.storage.SaveSMTPConfig(&config); err != nil {
+	if err := h.storage.SaveSMTPConfig(context.WithoutCancel(r.Context()), &config); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -103,7 +104,7 @@ func (h *EmailHandler) SaveSMTPConfig(w http.ResponseWriter, r *http.Request) {
 
 // TestSMTPConnection tests the SMTP connection
 func (h *EmailHandler) TestSMTPConnection(w http.ResponseWriter, r *http.Request) {
-	config, err := h.storage.GetSMTPConfig()
+	config, err := h.storage.GetSMTPConfig(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -150,7 +151,7 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Get share info
-	share, exists := h.storage.Get(req.ShareID)
+	share, exists := h.storage.Get(r.Context(), req.ShareID)
 	if !exists {
 		http.Error(w, "Share not found", http.StatusNotFound)
 		return
@@ -193,7 +194,7 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 		Lang:           transfer.Lang,
 	}
 
-	if err := h.storage.SaveEmailTransfer(record); err != nil {
+	if err := h.storage.SaveEmailTransfer(context.WithoutCancel(r.Context()), record); err != nil {
 		log.Printf("Failed to save email transfer record, e-mail not sent: %v", err)
 		writeEmailError(w, "Failed to record the transfer, e-mail not sent: "+err.Error())
 		return
@@ -204,7 +205,7 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 		msg := "Failed to send email: " + err.Error()
 		// Without the e-mail the record must go, or the recipient would get an
 		// expiry warning for a share they were never sent.
-		if derr := h.storage.DeleteEmailTransfer(record.ID); derr != nil {
+		if derr := h.storage.DeleteEmailTransfer(context.WithoutCancel(r.Context()), record.ID); derr != nil {
 			log.Printf("Failed to remove record of unsent email transfer %s: %v", record.ID, derr)
 			msg += "; the transfer record could not be removed: " + derr.Error()
 		}
@@ -223,7 +224,7 @@ func (h *EmailHandler) SendEmailTransfer(w http.ResponseWriter, r *http.Request)
 
 // GetEmailStatus returns the email service status
 func (h *EmailHandler) GetEmailStatus(w http.ResponseWriter, r *http.Request) {
-	config, err := h.storage.GetSMTPConfig()
+	config, err := h.storage.GetSMTPConfig(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -247,9 +248,9 @@ func emailLang(r *http.Request, requested string) string {
 }
 
 // NotifyDownload sends download notification if needed
-func (h *EmailHandler) NotifyDownload(shareID string, fileName string) {
+func (h *EmailHandler) NotifyDownload(ctx context.Context, shareID string, fileName string) {
 	// Get pending notifications for this share
-	transfers, err := h.storage.GetPendingDownloadNotifications(shareID)
+	transfers, err := h.storage.GetPendingDownloadNotifications(ctx, shareID)
 	if err != nil {
 		log.Printf("Failed to get pending notifications: %v", err)
 		return
@@ -268,15 +269,15 @@ func (h *EmailHandler) NotifyDownload(shareID string, fileName string) {
 		}
 
 		// Mark as notified
-		if err := h.storage.MarkEmailTransferNotified(shareID); err != nil {
+		if err := h.storage.MarkEmailTransferNotified(ctx, shareID); err != nil {
 			log.Printf("Failed to mark notification as sent: %v", err)
 		}
 	}
 }
 
 // MarkDownloaded marks a share as downloaded for email notification
-func (h *EmailHandler) MarkDownloaded(shareID string) {
-	if err := h.storage.MarkEmailTransferDownloaded(shareID); err != nil {
+func (h *EmailHandler) MarkDownloaded(ctx context.Context, shareID string) {
+	if err := h.storage.MarkEmailTransferDownloaded(ctx, shareID); err != nil {
 		log.Printf("Failed to mark email transfer as downloaded: %v", err)
 	}
 }
@@ -289,14 +290,14 @@ func (h *EmailHandler) IsEnabled() bool {
 // StartExpiryNotifier starts a background goroutine that checks for expiring shares
 // every hour and sends email notifications to recipients. The goroutine exits
 // when Stop() is called.
-func (h *EmailHandler) StartExpiryNotifier() {
+func (h *EmailHandler) StartExpiryNotifier(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				h.checkAndNotifyExpiring()
+				h.checkAndNotifyExpiring(ctx)
 			case <-h.stop:
 				return
 			}
@@ -305,13 +306,13 @@ func (h *EmailHandler) StartExpiryNotifier() {
 }
 
 // checkAndNotifyExpiring checks for shares expiring within 24 hours and notifies recipients
-func (h *EmailHandler) checkAndNotifyExpiring() {
+func (h *EmailHandler) checkAndNotifyExpiring(ctx context.Context) {
 	if !h.IsEnabled() {
 		return
 	}
 
 	// Get shares expiring in the next 24 hours
-	shares, err := h.storage.GetExpiringSoon(24 * time.Hour)
+	shares, err := h.storage.GetExpiringSoon(ctx, 24*time.Hour)
 	if err != nil {
 		log.Printf("Expiry notifier: error getting expiring shares: %v", err)
 		return
@@ -319,7 +320,7 @@ func (h *EmailHandler) checkAndNotifyExpiring() {
 
 	for _, share := range shares {
 		// Get email transfers for this share
-		transfers, err := h.storage.GetEmailTransfersByShare(share.ID)
+		transfers, err := h.storage.GetEmailTransfersByShare(ctx, share.ID)
 		if err != nil || len(transfers) == 0 {
 			continue
 		}
@@ -344,7 +345,7 @@ func (h *EmailHandler) checkAndNotifyExpiring() {
 			}
 
 			// Mark as notified
-			h.storage.MarkEmailTransferNotified(share.ID)
+			h.storage.MarkEmailTransferNotified(ctx, share.ID)
 		}
 	}
 }

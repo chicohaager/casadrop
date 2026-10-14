@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -40,7 +41,7 @@ func (h *Handler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.writeEventPage(w, filter)
+	h.writeEventPage(r.Context(), w, filter)
 }
 
 // ShareEvents answers GET /api/shares/{id}/events for the share's owner or an
@@ -48,7 +49,7 @@ func (h *Handler) ListEvents(w http.ResponseWriter, r *http.Request) {
 // told apart by whether it has events.
 func (h *Handler) ShareEvents(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -66,7 +67,7 @@ func (h *Handler) ShareEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter.ShareID = id
-	h.writeEventPage(w, filter)
+	h.writeEventPage(r.Context(), w, filter)
 }
 
 // ExportEvents answers GET /api/events/export (admin only) with the filtered
@@ -92,7 +93,7 @@ func (h *Handler) ExportEvents(w http.ResponseWriter, r *http.Request) {
 	// store caps a page, and streaming keeps memory flat for large exports.
 	filter.Limit = 500
 	for exported := 0; exported < maxEventExportRows; {
-		events, _, err := h.storage.ListEvents(filter)
+		events, _, err := h.storage.ListEvents(r.Context(), filter)
 		if err != nil {
 			// Headers are out; the honest signal left is a truncated file. Log
 			// the cause so it does not vanish.
@@ -116,8 +117,8 @@ func (h *Handler) ExportEvents(w http.ResponseWriter, r *http.Request) {
 	cw.Flush()
 }
 
-func (h *Handler) writeEventPage(w http.ResponseWriter, filter models.EventFilter) {
-	events, total, err := h.storage.ListEvents(filter)
+func (h *Handler) writeEventPage(ctx context.Context, w http.ResponseWriter, filter models.EventFilter) {
+	events, total, err := h.storage.ListEvents(ctx, filter)
 	if err != nil {
 		http.Error(w, "Failed to read activity log", http.StatusInternalServerError)
 		return

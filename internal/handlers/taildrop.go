@@ -162,7 +162,7 @@ func (h *Handler) TaildropSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the share to its on-disk file (file shares only).
-	share, found := h.storage.Get(req.ShareID)
+	share, found := h.storage.Get(r.Context(), req.ShareID)
 	if !found {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return

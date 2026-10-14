@@ -250,7 +250,7 @@ func TestMiddleware(t *testing.T) {
 
 	// Test without session (should redirect for non-API)
 	t.Run("NoSession_Redirect", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 
 		protected.ServeHTTP(rec, req)
@@ -262,7 +262,7 @@ func TestMiddleware(t *testing.T) {
 
 	// Test without session (should 401 for API)
 	t.Run("NoSession_API_401", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/shares", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/shares", nil)
 		rec := httptest.NewRecorder()
 
 		protected.ServeHTTP(rec, req)
@@ -278,7 +278,7 @@ func TestMiddleware(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSessionForUser failed: %v", err)
 		}
-		req := httptest.NewRequest("GET", "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.AddCookie(&http.Cookie{Name: "casadrop_session", Value: token})
 		rec := httptest.NewRecorder()
 
@@ -295,7 +295,7 @@ func TestMiddleware(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSessionForUser failed: %v", err)
 		}
-		req := httptest.NewRequest("GET", "/api/shares", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/shares", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		rec := httptest.NewRecorder()
 
@@ -318,7 +318,7 @@ func TestLoginHandler(t *testing.T) {
 
 	// Test GET (should render login page)
 	t.Run("GET", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/login", nil)
+		req := httptest.NewRequest(http.MethodGet, "/login", nil)
 		rec := httptest.NewRecorder()
 
 		auth.LoginHandler(rec, req)
@@ -334,7 +334,7 @@ func TestLoginHandler(t *testing.T) {
 	// Test POST with correct password
 	t.Run("POST_CorrectPassword", func(t *testing.T) {
 		// First get CSRF token
-		getReq := httptest.NewRequest("GET", "/login", nil)
+		getReq := httptest.NewRequest(http.MethodGet, "/login", nil)
 		getRec := httptest.NewRecorder()
 		auth.LoginHandler(getRec, getReq)
 
@@ -344,7 +344,7 @@ func TestLoginHandler(t *testing.T) {
 			t.Fatalf("GenerateCSRFToken failed: %v", err)
 		}
 
-		req := httptest.NewRequest("POST", "/login", strings.NewReader("password=test-password&csrf_token="+csrf))
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("password=test-password&csrf_token="+csrf))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 
@@ -373,7 +373,7 @@ func TestLogoutHandler(t *testing.T) {
 	}
 
 	// Logout
-	req := httptest.NewRequest("POST", "/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
 	req.AddCookie(&http.Cookie{Name: "casadrop_session", Value: token})
 	rec := httptest.NewRecorder()
 
@@ -401,7 +401,7 @@ func TestAuthStatusHandler(t *testing.T) {
 
 	// Test without session
 	t.Run("NotAuthenticated", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/auth/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
 		rec := httptest.NewRecorder()
 
 		auth.AuthStatusHandler(rec, req)
@@ -417,7 +417,7 @@ func TestAuthStatusHandler(t *testing.T) {
 	// Test with session
 	t.Run("Authenticated", func(t *testing.T) {
 		token, _ := auth.CreateSession("127.0.0.1", "Test")
-		req := httptest.NewRequest("GET", "/api/auth/status", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
 		req.AddCookie(&http.Cookie{Name: "casadrop_session", Value: token})
 		rec := httptest.NewRecorder()
 
@@ -523,7 +523,7 @@ func TestGetClientIPViaUtils(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = tt.remoteAddr
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)

@@ -226,7 +226,7 @@ func newTestServer(t *testing.T, envPassword string) (*httptest.Server, func()) 
 	oidcHandlers := auth.NewHandlers(oidcProvider, adminAuth)
 	oidcHandlers.SetUserService(auth.NewUserService(store))
 
-	emailHandler := handlers.NewEmailHandler(store)
+	emailHandler := handlers.NewEmailHandler(t.Context(), store)
 	h.SetEmailHandler(emailHandler)
 
 	downloadLimiter := middleware.NewRateLimiter(1000, time.Minute)

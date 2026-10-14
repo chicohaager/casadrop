@@ -29,15 +29,15 @@ import (
 
 // APIKeyValidator provides API key validation capability
 type APIKeyValidator interface {
-	GetAPIKeyByHash(keyHash string) (id, name, userID, role string, isActive bool, err error)
-	UpdateAPIKeyLastUsed(id string)
+	GetAPIKeyByHash(ctx context.Context, keyHash string) (id, name, userID, role string, isActive bool, err error)
+	UpdateAPIKeyLastUsed(ctx context.Context, id string)
 }
 
 // LocalUserStore provides per-user local credential lookup so users created in
 // the users table (email + password) can log in with their own role — not just
 // the single shared admin password.
 type LocalUserStore interface {
-	GetUserByEmail(email string) (*models.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 }
 
 // AuditEventType represents the type of security audit event
@@ -530,13 +530,13 @@ func (aa *AdminAuth) ValidatePassword(password string) bool {
 // Returns the user on success. A bcrypt comparison is always performed (against
 // the user's hash or a dummy) so response time does not reveal whether the email
 // exists — mirroring the timing-safety of ValidatePassword.
-func (aa *AdminAuth) authenticateLocalUser(email, password string) (*models.User, bool) {
+func (aa *AdminAuth) authenticateLocalUser(ctx context.Context, email, password string) (*models.User, bool) {
 	const dummyHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEeOVhBxO4YWj7uR0K5kO5gH7u8H9vT1jia"
 
 	if aa.userStore == nil || email == "" {
 		return nil, false
 	}
-	user, err := aa.userStore.GetUserByEmail(email)
+	user, err := aa.userStore.GetUserByEmail(ctx, email)
 	if err != nil || user == nil || !user.IsActive || user.PasswordHash == "" {
 		// Burn equivalent work so a missing/inactive account isn't distinguishable by timing.
 		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(password))
@@ -552,8 +552,8 @@ func (aa *AdminAuth) authenticateLocalUser(email, password string) (*models.User
 // identity. It tries per-user local credentials first (when an email is given),
 // then falls back to the single admin password (env var or setup-wizard hash)
 // for backward compatibility. The returned role drives RBAC for the session.
-func (aa *AdminAuth) resolveLogin(email, password string) (userID, userEmail string, role models.Role, ok bool) {
-	if user, found := aa.authenticateLocalUser(email, password); found {
+func (aa *AdminAuth) resolveLogin(ctx context.Context, email, password string) (userID, userEmail string, role models.Role, ok bool) {
+	if user, found := aa.authenticateLocalUser(ctx, email, password); found {
 		return user.ID, user.Email, user.Role, true
 	}
 	if aa.ValidatePassword(password) {
@@ -721,9 +721,11 @@ func (aa *AdminAuth) Middleware(next http.Handler) http.Handler {
 		if apiKey := r.Header.Get("X-API-Key"); apiKey != "" && aa.apiKeyValidator != nil {
 			hash := sha256.Sum256([]byte(apiKey))
 			keyHash := hex.EncodeToString(hash[:])
-			id, _, userID, role, isActive, err := aa.apiKeyValidator.GetAPIKeyByHash(keyHash)
+			id, _, userID, role, isActive, err := aa.apiKeyValidator.GetAPIKeyByHash(r.Context(), keyHash)
 			if err == nil && id != "" && isActive {
-				go aa.apiKeyValidator.UpdateAPIKeyLastUsed(id)
+				// WithoutCancel: the update runs after the response; the request's
+				// cancellation must not drop it.
+				go aa.apiKeyValidator.UpdateAPIKeyLastUsed(context.WithoutCancel(r.Context()), id)
 				user := &SessionUser{
 					ID:    userID,
 					Email: "api-key:" + id,
@@ -970,7 +972,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// are counted and throttled (see the !ok branch, which escalates the delay and
 	// shows the locked message). The 5/min rate limiter remains the first throttle.
 
-	if r.Method == "GET" {
+	if r.Method == http.MethodGet {
 		// Generate CSRF token for form
 		csrfToken, err := aa.GenerateCSRFToken()
 		if err != nil {
@@ -1019,7 +1021,7 @@ func (aa *AdminAuth) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
-	userID, userEmail, role, ok := aa.resolveLogin(email, password)
+	userID, userEmail, role, ok := aa.resolveLogin(r.Context(), email, password)
 	if !ok {
 		attempts := aa.RecordFailedAttempt(clientIP)
 		// Escalate the throttle once over the lockout threshold so wrong-credential
@@ -1129,7 +1131,7 @@ func (aa *AdminAuth) handleJSONLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, userEmail, role, ok := aa.resolveLogin(req.Email, req.Password)
+	userID, userEmail, role, ok := aa.resolveLogin(r.Context(), req.Email, req.Password)
 	if !ok {
 		attempts := aa.RecordFailedAttempt(clientIP)
 		if attempts >= MaxFailedAttempts {
@@ -1234,7 +1236,7 @@ func (aa *AdminAuth) SetupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method == "GET" {
+	if r.Method == http.MethodGet {
 		csrfToken, err := aa.GenerateCSRFToken()
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)

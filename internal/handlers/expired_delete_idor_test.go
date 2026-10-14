@@ -23,7 +23,7 @@ func TestDeleteExpiredShareRequiresOwnership(t *testing.T) {
 	defer cleanup()
 
 	// A share owned by "victim" that has already expired.
-	handler.storage.Save(&models.Share{
+	handler.storage.Save(t.Context(), &models.Share{
 		ID:           "expired1",
 		FileName:     "f.txt",
 		OriginalName: "f.txt",
@@ -37,7 +37,7 @@ func TestDeleteExpiredShareRequiresOwnership(t *testing.T) {
 	router.HandleFunc("/api/shares/{id}", handler.DeleteShare).Methods("DELETE")
 
 	del := func(user *middleware.SessionUser) int {
-		req := httptest.NewRequest("DELETE", "/api/shares/expired1", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/shares/expired1", nil)
 		req = req.WithContext(middleware.ContextWithUser(req.Context(), user))
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

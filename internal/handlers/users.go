@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -65,7 +66,7 @@ func toUserResponse(user *models.User) UserResponse {
 // ListUsers returns all users (admin only)
 // GET /api/users
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.storage.GetAllUsers()
+	users, err := h.storage.GetAllUsers(r.Context())
 	if err != nil {
 		http.Error(w, "Failed to get users", http.StatusInternalServerError)
 		return
@@ -76,7 +77,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		responses[i] = toUserResponse(user)
 		// User counts are small in practice; per-user usage lets the admin UI
 		// show "used / quota" without a second round-trip.
-		responses[i].UsageBytes, _ = h.storage.GetUserUsage(user.ID)
+		responses[i].UsageBytes, _ = h.storage.GetUserUsage(r.Context(), user.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -107,7 +108,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if email already exists
-	existing, _ := h.storage.GetUserByEmail(req.Email)
+	existing, _ := h.storage.GetUserByEmail(r.Context(), req.Email)
 	if existing != nil {
 		jsonError(w, "Email already exists", http.StatusConflict)
 		return
@@ -140,7 +141,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		QuotaBytes:   req.QuotaBytes,
 	}
 
-	if err := h.storage.CreateUser(user); err != nil {
+	if err := h.storage.CreateUser(context.WithoutCancel(r.Context()), user); err != nil {
 		log.Printf("CreateUser failed for %s (role=%s): %v", req.Email, req.Role, err)
 		jsonError(w, "Failed to create user", http.StatusInternalServerError)
 		return
@@ -157,7 +158,7 @@ func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	user, err := h.storage.GetUser(id)
+	user, err := h.storage.GetUser(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
@@ -177,7 +178,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	user, err := h.storage.GetUser(id)
+	user, err := h.storage.GetUser(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
@@ -196,7 +197,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	// Update fields if provided
 	if req.Email != "" && req.Email != user.Email {
 		// Check if new email already exists
-		existing, _ := h.storage.GetUserByEmail(req.Email)
+		existing, _ := h.storage.GetUserByEmail(r.Context(), req.Email)
 		if existing != nil && existing.ID != id {
 			jsonError(w, "Email already exists", http.StatusConflict)
 			return
@@ -241,7 +242,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.QuotaBytes = *req.QuotaBytes
 	}
 
-	if err := h.storage.UpdateUser(user); err != nil {
+	if err := h.storage.UpdateUser(context.WithoutCancel(r.Context()), user); err != nil {
 		http.Error(w, "Failed to update user", http.StatusInternalServerError)
 		return
 	}
@@ -263,7 +264,7 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.storage.GetUser(id)
+	user, err := h.storage.GetUser(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
 		return
@@ -273,7 +274,7 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.storage.DeleteUser(id); err != nil {
+	if err := h.storage.DeleteUser(context.WithoutCancel(r.Context()), id); err != nil {
 		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
 		return
 	}
@@ -294,7 +295,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	var user *models.User
 	var err error
 	if sessionUser.ID != "" {
-		user, err = h.storage.GetUser(sessionUser.ID)
+		user, err = h.storage.GetUser(r.Context(), sessionUser.ID)
 	}
 
 	// For legacy sessions or if user not found, return session info
@@ -321,7 +322,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := toUserResponse(user)
-	resp.UsageBytes, _ = h.storage.GetUserUsage(user.ID)
+	resp.UsageBytes, _ = h.storage.GetUserUsage(r.Context(), user.ID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -335,7 +336,7 @@ func (h *Handler) UpdateCurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.storage.GetUser(sessionUser.ID)
+	user, err := h.storage.GetUser(r.Context(), sessionUser.ID)
 	if err != nil || user == nil {
 		jsonError(w, "User not found", http.StatusNotFound)
 		return
@@ -368,7 +369,7 @@ func (h *Handler) UpdateCurrentUser(w http.ResponseWriter, r *http.Request) {
 		user.PasswordHash = hash
 	}
 
-	if err := h.storage.UpdateUser(user); err != nil {
+	if err := h.storage.UpdateUser(context.WithoutCancel(r.Context()), user); err != nil {
 		http.Error(w, "Failed to update profile", http.StatusInternalServerError)
 		return
 	}

@@ -50,7 +50,7 @@ func TestLoginFailureReachesSink(t *testing.T) {
 		kinds = append(kinds, eventType)
 	})
 
-	if _, _, _, ok := aa.resolveLogin("user@example.com", "wrong"); ok {
+	if _, _, _, ok := aa.resolveLogin(t.Context(), "user@example.com", "wrong"); ok {
 		t.Fatal("wrong password must not authenticate")
 	}
 	// resolveLogin itself does not audit; the handlers do. Drive the JSON
