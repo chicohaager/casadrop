@@ -7,6 +7,7 @@
 package routes
 
 import (
+	"io/fs"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -88,11 +89,36 @@ func registerPublic(r *mux.Router, d Deps) {
 	// already answers If-Modified-Since with cheap 304s via file mtime, so this
 	// costs almost nothing while guaranteeing an updated app.js/style.css is
 	// picked up immediately after a redeploy (instead of serving a stale copy).
-	static := http.StripPrefix("/static/", http.FileServer(http.Dir(d.StaticDir)))
+	static := http.StripPrefix("/static/", http.FileServer(filesOnly{http.Dir(d.StaticDir)}))
 	r.PathPrefix("/static/").Handler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		static.ServeHTTP(w, req)
 	}))
+}
+
+// filesOnly serves the files below a directory and nothing else. A plain
+// http.FileServer answers a request for a directory with a generated index of
+// its entries; /static/ is reachable without a session (the login page needs
+// its stylesheet), so that index was readable by anyone. Opening a directory
+// reports "not found" here, which http.FileServer turns into a 404 — for
+// /static/, /static/css/ and the slash-less /static/css alike.
+type filesOnly struct{ fs http.FileSystem }
+
+func (f filesOnly) Open(name string) (http.File, error) {
+	file, err := f.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		_ = file.Close()
+		return nil, fs.ErrNotExist
+	}
+	return file, nil
 }
 
 func registerProtected(r *mux.Router, d Deps) {

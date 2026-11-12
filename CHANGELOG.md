@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.4] - 2026-11-12
+
+### Security
+- **No directory index under `/static/`.** `/static/` is served without a
+  session, and `http.FileServer` answered a request for a directory with a
+  generated list of its entries (`/static/`, `/static/css/`, `/static/js/`).
+  Directories now answer 404; the files in them are served as before
+  (`internal/routes/routes.go`, test `TestStaticServesFilesButNoDirectoryIndex`).
+- **Go toolchain 1.27.1 → 1.27.4.** `govulncheck` reported GO-2026-6859
+  (HTTP/1 server crash due to a `MaxBytesReader` header race in `net/http`,
+  fixed in 1.27.4) as reachable from the upload and download handlers; with
+  1.27.4 it reports no reachable vulnerability.
+
 ## [2.5.3] - 2026-10-05
 
 ### Security

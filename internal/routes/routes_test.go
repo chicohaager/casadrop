@@ -152,6 +152,44 @@ func TestHealthProbesAnswerHEAD(t *testing.T) {
 	}
 }
 
+// /static/ is served without a session. A request for a directory below it
+// must not answer with a generated index of the directory's entries; a file in
+// the same directory must still be served. The test server's StaticDir is its
+// tmpdir, which holds templates/share.html and uploads/. (index.html is not
+// used as the file: http.FileServer redirects any path ending in /index.html.)
+func TestStaticServesFilesButNoDirectoryIndex(t *testing.T) {
+	srv, cleanup := newTestServer(t, "integration-test-pass-123!")
+	defer cleanup()
+
+	client := newClientWithJar(t, srv)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	for _, path := range []string{"/static/", "/static/templates/", "/static/templates", "/static/uploads/"} {
+		res := do(t, client, http.MethodGet, srv.URL+path, nil, nil)
+		body, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s: want 404, got %d", path, res.StatusCode)
+		}
+		if strings.Contains(string(body), "share.html") || strings.Contains(string(body), "<a href") {
+			t.Errorf("GET %s: body lists directory entries: %q", path, body)
+		}
+	}
+
+	res := do(t, client, http.MethodGet, srv.URL+"/static/templates/share.html", nil, nil)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /static/templates/share.html: want 200, got %d", res.StatusCode)
+	}
+	if !strings.Contains(string(body), "<html>") {
+		t.Errorf("GET /static/templates/share.html: body = %q, want the file's content", body)
+	}
+	if got := res.Header.Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("GET /static/templates/share.html: Cache-Control = %q, want no-cache", got)
+	}
+}
+
 // ---------------- helpers ----------------
 
 func newTestServer(t *testing.T, envPassword string) (*httptest.Server, func()) {
