@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **No directory index under `/static/`.** `/static/` is served without a
+  session, and `http.FileServer` answered a request for a directory with a
+  generated list of its entries (`/static/`, `/static/css/`, `/static/js/`).
+  Directories now answer 404; the files in them are served as before
+  (`internal/routes/routes.go`, test `TestStaticServesFilesButNoDirectoryIndex`).
+
 ## [2.5.3] - 2026-10-05
 
 ### Security
