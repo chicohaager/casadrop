@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.5] - 2026-11-24
+
+### Fixed
+- **Large chunked uploads no longer need twice their size on disk.**
+  `FinalizeChunkUpload` copied all chunks into the share file and deleted them
+  only afterwards, so a 47 GB upload needed ~94 GB free at the end. Each chunk
+  is now deleted as soon as it is appended (peak = file size + one chunk).
+- **Free-space check before a chunked upload starts.** `InitChunkUpload` now
+  refuses with HTTP 507 and a plain message ("Not enough free disk space on the
+  server: X GB needed, Y GB free") when the data disk cannot hold the file plus
+  what other running uploads still have to send plus a 1 GB reserve. Before, a
+  47 GB upload streamed for 8 minutes into a disk with ~44 GB free and died at
+  chunk 5670 of 6011, filling the disk to 0 bytes.
+- **A full disk is reported as such.** Writing a chunk on a full disk answered
+  an anonymous 500, unlogged; it is now 507 "Server disk is full" and every
+  chunk/assembly write error is logged with the upload ID.
+- **The upload client stops on a definitive answer.** `sendChunkWithRetry`
+  meant to surface 4xx immediately, but threw inside its own `try` and retried
+  them three times anyway; 4xx and 507 now end the upload at once.
+- **Leftover chunk directories are removed.** Directories without a manifest
+  (from versions before resumable uploads, or a crashed init) were skipped by
+  the startup restore and never reached by the in-memory cleanup; two from
+  2026-06 (15 GB) were still on disk. They are now swept at startup and every
+  15 minutes once idle for 24 h. The cleanup worker also runs from startup,
+  not only after the first new chunked upload.
+- **Every other upload path got the same treatment** (single upload, multi
+  upload, receive-link upload, share-from-path in copy mode): a free-space
+  check before the body is read (507, on receive links translated in all 14
+  languages, key `receive.err.diskFull`), and a full disk answers 507 instead
+  of "file too large" or an anonymous 500.
+- **Multipart uploads are no longer on disk twice.** Parts above the 8 MB
+  memory budget spilled to the container's `/tmp` and were then copied into
+  `uploads/`. The spill directory is now `uploads/.multipart-tmp` on the data
+  disk (cleared of leftovers at startup), and a spilled part is hard-linked
+  into place instead of copied.
+- **Receive-link auto-share is a hard link, not a copy** — the received file
+  and its share are two names for the same bytes; deleting one keeps the other.
+  Before, a receive upload with auto-share was on disk three times at its peak.
+- **The 24 h upload TTL counts idle time, not age.** An upload still receiving
+  chunks after more than 24 h (a large file over a slow uplink) was deleted
+  mid-transfer; the reference is now the last chunk received, and survives a
+  restart (newest file in the upload's directory).
+
+### Security
+- **Size limit on password-protected receive links.** `r.FormValue("password")`
+  ran before `http.MaxBytesReader` was installed and parsed the whole body
+  itself, so a link with a password accepted files of any size (limit and the
+  8 MB memory budget never applied). Parsing now happens after the size limit
+  and before the password check (`TestReceiveSizeLimitHoldsForPasswordLinks`).
+
+### Changed
+- **Dependencies updated:** go-oidc v3.9.0 → v3.21.0, prometheus/client_golang
+  v1.17.0 → v1.25.0, x/crypto v0.57.0 → v0.59.0, x/image v0.46.0 → v0.48.0,
+  x/oauth2 v0.37.0 → v0.38.0, modernc.org/sqlite v1.48.2 → v1.63.0.
+  `govulncheck`: no reachable vulnerability. Checked against a copy of a
+  production database (shares, receive links and logins load unchanged).
+
 ## [2.5.4] - 2026-11-12
 
 ### Security

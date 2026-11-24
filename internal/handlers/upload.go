@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,7 +62,53 @@ type ChunkUpload struct {
 	ReceivedBytes  int64         // running sum of distinct chunk bytes written
 	TempDir        string
 	CreatedAt      time.Time
-	UserID         string // owner; "" for the single-admin/anonymous case. Guards resume.
+	LastActivity   time.Time // last chunk written (or init); drives the idle TTL
+	UserID         string    // owner; "" for the single-admin/anonymous case. Guards resume.
+}
+
+const (
+	// chunkUploadTTL is how long an upload may sit idle before its chunks are
+	// removed. Idle, not total age: a 50 GB upload over a slow uplink can take
+	// longer than a day and must not be deleted while chunks still arrive.
+	chunkUploadTTL = 24 * time.Hour
+	// chunkDiskReserve is left free on top of the upload itself, so a large
+	// upload cannot fill the data disk to the last byte (the SQLite WAL,
+	// sessions and every other app on the host still need to write).
+	chunkDiskReserve int64 = 1 << 30
+)
+
+// freeDiskBytes is a variable so tests can simulate a nearly full disk.
+var freeDiskBytes = statfsFreeBytes
+
+// chunkAssembled is called after chunk i has been appended during finalize;
+// a test hook that lets the disk footprint of assembly be observed.
+var chunkAssembled = func(tempDir string, i int) {}
+
+// chunksRootDir is the directory holding every upload's temp directory. It is
+// set at startup (RestoreChunkUploads) and on init, so the cleanup worker can
+// also sweep directories that are not in the registry.
+var chunksRootDir string
+
+// isDiskFull reports whether err is the filesystem saying "no space left".
+func isDiskFull(err error) bool {
+	return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT)
+}
+
+// formatGB renders bytes as GB with one decimal for user-facing messages.
+func formatGB(b int64) string {
+	return strconv.FormatFloat(float64(b)/(1<<30), 'f', 1, 64) + " GB"
+}
+
+// chunkWriteFailed answers a failed chunk/assembly write. A full disk is 507
+// with a message saying so — the client must stop instead of retrying into a
+// full disk — and every failure is logged, which it previously was not.
+func chunkWriteFailed(w http.ResponseWriter, what, uploadID string, err error) {
+	log.Printf("Chunked upload %s: %s: %v", uploadID, what, err)
+	if isDiskFull(err) {
+		http.Error(w, "Server disk is full — upload stopped. Free up space on the server and retry.", http.StatusInsufficientStorage)
+		return
+	}
+	http.Error(w, "Failed to save chunk", http.StatusInternalServerError)
 }
 
 // chunkUploads stores ongoing chunked uploads
@@ -100,19 +147,102 @@ func StopChunkCleanupWorker() {
 	})
 }
 
-// cleanupExpiredChunkUploads removes uploads older than 24 hours
+// lastActivity is the upload's idle reference point.
+func (u *ChunkUpload) lastActivity() time.Time {
+	if !u.LastActivity.IsZero() {
+		return u.LastActivity
+	}
+	return u.CreatedAt
+}
+
+// cleanupExpiredChunkUploads removes uploads idle for longer than
+// chunkUploadTTL, then sweeps the chunks directory for leftovers that are not
+// in the registry at all (no or unreadable manifest).
 func cleanupExpiredChunkUploads() {
 	chunkUploadsMu.Lock()
-	defer chunkUploadsMu.Unlock()
-
-	expiry := time.Now().Add(-24 * time.Hour)
+	expiry := time.Now().Add(-chunkUploadTTL)
 	for id, upload := range chunkUploads {
-		if upload.CreatedAt.Before(expiry) {
-			os.RemoveAll(upload.TempDir)
+		if upload.lastActivity().Before(expiry) {
+			if err := os.RemoveAll(upload.TempDir); err != nil {
+				log.Printf("Chunked upload %s: cleanup failed: %v", id, err)
+			}
 			delete(chunkUploads, id)
-			log.Printf("Cleaned up expired chunk upload: %s", id)
+			log.Printf("Cleaned up expired chunk upload: %s (%s)", id, upload.FileName)
 		}
 	}
+	root := chunksRootDir
+	chunkUploadsMu.Unlock()
+
+	sweepOrphanChunkDirs(root, chunkUploadTTL)
+}
+
+// sweepOrphanChunkDirs removes temp directories under root that no registered
+// upload owns and whose newest entry is older than maxAge. These are what
+// RestoreChunkUploads skips: directories from versions before manifests
+// existed, or an init that crashed before writing one. Without this sweep they
+// stayed on disk forever (two from 2026-06, 15 GB, were found on a full disk).
+func sweepOrphanChunkDirs(root string, maxAge time.Duration) {
+	if root == "" {
+		return
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	chunkUploadsMu.Lock()
+	owned := make(map[string]bool, len(chunkUploads))
+	for _, u := range chunkUploads {
+		owned[filepath.Clean(u.TempDir)] = true
+	}
+	chunkUploadsMu.Unlock()
+
+	cutoff := time.Now().Add(-maxAge)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		if owned[filepath.Clean(dir)] {
+			continue
+		}
+		if newestModTime(dir).After(cutoff) {
+			continue // possibly an init in progress; leave it
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			log.Printf("Chunked uploads: removing orphan %s failed: %v", entry.Name(), err)
+			continue
+		}
+		log.Printf("Chunked uploads: removed orphan directory %s", entry.Name())
+	}
+}
+
+// newestModTime is the latest mtime of dir and its direct entries.
+func newestModTime(dir string) time.Time {
+	var newest time.Time
+	if info, err := os.Stat(dir); err == nil {
+		newest = info.ModTime()
+	}
+	files, _ := os.ReadDir(dir)
+	for _, f := range files {
+		if info, err := f.Info(); err == nil && info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	return newest
+}
+
+// pendingChunkBytes is what registered uploads still have to send — space
+// that is free now but already promised.
+func pendingChunkBytes() int64 {
+	chunkUploadsMu.Lock()
+	defer chunkUploadsMu.Unlock()
+	var n int64
+	for _, u := range chunkUploads {
+		if rest := u.TotalSize - u.ReceivedBytes; rest > 0 {
+			n += rest
+		}
+	}
+	return n
 }
 
 // UploadFile handles single file upload
@@ -124,8 +254,18 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// Limit upload size
 	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 
+	// Free-space preflight before the body is read: parsing spills the file
+	// to the data disk, so the check has to come first.
+	if r.ContentLength > 0 && h.refuseIfNoSpace(w, "upload", r.ContentLength) {
+		return
+	}
+
 	// 8 MB multipart memory budget; rest spills to disk (see receive.go)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		if isDiskFull(err) {
+			chunkWriteFailed(w, "parse upload", "-", err)
+			return
+		}
 		maxSizeGB := maxSize >> 30
 		http.Error(w, fmt.Sprintf("File too large (max %d GB)", maxSizeGB), http.StatusRequestEntityTooLarge)
 		return
@@ -176,21 +316,17 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	// Save file
 	destPath := filepath.Join(h.storage.UploadsDir(), storedName)
-	dest, err := createShareFile(destPath)
+	dest, size, err := placeUploadedFile(file, destPath)
 	if err != nil {
-		log.Printf("Failed to create file %s: %v", destPath, err)
-		http.Error(w, "Failed to save file. Please check server disk space.", http.StatusInternalServerError)
-		return
-	}
-	defer dest.Close()
-
-	size, err := io.Copy(dest, file)
-	if err != nil {
-		os.Remove(destPath)
 		log.Printf("Failed to write file %s: %v", destPath, err)
+		if isDiskFull(err) {
+			chunkWriteFailed(w, "save upload", id, err)
+			return
+		}
 		http.Error(w, "Failed to save file. Upload interrupted.", http.StatusInternalServerError)
 		return
 	}
+	defer dest.Close()
 
 	// Detect MIME type server-side (don't trust client-supplied Content-Type)
 	dest.Sync()
@@ -286,13 +422,31 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Free-space preflight: refuse up front instead of streaming for minutes
+	// into a disk that cannot hold the file. Assembly deletes each chunk as it
+	// is appended, so the file needs its own size once, plus what other
+	// running uploads still have to send, plus a reserve.
+	chunksRoot := filepath.Join(h.storage.UploadsDir(), "chunks")
+	if err := os.MkdirAll(chunksRoot, 0755); err != nil {
+		chunkWriteFailed(w, "create chunks directory", "-", err)
+		return
+	}
+	if free, ok := freeDiskBytes(chunksRoot); ok {
+		need := req.TotalSize + pendingChunkBytes() + chunkDiskReserve
+		if free < need {
+			log.Printf("Chunked upload refused: %q needs %d bytes (incl. pending + reserve), %d free", req.FileName, need, free)
+			http.Error(w, fmt.Sprintf("Not enough free disk space on the server: %s needed, %s free", formatGB(need), formatGB(free)), http.StatusInsufficientStorage)
+			return
+		}
+	}
+
 	// Generate upload ID
 	uploadID := uuid.New().String()
 
 	// Create temp directory for chunks
-	tempDir := filepath.Join(h.storage.UploadsDir(), "chunks", uploadID)
+	tempDir := filepath.Join(chunksRoot, uploadID)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		http.Error(w, "Failed to create temp directory", http.StatusInternalServerError)
+		chunkWriteFailed(w, "create temp directory", uploadID, err)
 		return
 	}
 
@@ -305,6 +459,7 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 		ChunkSizes:     make(map[int]int64),
 		TempDir:        tempDir,
 		CreatedAt:      time.Now(),
+		LastActivity:   time.Now(),
 		UserID:         chunkOwner(r),
 	}
 
@@ -313,12 +468,13 @@ func (h *Handler) InitChunkUpload(w http.ResponseWriter, r *http.Request) {
 	// upload rather than an orphan directory with no record of what it was.
 	if err := writeManifest(upload); err != nil {
 		os.RemoveAll(tempDir)
-		http.Error(w, "Failed to start upload", http.StatusInternalServerError)
+		chunkWriteFailed(w, "write manifest", uploadID, err)
 		return
 	}
 
 	chunkUploadsMu.Lock()
 	chunkUploads[uploadID] = upload
+	chunksRootDir = chunksRoot
 	chunkUploadsMu.Unlock()
 
 	// Start cleanup worker (only once)
@@ -399,16 +555,18 @@ func (h *Handler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	chunkPath := filepath.Join(tempDir, fmt.Sprintf("chunk_%d", chunkIndex))
 	chunkFile, err := os.Create(chunkPath)
 	if err != nil {
-		http.Error(w, "Failed to create chunk file", http.StatusInternalServerError)
+		chunkWriteFailed(w, fmt.Sprintf("create chunk %d", chunkIndex), uploadID, err)
 		return
 	}
 
 	// Use buffered copy with size limit
 	written, err := io.Copy(chunkFile, io.LimitReader(r.Body, 10<<20)) // 10MB max per chunk
-	chunkFile.Close()
+	if closeErr := chunkFile.Close(); err == nil {
+		err = closeErr // a full disk can surface only at close
+	}
 	if err != nil {
 		os.Remove(chunkPath)
-		http.Error(w, "Failed to save chunk", http.StatusInternalServerError)
+		chunkWriteFailed(w, fmt.Sprintf("write chunk %d", chunkIndex), uploadID, err)
 		return
 	}
 
@@ -442,6 +600,7 @@ func (h *Handler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	current.ReceivedBytes = newTotal
 	current.ChunkSizes[chunkIndex] = written
 	current.ChunksReceived[chunkIndex] = true
+	current.LastActivity = time.Now()
 	receivedCount := len(current.ChunksReceived)
 	chunkUploadsMu.Unlock()
 
@@ -508,11 +667,14 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 	destFile, err := createShareFile(destPath)
 	if err != nil {
 		os.RemoveAll(upload.TempDir)
-		http.Error(w, "Failed to create file", http.StatusInternalServerError)
+		chunkWriteFailed(w, "create destination file", uploadID, err)
 		return
 	}
 
-	// Combine chunks in order using streaming (memory efficient)
+	// Combine chunks in order using streaming (memory efficient). Each chunk
+	// is deleted as soon as it is appended, so assembly needs the file's size
+	// once plus one chunk — not twice the file size (a 47 GB upload used to
+	// need ~94 GB free at the end of finalize).
 	var totalSize int64
 	copyBuffer := make([]byte, 256*1024) // 256KB buffer for efficient copying
 
@@ -523,6 +685,7 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 			destFile.Close()
 			os.Remove(destPath)
 			os.RemoveAll(upload.TempDir)
+			log.Printf("Chunked upload %s: read chunk %d: %v", uploadID, i, err)
 			http.Error(w, fmt.Sprintf("Failed to read chunk %d", i), http.StatusInternalServerError)
 			return
 		}
@@ -534,12 +697,21 @@ func (h *Handler) FinalizeChunkUpload(w http.ResponseWriter, r *http.Request) {
 			destFile.Close()
 			os.Remove(destPath)
 			os.RemoveAll(upload.TempDir)
-			http.Error(w, "Failed to write file", http.StatusInternalServerError)
+			chunkWriteFailed(w, fmt.Sprintf("assemble chunk %d", i), uploadID, err)
 			return
 		}
+		if err := os.Remove(chunkPath); err != nil {
+			log.Printf("Chunked upload %s: remove assembled chunk %d: %v", uploadID, i, err)
+		}
 		totalSize += n
+		chunkAssembled(upload.TempDir, i)
 	}
-	destFile.Close()
+	if err := destFile.Close(); err != nil {
+		os.Remove(destPath)
+		os.RemoveAll(upload.TempDir)
+		chunkWriteFailed(w, "close destination file", uploadID, err)
+		return
+	}
 
 	// Cleanup temp directory
 	os.RemoveAll(upload.TempDir)
@@ -620,8 +792,16 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 	// Limit upload size
 	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 
+	if r.ContentLength > 0 && h.refuseIfNoSpace(w, "multi upload", r.ContentLength) {
+		return
+	}
+
 	// 8 MB multipart memory budget; rest spills to disk
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		if isDiskFull(err) {
+			chunkWriteFailed(w, "parse multi upload", "-", err)
+			return
+		}
 		maxSizeGB := maxSize >> 30
 		http.Error(w, fmt.Sprintf("Files too large (max %d GB total)", maxSizeGB), http.StatusRequestEntityTooLarge)
 		return
@@ -728,22 +908,16 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 		storedName := fmt.Sprintf("%s%s", id, ext)
 		destPath := filepath.Join(h.storage.UploadsDir(), storedName)
 
-		// Save file
-		dest, err := createShareFile(destPath)
-		if err != nil {
-			file.Close()
-			errors = append(errors, fmt.Sprintf("%s: failed to save", fileHeader.Filename))
-			failedCount++
-			continue
-		}
-
-		size, err := io.Copy(dest, file)
+		// Save file (hard-linked from the spill file when possible)
+		dest, size, err := placeUploadedFile(file, destPath)
 		file.Close()
-
 		if err != nil {
-			dest.Close()
-			os.Remove(destPath)
-			errors = append(errors, fmt.Sprintf("%s: failed to write", fileHeader.Filename))
+			log.Printf("Multi upload: write %s: %v", destPath, err)
+			msg := "failed to write"
+			if isDiskFull(err) {
+				msg = "server disk is full"
+			}
+			errors = append(errors, fmt.Sprintf("%s: %s", fileHeader.Filename, msg))
 			failedCount++
 			continue
 		}

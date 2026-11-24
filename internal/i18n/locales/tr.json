@@ -95,6 +95,7 @@
  "receive.err.save": "Dosya kaydedilemedi",
  "receive.err.malware": "Dosya reddedildi: kötü amaçlı yazılım algılandı",
  "receive.err.scan": "Virüs taraması kullanılamıyor, yükleme reddedildi",
+ "receive.err.diskFull": "Sunucuda yeterli boş disk alanı yok, yükleme reddedildi",
  "receive.maxUploads": "Maks. {n} yükleme",
  "receive.uploaded": "{file} yüklendi.",
  "email.transfer.subject": "{sender} sizinle bir dosya paylaştı",

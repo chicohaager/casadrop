@@ -170,6 +170,16 @@ Response:
 
 `errors` is present only when `failed > 0`.
 
+### Free disk space (all upload paths)
+
+Every upload path — `/api/upload`, `/api/upload/multi`, chunked init,
+`/r/{id}/upload` and `/api/share-from-path` in copy mode — checks the data disk
+before it reads the body. If the upload (by `Content-Length`, or the source
+file's size) plus running chunked uploads plus 1 GB reserve does not fit, the
+answer is `507 Insufficient Storage`; a disk that fills up during the write is
+also `507`. On the receive page the message is translated
+(`receive.err.diskFull`).
+
 ### Chunked / Resumable Upload
 
 For large files the browser splits the file into chunks. The upload survives a
@@ -184,7 +194,13 @@ Content-Type: application/json
 
 Response: `{ "uploadId": "<uuid>", "totalChunks": "640" }`. A manifest is written
 to disk immediately, so an upload interrupted before the first chunk is still
-tracked (and cleaned up on age).
+tracked (and cleaned up once idle).
+
+Before anything is written, init checks the data disk: if it has less free
+space than `totalSize` + what other running uploads still have to send + 1 GB
+reserve, the answer is `507` with the text
+`Not enough free disk space on the server: X GB needed, Y GB free`. `413` means
+the file is over `maxFileSizeGB` or the user's quota.
 
 ```bash
 POST /api/upload/chunk/{uploadId}?index=N     # body = raw chunk bytes, max 10 MB
@@ -192,7 +208,9 @@ POST /api/upload/chunk/{uploadId}?index=N     # body = raw chunk bytes, max 10 M
 
 Response: `{ "received": <count>, "total": <totalChunks> }`. Chunks may arrive in
 any order and an index may be re-sent (its bytes replace the previous copy). The
-cumulative on-disk size is capped against the declared `totalSize`.
+cumulative on-disk size is capped against the declared `totalSize`. If the disk
+fills up anyway, the chunk is answered `507` (`Server disk is full …`); the
+browser stops instead of retrying.
 
 ```bash
 GET /api/upload/chunk/{uploadId}              # resume: what does the server hold?
@@ -209,12 +227,15 @@ Content-Type: application/json
 ```
 
 Assembles the chunks in order and creates the share; the response is the same
-share object as a single-file upload.
+share object as a single-file upload. Each chunk is deleted as soon as it is
+appended, so assembly needs no free space beyond the file itself.
 
 **Ownership.** An upload belongs to the user who initialised it. Every chunk,
 status and finalize request is checked against that owner; a request from anyone
 else (or for an unknown id) is a `404` — an upload cannot be probed, resumed or
-finalised by another account. Interrupted uploads are removed after 24 hours.
+finalised by another account. Interrupted uploads are removed after 24 hours
+without a new chunk (idle time, kept across restarts); leftover chunk
+directories without a manifest are removed by the same rule.
 
 ### Share From Server Path
 

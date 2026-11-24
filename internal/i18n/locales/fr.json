@@ -95,6 +95,7 @@
  "receive.err.save": "Impossible d'enregistrer le fichier",
  "receive.err.malware": "Fichier refusé : logiciel malveillant détecté",
  "receive.err.scan": "Analyse antivirus indisponible, envoi refusé",
+ "receive.err.diskFull": "Espace disque insuffisant sur le serveur, envoi refusé",
  "receive.maxUploads": "{n} envois max.",
  "receive.uploaded": "{file} a bien été envoyé.",
  "email.transfer.subject": "{sender} a partagé un fichier avec vous",

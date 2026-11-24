@@ -95,6 +95,7 @@
  "receive.err.save": "تعذّر حفظ الملف",
  "receive.err.malware": "تم رفض الملف: اكتُشفت برمجية خبيثة",
  "receive.err.scan": "فحص الفيروسات غير متاح، تم رفض الرفع",
+ "receive.err.diskFull": "مساحة القرص على الخادم ممتلئة، تم رفض الرفع",
  "receive.maxUploads": "الحد الأقصى لعمليات الرفع: {n}",
  "receive.uploaded": "تم رفع {file}.",
  "email.transfer.subject": "شارك {sender} ملفًا معك",

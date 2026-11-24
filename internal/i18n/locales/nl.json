@@ -95,6 +95,7 @@
  "receive.err.save": "Bestand opslaan mislukt",
  "receive.err.malware": "Bestand geweigerd: malware gedetecteerd",
  "receive.err.scan": "Virusscan niet beschikbaar, upload geweigerd",
+ "receive.err.diskFull": "Niet genoeg vrije schijfruimte op de server, upload geweigerd",
  "receive.maxUploads": "Max. {n} uploads",
  "receive.uploaded": "{file} is geüpload.",
  "email.transfer.subject": "{sender} heeft een bestand met je gedeeld",

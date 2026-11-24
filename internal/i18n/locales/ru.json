@@ -95,6 +95,7 @@
  "receive.err.save": "Не удалось сохранить файл",
  "receive.err.malware": "Файл отклонён: обнаружено вредоносное ПО",
  "receive.err.scan": "Антивирусная проверка недоступна, загрузка отклонена",
+ "receive.err.diskFull": "Недостаточно свободного места на диске сервера, загрузка отклонена",
  "receive.maxUploads": "Макс. загрузок: {n}",
  "receive.uploaded": "Файл {file} загружен.",
  "email.transfer.subject": "{sender} отправляет вам файл",

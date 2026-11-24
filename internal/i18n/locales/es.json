@@ -95,6 +95,7 @@
  "receive.err.save": "No se pudo guardar el archivo",
  "receive.err.malware": "Archivo rechazado: se ha detectado malware",
  "receive.err.scan": "Análisis antivirus no disponible, subida rechazada",
+ "receive.err.diskFull": "No hay suficiente espacio libre en el disco del servidor, subida rechazada",
  "receive.maxUploads": "Máx. {n} subidas",
  "receive.uploaded": "{file} se ha subido.",
  "email.transfer.subject": "{sender} ha compartido un archivo contigo",

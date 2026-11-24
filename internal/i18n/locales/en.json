@@ -95,6 +95,7 @@
  "receive.err.save": "Failed to save file",
  "receive.err.malware": "File rejected: malware detected",
  "receive.err.scan": "Virus scan unavailable, upload rejected",
+ "receive.err.diskFull": "Not enough free disk space on the server, upload rejected",
  "receive.maxUploads": "Max {n} uploads",
  "receive.uploaded": "{file} has been uploaded.",
  "email.transfer.subject": "{sender} shared a file with you",
