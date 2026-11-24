@@ -30,10 +30,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-06 (15 GB) were still on disk. They are now swept at startup and every
   15 minutes once idle for 24 h. The cleanup worker also runs from startup,
   not only after the first new chunked upload.
+- **Every other upload path got the same treatment** (single upload, multi
+  upload, receive-link upload, share-from-path in copy mode): a free-space
+  check before the body is read (507, on receive links translated in all 14
+  languages, key `receive.err.diskFull`), and a full disk answers 507 instead
+  of "file too large" or an anonymous 500.
+- **Multipart uploads are no longer on disk twice.** Parts above the 8 MB
+  memory budget spilled to the container's `/tmp` and were then copied into
+  `uploads/`. The spill directory is now `uploads/.multipart-tmp` on the data
+  disk (cleared of leftovers at startup), and a spilled part is hard-linked
+  into place instead of copied.
+- **Receive-link auto-share is a hard link, not a copy** — the received file
+  and its share are two names for the same bytes; deleting one keeps the other.
+  Before, a receive upload with auto-share was on disk three times at its peak.
 - **The 24 h upload TTL counts idle time, not age.** An upload still receiving
   chunks after more than 24 h (a large file over a slow uplink) was deleted
   mid-transfer; the reference is now the last chunk received, and survives a
   restart (newest file in the upload's directory).
+
+### Security
+- **Size limit on password-protected receive links.** `r.FormValue("password")`
+  ran before `http.MaxBytesReader` was installed and parsed the whole body
+  itself, so a link with a password accepted files of any size (limit and the
+  8 MB memory budget never applied). Parsing now happens after the size limit
+  and before the password check (`TestReceiveSizeLimitHoldsForPasswordLinks`).
 
 ## [2.5.4] - 2026-11-12
 

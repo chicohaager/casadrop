@@ -170,6 +170,16 @@ Response:
 
 `errors` is present only when `failed > 0`.
 
+### Free disk space (all upload paths)
+
+Every upload path — `/api/upload`, `/api/upload/multi`, chunked init,
+`/r/{id}/upload` and `/api/share-from-path` in copy mode — checks the data disk
+before it reads the body. If the upload (by `Content-Length`, or the source
+file's size) plus running chunked uploads plus 1 GB reserve does not fit, the
+answer is `507 Insufficient Storage`; a disk that fills up during the write is
+also `507`. On the receive page the message is translated
+(`receive.err.diskFull`).
+
 ### Chunked / Resumable Upload
 
 For large files the browser splits the file into chunks. The upload survives a

@@ -484,7 +484,11 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		// Copy file (safer, independent of source)
+		// Copy file (safer, independent of source). It needs the source's size
+		// once on the data disk, so check before copying.
+		if st, err := os.Stat(resolvedPath); err == nil && h.refuseIfNoSpace(w, "share from path (copy)", st.Size()) {
+			return
+		}
 		srcFile, err := os.Open(resolvedPath)
 		if err != nil {
 			http.Error(w, "Failed to open source file", http.StatusInternalServerError)
@@ -501,6 +505,10 @@ func (h *Handler) ShareFromPath(w http.ResponseWriter, r *http.Request) {
 
 		if _, err := io.Copy(destFile, srcFile); err != nil {
 			os.Remove(destPath)
+			if isDiskFull(err) {
+				chunkWriteFailed(w, "copy from path", id, err)
+				return
+			}
 			http.Error(w, "Failed to copy file", http.StatusInternalServerError)
 			return
 		}

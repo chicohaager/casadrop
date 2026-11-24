@@ -95,6 +95,7 @@
  "receive.err.save": "파일을 저장하지 못했습니다",
  "receive.err.malware": "파일 거부: 악성 코드가 감지되었습니다",
  "receive.err.scan": "바이러스 검사를 사용할 수 없어 업로드가 거부되었습니다",
+ "receive.err.diskFull": "서버의 디스크 여유 공간이 부족하여 업로드가 거부되었습니다",
  "receive.maxUploads": "최대 {n}회 업로드",
  "receive.uploaded": "{file} 파일이 업로드되었습니다.",
  "email.transfer.subject": "{sender}님이 파일을 공유했습니다",

@@ -95,6 +95,7 @@
  "receive.err.save": "ファイルを保存できませんでした",
  "receive.err.malware": "ファイルを拒否しました: マルウェアが検出されました",
  "receive.err.scan": "ウイルススキャンを利用できないため、アップロードを拒否しました",
+ "receive.err.diskFull": "サーバーのディスク空き容量が不足しているため、アップロードは拒否されました",
  "receive.maxUploads": "最大 {n} 件までアップロード可能",
  "receive.uploaded": "{file} をアップロードしました。",
  "email.transfer.subject": "{sender} さんがファイルを共有しました",

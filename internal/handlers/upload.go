@@ -254,8 +254,18 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	// Limit upload size
 	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 
+	// Free-space preflight before the body is read: parsing spills the file
+	// to the data disk, so the check has to come first.
+	if r.ContentLength > 0 && h.refuseIfNoSpace(w, "upload", r.ContentLength) {
+		return
+	}
+
 	// 8 MB multipart memory budget; rest spills to disk (see receive.go)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		if isDiskFull(err) {
+			chunkWriteFailed(w, "parse upload", "-", err)
+			return
+		}
 		maxSizeGB := maxSize >> 30
 		http.Error(w, fmt.Sprintf("File too large (max %d GB)", maxSizeGB), http.StatusRequestEntityTooLarge)
 		return
@@ -306,21 +316,17 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	// Save file
 	destPath := filepath.Join(h.storage.UploadsDir(), storedName)
-	dest, err := createShareFile(destPath)
+	dest, size, err := placeUploadedFile(file, destPath)
 	if err != nil {
-		log.Printf("Failed to create file %s: %v", destPath, err)
-		http.Error(w, "Failed to save file. Please check server disk space.", http.StatusInternalServerError)
-		return
-	}
-	defer dest.Close()
-
-	size, err := io.Copy(dest, file)
-	if err != nil {
-		os.Remove(destPath)
 		log.Printf("Failed to write file %s: %v", destPath, err)
+		if isDiskFull(err) {
+			chunkWriteFailed(w, "save upload", id, err)
+			return
+		}
 		http.Error(w, "Failed to save file. Upload interrupted.", http.StatusInternalServerError)
 		return
 	}
+	defer dest.Close()
 
 	// Detect MIME type server-side (don't trust client-supplied Content-Type)
 	dest.Sync()
@@ -786,8 +792,16 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 	// Limit upload size
 	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 
+	if r.ContentLength > 0 && h.refuseIfNoSpace(w, "multi upload", r.ContentLength) {
+		return
+	}
+
 	// 8 MB multipart memory budget; rest spills to disk
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		if isDiskFull(err) {
+			chunkWriteFailed(w, "parse multi upload", "-", err)
+			return
+		}
 		maxSizeGB := maxSize >> 30
 		http.Error(w, fmt.Sprintf("Files too large (max %d GB total)", maxSizeGB), http.StatusRequestEntityTooLarge)
 		return
@@ -894,22 +908,16 @@ func (h *Handler) UploadMultipleFiles(w http.ResponseWriter, r *http.Request) {
 		storedName := fmt.Sprintf("%s%s", id, ext)
 		destPath := filepath.Join(h.storage.UploadsDir(), storedName)
 
-		// Save file
-		dest, err := createShareFile(destPath)
-		if err != nil {
-			file.Close()
-			errors = append(errors, fmt.Sprintf("%s: failed to save", fileHeader.Filename))
-			failedCount++
-			continue
-		}
-
-		size, err := io.Copy(dest, file)
+		// Save file (hard-linked from the spill file when possible)
+		dest, size, err := placeUploadedFile(file, destPath)
 		file.Close()
-
 		if err != nil {
-			dest.Close()
-			os.Remove(destPath)
-			errors = append(errors, fmt.Sprintf("%s: failed to write", fileHeader.Filename))
+			log.Printf("Multi upload: write %s: %v", destPath, err)
+			msg := "failed to write"
+			if isDiskFull(err) {
+				msg = "server disk is full"
+			}
+			errors = append(errors, fmt.Sprintf("%s: %s", fileHeader.Filename, msg))
 			failedCount++
 			continue
 		}

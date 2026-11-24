@@ -95,6 +95,7 @@
  "receive.err.save": "Falha ao salvar o arquivo",
  "receive.err.malware": "Arquivo recusado: malware detectado",
  "receive.err.scan": "Verificação de vírus indisponível, envio recusado",
+ "receive.err.diskFull": "Espaço livre em disco insuficiente no servidor, envio rejeitado",
  "receive.maxUploads": "Máx. {n} envios",
  "receive.uploaded": "{file} foi enviado.",
  "email.transfer.subject": "{sender} compartilhou um arquivo com você",

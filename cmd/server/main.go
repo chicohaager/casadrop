@@ -98,6 +98,14 @@ func main() {
 	// be resumed rather than silently lost.
 	handlers.RestoreChunkUploads(store.UploadsDir())
 
+	// Spill multipart uploads to the data disk (not the container's /tmp), so
+	// a spilled file can be hard-linked into place instead of copied.
+	if dir, err := handlers.SetupMultipartTempDir(store.UploadsDir()); err != nil {
+		log.Printf("Uploads: multipart temp dir on the data disk unavailable, using %s: %v", os.TempDir(), err)
+	} else {
+		log.Printf("Uploads: multipart temp dir %s", dir)
+	}
+
 	// Initialize Tailscale if configured
 	handlers.InitTailscaleOnStartup(dataDir)
 

@@ -95,6 +95,7 @@
  "receive.err.save": "Impossibile salvare il file",
  "receive.err.malware": "File rifiutato: rilevato malware",
  "receive.err.scan": "Scansione antivirus non disponibile, caricamento rifiutato",
+ "receive.err.diskFull": "Spazio su disco insufficiente sul server, caricamento rifiutato",
  "receive.maxUploads": "Max {n} caricamenti",
  "receive.uploaded": "{file} è stato caricato.",
  "email.transfer.subject": "{sender} ha condiviso un file con te",

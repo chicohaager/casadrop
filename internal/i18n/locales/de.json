@@ -95,6 +95,7 @@
  "receive.err.save": "Die Datei konnte nicht gespeichert werden",
  "receive.err.malware": "Datei abgelehnt: Schadsoftware erkannt",
  "receive.err.scan": "Virenprüfung nicht verfügbar, Upload abgelehnt",
+ "receive.err.diskFull": "Auf dem Server ist nicht genug Speicherplatz frei, Upload abgelehnt",
  "receive.maxUploads": "Max. {n} Uploads",
  "receive.uploaded": "{file} wurde hochgeladen.",
  "email.transfer.subject": "{sender} hat dir eine Datei geschickt",

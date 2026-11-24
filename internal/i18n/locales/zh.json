@@ -95,6 +95,7 @@
  "receive.err.save": "保存文件失败",
  "receive.err.malware": "文件被拒绝：检测到恶意软件",
  "receive.err.scan": "病毒扫描不可用，上传被拒绝",
+ "receive.err.diskFull": "服务器磁盘空间不足，上传被拒绝",
  "receive.maxUploads": "最多上传 {n} 次",
  "receive.uploaded": "{file} 已上传。",
  "email.transfer.subject": "{sender} 与您分享了一个文件",

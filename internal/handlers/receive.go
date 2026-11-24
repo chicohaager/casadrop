@@ -376,15 +376,52 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if link.HasPassword && h.sharePassLimiter.isBlocked(id, utils.GetClientIP(r)) {
+		receiveError(w, r, http.StatusTooManyRequests, "receive.err.pwRate", nil)
+		return
+	}
+
+	// Size limit, free-space check and parsing come BEFORE the password check:
+	// r.FormValue("password") parses the whole body itself (32 MB memory
+	// budget, unlimited spill to disk). When it ran first, the MaxBytesReader
+	// below wrapped a body that had already been read, so password-protected
+	// links accepted files of any size.
+	maxSize := link.MaxFileSize
+	if maxSize <= 0 {
+		// Use global config max file size
+		config, _ := h.loadTunnelConfig()
+		maxSize = config.GetMaxFileSizeBytes()
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
+
+	if r.ContentLength > 0 {
+		if need, free, short := spaceShortfall(h.storage.UploadsDir(), r.ContentLength); short {
+			log.Printf("Receive upload refused link=%s: needs %d bytes (incl. pending + reserve), %d free", id, need, free)
+			receiveError(w, r, http.StatusInsufficientStorage, "receive.err.diskFull", nil)
+			return
+		}
+	}
+
+	// Keep the in-memory portion of the multipart form small (8 MB). Anything
+	// beyond that spills to disk. The previous 32 MB budget let an attacker
+	// allocate 32 MB of RAM per request by stuffing many small form fields
+	// before MaxBytesReader kicked in.
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		if isDiskFull(err) {
+			log.Printf("Receive upload link=%s: disk full while parsing: %v", id, err)
+			receiveError(w, r, http.StatusInsufficientStorage, "receive.err.diskFull", nil)
+			return
+		}
+		receiveError(w, r, http.StatusBadRequest, "receive.err.tooLarge", nil)
+		return
+	}
+
 	// Check password if required. Rate-limit per (link, IP) exactly like the
 	// share-download password path, otherwise this public endpoint allows
 	// unlimited brute-forcing of the receive-link password.
 	if link.HasPassword {
 		clientIP := utils.GetClientIP(r)
-		if h.sharePassLimiter.isBlocked(id, clientIP) {
-			receiveError(w, r, http.StatusTooManyRequests, "receive.err.pwRate", nil)
-			return
-		}
 		password := r.FormValue("password")
 		if password == "" {
 			password = r.Header.Get("X-Password")
@@ -399,25 +436,6 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.sharePassLimiter.resetAttempts(id, clientIP)
-	}
-
-	// Set max file size
-	maxSize := link.MaxFileSize
-	if maxSize <= 0 {
-		// Use global config max file size
-		config, _ := h.loadTunnelConfig()
-		maxSize = config.GetMaxFileSizeBytes()
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
-
-	// Keep the in-memory portion of the multipart form small (8 MB). Anything
-	// beyond that spills to disk. The previous 32 MB budget let an attacker
-	// allocate 32 MB of RAM per request by stuffing many small form fields
-	// before MaxBytesReader kicked in.
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		receiveError(w, r, http.StatusBadRequest, "receive.err.tooLarge", nil)
-		return
 	}
 
 	// Proof-of-work throttle (opt-in via RECEIVE_POW_BITS). Verify before we
@@ -477,20 +495,19 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	uploadsDir := filepath.Join(h.storage.UploadsDir(), "received", id)
 	destPath := filepath.Join(uploadsDir, storedName)
 
-	dest, err := createShareFile(destPath)
+	// Hard-linked from the multipart spill file when possible, so the upload
+	// is on disk once, not twice.
+	dest, size, err := placeUploadedFile(file, destPath)
 	if err != nil {
-		log.Printf("Failed to create file %s: %v", destPath, err)
+		log.Printf("Receive upload link=%s: write %s: %v", id, destPath, err)
+		if isDiskFull(err) {
+			receiveError(w, r, http.StatusInsufficientStorage, "receive.err.diskFull", nil)
+			return
+		}
 		receiveError(w, r, http.StatusInternalServerError, "receive.err.save", nil)
 		return
 	}
 	defer dest.Close()
-
-	size, err := io.Copy(dest, file)
-	if err != nil {
-		os.Remove(destPath)
-		receiveError(w, r, http.StatusInternalServerError, "receive.err.save", nil)
-		return
-	}
 
 	// Detect MIME type — sync to ensure data is flushed before re-reading
 	dest.Sync()
@@ -541,45 +558,30 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		shareStoredName := fmt.Sprintf("%s%s", shareID, ext)
 		sharePath := filepath.Join(h.storage.UploadsDir(), shareStoredName)
 
-		// Copy file to shares with proper error handling
-		srcFile, err := os.Open(destPath)
-		if err != nil {
-			log.Printf("AutoShare: failed to open source file: %v", err)
+		// A hard link gives the share its own name for the same bytes (no
+		// second copy on disk); deleting either one leaves the other intact.
+		if copyErr := linkOrCopy(destPath, sharePath); copyErr != nil {
+			log.Printf("AutoShare: failed to link/copy file: %v", copyErr)
 		} else {
-			destFile, err := createShareFile(sharePath)
-			if err != nil {
-				srcFile.Close()
-				log.Printf("AutoShare: failed to create share file: %v", err)
+			share := &models.Share{
+				ID:           shareID,
+				FileName:     shareStoredName,
+				OriginalName: header.Filename,
+				FileSize:     size,
+				MimeType:     mimeType,
+				ExpiresAt:    time.Now().Add(24 * time.Hour),
+				CreatedAt:    time.Now(),
+				// Inherit ownership from the parent receive link so the
+				// auto-created share is not left ownerless (ownerless items
+				// are admin-only after the IDOR fix). Empty UserID => admin.
+				UserID: link.UserID,
+			}
+
+			if err := h.storage.Save(share); err == nil {
+				receivedFile.ShareID = shareID
 			} else {
-				_, copyErr := io.Copy(destFile, srcFile)
-				srcFile.Close()
-				destFile.Close()
-
-				if copyErr != nil {
-					os.Remove(sharePath)
-					log.Printf("AutoShare: failed to copy file: %v", copyErr)
-				} else {
-					share := &models.Share{
-						ID:           shareID,
-						FileName:     shareStoredName,
-						OriginalName: header.Filename,
-						FileSize:     size,
-						MimeType:     mimeType,
-						ExpiresAt:    time.Now().Add(24 * time.Hour),
-						CreatedAt:    time.Now(),
-						// Inherit ownership from the parent receive link so the
-						// auto-created share is not left ownerless (ownerless items
-						// are admin-only after the IDOR fix). Empty UserID => admin.
-						UserID: link.UserID,
-					}
-
-					if err := h.storage.Save(share); err == nil {
-						receivedFile.ShareID = shareID
-					} else {
-						os.Remove(sharePath)
-						log.Printf("AutoShare: failed to save share: %v", err)
-					}
-				}
+				os.Remove(sharePath)
+				log.Printf("AutoShare: failed to save share: %v", err)
 			}
 		}
 	}

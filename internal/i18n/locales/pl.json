@@ -95,6 +95,7 @@
  "receive.err.save": "Nie udało się zapisać pliku",
  "receive.err.malware": "Plik odrzucony: wykryto złośliwe oprogramowanie",
  "receive.err.scan": "Skanowanie antywirusowe niedostępne, wysyłanie odrzucone",
+ "receive.err.diskFull": "Za mało wolnego miejsca na dysku serwera, przesyłanie odrzucone",
  "receive.maxUploads": "Maks. liczba wysłań: {n}",
  "receive.uploaded": "Plik {file} został wysłany.",
  "email.transfer.subject": "{sender} udostępnia Ci plik",
