@@ -4778,10 +4778,15 @@
                 });
                 if (res.ok) return;
                 // 4xx is a decision, not a hiccup — surface it immediately.
-                if (res.status >= 400 && res.status < 500) throw new Error(await res.text());
+                // So is 507: the server disk is full, retrying cannot help.
+                if ((res.status >= 400 && res.status < 500) || res.status === 507) {
+                    const fatal = new Error(await res.text());
+                    fatal.fatal = true;
+                    throw fatal;
+                }
                 if (attempt >= attempts) throw new Error(await res.text());
             } catch (err) {
-                if (attempt >= attempts) throw err;
+                if (err.fatal || attempt >= attempts) throw err;
             }
             await new Promise(r => setTimeout(r, 500 * attempt));
         }

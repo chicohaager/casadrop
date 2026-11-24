@@ -181,9 +181,10 @@ func TestCleanupRemovesManifestAndChunks(t *testing.T) {
 	id := initChunkUpload(t, h, user, "old.bin", 30, 3)
 	tempDir := filepath.Join(h.storage.UploadsDir(), "chunks", id)
 
-	// Age it past the TTL and sweep.
+	// Age it past the idle TTL (no chunk for 48 h) and sweep.
 	chunkUploadsMu.Lock()
 	chunkUploads[id].CreatedAt = time.Now().Add(-48 * time.Hour)
+	chunkUploads[id].LastActivity = time.Now().Add(-48 * time.Hour)
 	chunkUploadsMu.Unlock()
 	cleanupExpiredChunkUploads()
 

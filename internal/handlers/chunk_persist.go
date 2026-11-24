@@ -61,6 +61,10 @@ func RestoreChunkUploads(uploadsDir string) {
 		return // no chunks directory yet is the normal fresh-start case
 	}
 
+	chunkUploadsMu.Lock()
+	chunksRootDir = chunksRoot
+	chunkUploadsMu.Unlock()
+
 	restored := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -70,8 +74,8 @@ func RestoreChunkUploads(uploadsDir string) {
 		upload, err := loadUploadFromDisk(tempDir)
 		if err != nil {
 			// A directory without a readable manifest is debris from a version
-			// that predated persistence, or a half-written init. Leave it for
-			// the age-based cleanup rather than guessing.
+			// that predated persistence, or a half-written init. The orphan
+			// sweep below removes it once it has been idle past the TTL.
 			continue
 		}
 		chunkUploadsMu.Lock()
@@ -81,8 +85,12 @@ func RestoreChunkUploads(uploadsDir string) {
 	}
 	if restored > 0 {
 		log.Printf("Chunked uploads: restored %d interrupted upload(s) from disk", restored)
-		startChunkCleanupWorker()
 	}
+	// Sweep once now (expired restored uploads + orphans), then keep the worker
+	// running: before, it only started on a new init or a restore, so leftovers
+	// of an instance that never saw another chunked upload were never touched.
+	cleanupExpiredChunkUploads()
+	startChunkCleanupWorker()
 }
 
 // loadUploadFromDisk reconstructs one ChunkUpload from its temp directory: the
@@ -108,6 +116,9 @@ func loadUploadFromDisk(tempDir string) (*ChunkUpload, error) {
 		TempDir:        tempDir,
 		CreatedAt:      time.Unix(m.CreatedAt, 0),
 	}
+	// Idle time survives a restart: the newest file in the directory is the
+	// last chunk that arrived (or the manifest, if none did).
+	upload.LastActivity = newestModTime(tempDir)
 
 	// The chunk files are the truth about what actually flushed. A chunk index
 	// beyond TotalChunks (a tampered or corrupt name) is ignored.

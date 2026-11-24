@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Large chunked uploads no longer need twice their size on disk.**
+  `FinalizeChunkUpload` copied all chunks into the share file and deleted them
+  only afterwards, so a 47 GB upload needed ~94 GB free at the end. Each chunk
+  is now deleted as soon as it is appended (peak = file size + one chunk).
+- **Free-space check before a chunked upload starts.** `InitChunkUpload` now
+  refuses with HTTP 507 and a plain message ("Not enough free disk space on the
+  server: X GB needed, Y GB free") when the data disk cannot hold the file plus
+  what other running uploads still have to send plus a 1 GB reserve. Before, a
+  47 GB upload streamed for 8 minutes into a disk with ~44 GB free and died at
+  chunk 5670 of 6011, filling the disk to 0 bytes.
+- **A full disk is reported as such.** Writing a chunk on a full disk answered
+  an anonymous 500, unlogged; it is now 507 "Server disk is full" and every
+  chunk/assembly write error is logged with the upload ID.
+- **The upload client stops on a definitive answer.** `sendChunkWithRetry`
+  meant to surface 4xx immediately, but threw inside its own `try` and retried
+  them three times anyway; 4xx and 507 now end the upload at once.
+- **Leftover chunk directories are removed.** Directories without a manifest
+  (from versions before resumable uploads, or a crashed init) were skipped by
+  the startup restore and never reached by the in-memory cleanup; two from
+  2026-06 (15 GB) were still on disk. They are now swept at startup and every
+  15 minutes once idle for 24 h. The cleanup worker also runs from startup,
+  not only after the first new chunked upload.
+- **The 24 h upload TTL counts idle time, not age.** An upload still receiving
+  chunks after more than 24 h (a large file over a slow uplink) was deleted
+  mid-transfer; the reference is now the last chunk received, and survives a
+  restart (newest file in the upload's directory).
+
 ## [2.5.4] - 2026-11-12
 
 ### Security
