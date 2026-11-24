@@ -26,7 +26,7 @@ func TestDeleteFolderShareKeepsUploadsDir(t *testing.T) {
 		ExpiresAt:    time.Now().Add(24 * time.Hour),
 		CreatedAt:    time.Now(),
 	}
-	if err := store.Save(share); err != nil {
+	if err := store.Save(t.Context(), share); err != nil {
 		t.Fatalf("save folder share: %v", err)
 	}
 
@@ -35,14 +35,14 @@ func TestDeleteFolderShareKeepsUploadsDir(t *testing.T) {
 		t.Fatalf("uploads dir missing before delete: %v", err)
 	}
 
-	if err := store.Delete("dirshare1"); err != nil {
+	if err := store.Delete(t.Context(), "dirshare1"); err != nil {
 		t.Fatalf("delete folder share: %v", err)
 	}
 
 	if _, err := os.Stat(uploadsDir); err != nil {
 		t.Fatalf("uploads dir was removed by deleting a folder share: %v", err)
 	}
-	if _, ok := store.Get("dirshare1"); ok {
+	if _, ok := store.Get(t.Context(), "dirshare1"); ok {
 		t.Fatal("share row should be gone after delete")
 	}
 }

@@ -155,7 +155,7 @@ func (h *Handler) QRCode(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	// Check if share exists
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok || share == nil {
 		http.Error(w, "Share not found", http.StatusNotFound)
 		return
@@ -202,7 +202,7 @@ func (h *Handler) GetThumbnail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get share
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return

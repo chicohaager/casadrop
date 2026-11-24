@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestGetPrimaryBaseURLLocalPrefersConfig(t *testing.T) {
 	t.Setenv("EXTERNAL_PORT", "8080")
 	writeTunnelConfig(t, TunnelConfig{PrimaryNetwork: "local", LocalIP: "192.168.10.20"})
 
-	req := httptest.NewRequest("GET", "/api/upload", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upload", nil)
 	req.Host = "127.0.0.1:8080" // loopback: must not override the selection
 
 	got := handler.getPrimaryBaseURL(req)
@@ -54,7 +55,7 @@ func TestGetPrimaryBaseURLLocalFallsBackToEnv(t *testing.T) {
 	t.Setenv("EXTERNAL_PORT", "8080")
 	writeTunnelConfig(t, TunnelConfig{PrimaryNetwork: "local"})
 
-	req := httptest.NewRequest("GET", "/api/upload", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upload", nil)
 	req.Host = "127.0.0.1:8080"
 
 	got := handler.getPrimaryBaseURL(req)
@@ -73,7 +74,7 @@ func TestGetPrimaryBaseURLPublicHostStillOverrides(t *testing.T) {
 	t.Setenv("LOCAL_IP", "172.18.0.5")
 	writeTunnelConfig(t, TunnelConfig{PrimaryNetwork: "local", LocalIP: "192.168.10.20"})
 
-	req := httptest.NewRequest("GET", "/api/upload", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upload", nil)
 	req.Host = "files.example.com"
 
 	got := handler.getPrimaryBaseURL(req)

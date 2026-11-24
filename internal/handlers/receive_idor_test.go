@@ -21,14 +21,14 @@ func TestOwnerlessReceiveLinkIsAdminOnly(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	if err := handler.storage.SaveReceiveLink(&models.ReceiveLink{
+	if err := handler.storage.SaveReceiveLink(t.Context(), &models.ReceiveLink{
 		ID:   "ownerless",
 		Name: "Drop",
 		// UserID intentionally empty (shared-admin owned).
 	}); err != nil {
 		t.Fatalf("SaveReceiveLink: %v", err)
 	}
-	if err := handler.storage.SaveReceivedFile(&models.ReceivedFile{
+	if err := handler.storage.SaveReceivedFile(t.Context(), &models.ReceivedFile{
 		ID:            "file1",
 		ReceiveLinkID: "ownerless",
 		FileName:      "secret.pdf",
@@ -43,7 +43,7 @@ func TestOwnerlessReceiveLinkIsAdminOnly(t *testing.T) {
 	router.HandleFunc("/api/receive-links/{id}/files", handler.GetReceivedFiles).Methods("GET")
 
 	do := func(path string, user *middleware.SessionUser) int {
-		req := httptest.NewRequest("GET", path, nil)
+		req := httptest.NewRequest(http.MethodGet, path, nil)
 		if user != nil {
 			req = req.WithContext(middleware.ContextWithUser(req.Context(), user))
 		}

@@ -48,7 +48,7 @@ func TestExpireEventReachesWebhookReceiver(t *testing.T) {
 
 	// Arm the webhook for expiry events only, so a stray download event can't
 	// be mistaken for the thing under test.
-	req := httptest.NewRequest("POST", "/api/webhook", strings.NewReader(
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader(
 		`{"enabled":true,"url":"`+receiver.URL+`","on_expire":true,"on_download":false,"on_limit_reached":false}`))
 	rec := httptest.NewRecorder()
 	handler.WebhookConfig(rec, req)
@@ -56,7 +56,7 @@ func TestExpireEventReachesWebhookReceiver(t *testing.T) {
 		t.Fatalf("configuring the webhook: expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	if err := handler.storage.Save(&models.Share{
+	if err := handler.storage.Save(t.Context(), &models.Share{
 		ID:           "expired-1",
 		FileName:     "expired-1.txt",
 		OriginalName: "quarterly.pdf",
@@ -67,7 +67,7 @@ func TestExpireEventReachesWebhookReceiver(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	if !handler.storage.RunExpiryCleanup() {
+	if !handler.storage.RunExpiryCleanup(t.Context()) {
 		t.Fatal("storage backend does not support an on-demand expiry sweep")
 	}
 
@@ -118,7 +118,7 @@ func TestExpireEventNotSentWhenDisabled(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("POST", "/api/webhook", strings.NewReader(
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader(
 		`{"enabled":true,"url":"`+receiver.URL+`","on_expire":false,"on_download":true}`))
 	rec := httptest.NewRecorder()
 	handler.WebhookConfig(rec, req)
@@ -126,13 +126,13 @@ func TestExpireEventNotSentWhenDisabled(t *testing.T) {
 		t.Fatalf("configuring the webhook: got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	if err := handler.storage.Save(&models.Share{
+	if err := handler.storage.Save(t.Context(), &models.Share{
 		ID: "expired-2", FileName: "expired-2.txt", OriginalName: "x.pdf",
 		ExpiresAt: time.Now().Add(-time.Hour), CreatedAt: time.Now().Add(-2 * time.Hour),
 	}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	handler.storage.RunExpiryCleanup()
+	handler.storage.RunExpiryCleanup(t.Context())
 
 	time.Sleep(500 * time.Millisecond)
 	mu.Lock()

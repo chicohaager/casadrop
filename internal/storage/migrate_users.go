@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -13,25 +14,25 @@ import (
 
 // MigrateUsers performs migration for multi-user support
 // This adds user_id columns to existing tables and creates admin user
-func (s *SQLiteStorage) MigrateUsers(adminPasswordHash string, adminEmail string) error {
+func (s *SQLiteStorage) MigrateUsers(ctx context.Context, adminPasswordHash string, adminEmail string) error {
 	// Check if users table exists
 	var tableName string
-	err := s.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").Scan(&tableName)
+	err := s.db.QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name='users'").Scan(&tableName)
 	if err == sql.ErrNoRows {
 		log.Println("Users table does not exist, running migration...")
-		return s.runUserMigration(adminPasswordHash, adminEmail)
+		return s.runUserMigration(ctx, adminPasswordHash, adminEmail)
 	}
 	if err != nil {
 		return err
 	}
 
 	// Table exists, check if we need to add columns to shares/receive_links
-	return s.migrateExistingTables()
+	return s.migrateExistingTables(ctx)
 }
 
 // runUserMigration creates users table and migrates existing data
-func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail string) error {
-	tx, err := s.db.Begin()
+func (s *SQLiteStorage) runUserMigration(ctx context.Context, adminPasswordHash string, adminEmail string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -39,7 +40,7 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 	var done migrationLog
 
 	// Create users table
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS users (
 			id TEXT PRIMARY KEY,
 			email TEXT UNIQUE NOT NULL,
@@ -59,11 +60,11 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 	}
 
 	// Create indexes
-	_, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+	_, err = tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec("CREATE INDEX IF NOT EXISTS idx_users_oidc ON users(oidc_subject, oidc_issuer)")
+	_, err = tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_users_oidc ON users(oidc_subject, oidc_issuer)")
 	if err != nil {
 		return err
 	}
@@ -77,7 +78,7 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 		}
 		now := time.Now().UTC()
 
-		_, err = tx.Exec(`
+		_, err = tx.ExecContext(ctx, `
 			INSERT INTO users (id, email, name, role, password_hash, is_active, created_at)
 			VALUES (?, ?, ?, ?, ?, 1, ?)
 		`, adminUserID, adminEmail, "Admin", models.RoleAdmin, adminPasswordHash, now)
@@ -88,31 +89,31 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 	}
 
 	// Add user_id column to shares if not exists
-	if err := addColumnIfNotExists(tx, &done, "shares", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "shares", "user_id", "TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, &done, "shares", "user_email", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "shares", "user_email", "TEXT"); err != nil {
 		return err
 	}
 
 	// Add user_id column to receive_links if not exists
-	if err := addColumnIfNotExists(tx, &done, "receive_links", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "receive_links", "user_id", "TEXT"); err != nil {
 		return err
 	}
 
 	// Per-user storage quota (v2.4). 0 = unlimited.
 	// 2.5.2: e-mails go out in the sender's language; download/expiry mails are
 	// sent later from the stored record, so the language is stored with it.
-	if err := addColumnIfNotExists(tx, &done, "email_transfers", "lang", "TEXT NOT NULL DEFAULT ''"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "email_transfers", "lang", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, &done, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 
 	// Assign all existing shares to admin user
 	if adminUserID != "" {
-		_, err = tx.Exec(`
+		_, err = tx.ExecContext(ctx, `
 			UPDATE shares SET user_id = ?, user_email = ?
 			WHERE user_id IS NULL OR user_id = ''
 		`, adminUserID, adminEmail)
@@ -121,7 +122,7 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 		}
 
 		// Assign all existing receive links to admin user
-		_, err = tx.Exec(`
+		_, err = tx.ExecContext(ctx, `
 			UPDATE receive_links SET user_id = ?
 			WHERE user_id IS NULL OR user_id = ''
 		`, adminUserID)
@@ -133,8 +134,8 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 	}
 
 	// Create indexes for user_id columns
-	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
-	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
+	_, _ = tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
+	_, _ = tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
 
 	if err := tx.Commit(); err != nil {
 		return err
@@ -144,8 +145,8 @@ func (s *SQLiteStorage) runUserMigration(adminPasswordHash string, adminEmail st
 }
 
 // migrateExistingTables adds user_id columns if they don't exist
-func (s *SQLiteStorage) migrateExistingTables() error {
-	tx, err := s.db.Begin()
+func (s *SQLiteStorage) migrateExistingTables(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -153,22 +154,22 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 	var done migrationLog
 
 	// Add columns if not exists
-	if err := addColumnIfNotExists(tx, &done, "shares", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "shares", "user_id", "TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, &done, "shares", "user_email", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "shares", "user_email", "TEXT"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, &done, "receive_links", "user_id", "TEXT"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "receive_links", "user_id", "TEXT"); err != nil {
 		return err
 	}
 	// Per-user storage quota (v2.4). 0 = unlimited.
 	// 2.5.2: e-mails go out in the sender's language; download/expiry mails are
 	// sent later from the stored record, so the language is stored with it.
-	if err := addColumnIfNotExists(tx, &done, "email_transfers", "lang", "TEXT NOT NULL DEFAULT ''"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "email_transfers", "lang", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	if err := addColumnIfNotExists(tx, &done, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+	if err := addColumnIfNotExists(ctx, tx, &done, "users", "quota_bytes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 
@@ -176,20 +177,20 @@ func (s *SQLiteStorage) migrateExistingTables() error {
 	// collides with UNIQUE(oidc_subject, oidc_issuer) as soon as a second local
 	// account is created (SQLite: NULLs are distinct, empty strings are not).
 	// Normalize the legacy rows so existing installs can add more local users.
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET oidc_subject = NULL WHERE oidc_subject = ''`,
 	); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET oidc_issuer = NULL WHERE oidc_issuer = ''`,
 	); err != nil {
 		return err
 	}
 
 	// Create indexes
-	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
-	_, _ = tx.Exec("CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
+	_, _ = tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id)")
+	_, _ = tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_receive_links_user ON receive_links(user_id)")
 
 	if err := tx.Commit(); err != nil {
 		return err
@@ -223,13 +224,13 @@ func (m migrationLog) print() {
 	}
 }
 
-func addColumnIfNotExists(tx *sql.Tx, done *migrationLog, table, column, dataType string) error {
+func addColumnIfNotExists(ctx context.Context, tx *sql.Tx, done *migrationLog, table, column, dataType string) error {
 	if _, ok := allowedMigrationTables[table]; !ok {
 		return fmt.Errorf("addColumnIfNotExists: table %q is not in the migration whitelist", table)
 	}
 	// Check if column exists. PRAGMA doesn't support ? placeholders, but the
 	// table name is whitelisted above.
-	rows, err := tx.Query("PRAGMA table_info(" + table + ")")
+	rows, err := tx.QueryContext(ctx, "PRAGMA table_info("+table+")")
 	if err != nil {
 		return err
 	}
@@ -257,7 +258,7 @@ func addColumnIfNotExists(tx *sql.Tx, done *migrationLog, table, column, dataTyp
 	rows.Close()
 
 	if !columnExists {
-		_, err = tx.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + dataType)
+		_, err = tx.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN "+column+" "+dataType)
 		if err != nil {
 			return err
 		}
@@ -268,7 +269,7 @@ func addColumnIfNotExists(tx *sql.Tx, done *migrationLog, table, column, dataTyp
 }
 
 // GetAdminUser returns the first admin user (for migration purposes)
-func (s *SQLiteStorage) GetAdminUser() (*models.User, error) {
+func (s *SQLiteStorage) GetAdminUser(ctx context.Context) (*models.User, error) {
 	query := `
 		SELECT id, email, name, role, COALESCE(password_hash, ''),
 			   COALESCE(oidc_subject, ''), COALESCE(oidc_issuer, ''),
@@ -281,7 +282,7 @@ func (s *SQLiteStorage) GetAdminUser() (*models.User, error) {
 	user := &models.User{}
 	var lastLoginAt sql.NullTime
 
-	err := s.db.QueryRow(query, models.RoleAdmin).Scan(
+	err := s.db.QueryRowContext(ctx, query, models.RoleAdmin).Scan(
 		&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash,
 		&user.OIDCSubject, &user.OIDCIssuer, &user.IsActive, &user.CreatedAt, &lastLoginAt,
 	)
@@ -301,9 +302,9 @@ func (s *SQLiteStorage) GetAdminUser() (*models.User, error) {
 }
 
 // HasAnyUsers returns true if there are any users in the database
-func (s *SQLiteStorage) HasAnyUsers() bool {
+func (s *SQLiteStorage) HasAnyUsers(ctx context.Context) bool {
 	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
 	if err != nil {
 		return false
 	}

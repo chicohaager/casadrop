@@ -30,7 +30,7 @@ func makeSession(t *testing.T, aa *AdminAuth, userID, email string, role models.
 
 func listSessions(t *testing.T, aa *AdminAuth, caller *SessionUser, currentToken string) []SessionInfo {
 	t.Helper()
-	req := httptest.NewRequest("GET", "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	if currentToken != "" {
 		req.AddCookie(&http.Cookie{Name: "casadrop_session", Value: currentToken})
 	}
@@ -104,7 +104,7 @@ func TestAdminSeesAllSessions(t *testing.T) {
 
 func revoke(t *testing.T, aa *AdminAuth, caller *SessionUser, id string) int {
 	t.Helper()
-	req := httptest.NewRequest("DELETE", "/api/sessions/"+id, nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+id, nil)
 	req = req.WithContext(ContextWithUser(req.Context(), caller))
 	rr := httptest.NewRecorder()
 	router := mux.NewRouter()
@@ -165,7 +165,7 @@ func TestRevokeOtherSessionsSparesCurrent(t *testing.T) {
 	aliceTok3, _ := makeSession(t, aa, "alice", "alice@example.com", models.RoleUser)
 	bobTok, _ := makeSession(t, aa, "bob", "bob@example.com", models.RoleUser)
 
-	req := httptest.NewRequest("POST", "/api/sessions/revoke-others", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/revoke-others", nil)
 	req.AddCookie(&http.Cookie{Name: "casadrop_session", Value: aliceTok1})
 	req = req.WithContext(ContextWithUser(req.Context(), &SessionUser{ID: "alice", Role: models.RoleUser}))
 	rr := httptest.NewRecorder()

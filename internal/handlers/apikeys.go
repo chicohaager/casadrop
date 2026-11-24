@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,7 +16,7 @@ import (
 
 // ListAPIKeys returns all API keys
 func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	keys, err := h.storage.ListAPIKeys()
+	keys, err := h.storage.ListAPIKeys(r.Context())
 	if err != nil {
 		http.Error(w, "Failed to list API keys", http.StatusInternalServerError)
 		return
@@ -65,7 +66,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.New().String()[:8]
 
-	if err := h.storage.CreateAPIKey(id, req.Name, keyHash, prefix, "", req.Role); err != nil {
+	if err := h.storage.CreateAPIKey(context.WithoutCancel(r.Context()), id, req.Name, keyHash, prefix, "", req.Role); err != nil {
 		http.Error(w, "Failed to create API key", http.StatusInternalServerError)
 		return
 	}
@@ -84,7 +85,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
-	if err := h.storage.DeleteAPIKey(id); err != nil {
+	if err := h.storage.DeleteAPIKey(context.WithoutCancel(r.Context()), id); err != nil {
 		http.Error(w, "Failed to delete API key", http.StatusInternalServerError)
 		return
 	}

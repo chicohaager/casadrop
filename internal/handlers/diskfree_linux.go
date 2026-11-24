@@ -12,5 +12,7 @@ func statfsFreeBytes(path string) (int64, bool) {
 	if err := syscall.Statfs(path, &st); err != nil {
 		return 0, false
 	}
-	return int64(st.Bavail) * int64(st.Bsize), true
+	// Bsize is int64 on amd64/arm64 but int32 on 386/arm, so the conversion
+	// stays for the 32-bit builds.
+	return int64(st.Bavail) * int64(st.Bsize), true //nolint:unconvert
 }

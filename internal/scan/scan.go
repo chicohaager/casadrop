@@ -11,6 +11,7 @@
 package scan
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -41,7 +42,8 @@ func (e *InfectedError) Error() string {
 // opposed to an infrastructure/protocol failure. Both cause a fail-closed
 // rejection, but the caller uses this to pick the status code and message.
 func IsInfected(err error) bool {
-	_, ok := err.(*InfectedError)
+	infectedError := &InfectedError{}
+	ok := errors.As(err, &infectedError)
 	return ok
 }
 

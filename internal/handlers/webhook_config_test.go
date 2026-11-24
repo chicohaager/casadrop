@@ -13,7 +13,7 @@ import (
 // way the browser does, and returns the decoded GET that follows.
 func postWebhookConfig(t *testing.T, h *Handler, body string) (int, string) {
 	t.Helper()
-	req := httptest.NewRequest("POST", "/api/webhook", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.WebhookConfig(rec, req)
@@ -23,7 +23,7 @@ func postWebhookConfig(t *testing.T, h *Handler, body string) (int, string) {
 func getWebhookConfig(t *testing.T, h *Handler) map[string]any {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.WebhookConfig(rec, httptest.NewRequest("GET", "/api/webhook", nil))
+	h.WebhookConfig(rec, httptest.NewRequest(http.MethodGet, "/api/webhook", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/webhook: expected 200, got %d", rec.Code)
 	}
@@ -113,7 +113,7 @@ func TestWebhookConfigGETNeverLeaksSecret(t *testing.T) {
 	postWebhookConfig(t, handler, `{"enabled":true,"url":"https://hooks.example.com/x","secret":"top-secret-value"}`)
 
 	rec := httptest.NewRecorder()
-	handler.WebhookConfig(rec, httptest.NewRequest("GET", "/api/webhook", nil))
+	handler.WebhookConfig(rec, httptest.NewRequest(http.MethodGet, "/api/webhook", nil))
 	if strings.Contains(rec.Body.String(), "top-secret-value") {
 		t.Errorf("GET response leaked the secret: %s", rec.Body.String())
 	}
@@ -147,7 +147,7 @@ func TestWebhookTestEndpointWorksAfterConfiguring(t *testing.T) {
 	postWebhookConfig(t, handler, `{"url":"https://hooks.example.com/x"}`)
 
 	rec := httptest.NewRecorder()
-	handler.TestWebhook(rec, httptest.NewRequest("POST", "/api/webhook/test", nil))
+	handler.TestWebhook(rec, httptest.NewRequest(http.MethodPost, "/api/webhook/test", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("TestWebhook after a valid save: expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}

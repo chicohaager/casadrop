@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -91,7 +92,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -148,7 +149,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	// Atomically increment download counter and check limit
-	allowed, err := h.storage.IncrementDownloads(id)
+	allowed, err := h.storage.IncrementDownloads(context.WithoutCancel(r.Context()), id)
 	if err != nil {
 		log.Printf("Error incrementing downloads for %s: %v", id, err)
 	}
@@ -159,7 +160,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get updated share for webhook
-	updatedShare, _ := h.storage.Get(id)
+	updatedShare, _ := h.storage.Get(r.Context(), id)
 
 	// Send webhook notification
 	clientIP := utils.GetClientIP(r)
@@ -175,7 +176,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 		// Send email download notification if enabled
 		if h.emailHandler != nil && h.emailHandler.IsEnabled() {
-			go h.emailHandler.NotifyDownload(id, updatedShare.OriginalName)
+			go h.emailHandler.NotifyDownload(context.WithoutCancel(r.Context()), id, updatedShare.OriginalName)
 		}
 	}
 
@@ -196,7 +197,7 @@ func (h *Handler) StreamFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -260,7 +261,7 @@ func (h *Handler) StreamFile(w http.ResponseWriter, r *http.Request) {
 	// Only increment download counter on first request (not range requests)
 	rangeHeader := r.Header.Get("Range")
 	if rangeHeader == "" {
-		allowed, incErr := h.storage.IncrementDownloads(id)
+		allowed, incErr := h.storage.IncrementDownloads(context.WithoutCancel(r.Context()), id)
 		if incErr != nil {
 			log.Printf("Error incrementing downloads for %s: %v", id, incErr)
 		}
@@ -271,7 +272,7 @@ func (h *Handler) StreamFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Send webhook notification
-		updatedShare, _ := h.storage.Get(id)
+		updatedShare, _ := h.storage.Get(r.Context(), id)
 		clientIP := utils.GetClientIP(r)
 		userAgent := r.Header.Get("User-Agent")
 		h.recordEvent(r, models.EventShareStreamed, models.Event{ShareID: id, Detail: share.OriginalName})
@@ -311,7 +312,7 @@ func (h *Handler) StreamFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle OPTIONS preflight
-	if r.Method == "OPTIONS" {
+	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}

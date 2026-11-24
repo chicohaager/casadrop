@@ -50,7 +50,7 @@ func TestMigrateMimeTypes(t *testing.T) {
 		}
 	}
 
-	if err := s.migrateMimeTypes(); err != nil {
+	if err := s.migrateMimeTypes(t.Context()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestMigrateMimeTypes(t *testing.T) {
 	}
 
 	// Idempotent: a second run must change nothing.
-	if err := s.migrateMimeTypes(); err != nil {
+	if err := s.migrateMimeTypes(t.Context()); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
 	var still string
@@ -119,7 +119,7 @@ func TestRefineMimeColumnReportsErrors(t *testing.T) {
 		{"no_such_table", "original_name", "missing table"},
 		{"shares", "no_such_column", "missing column"},
 	} {
-		n, err := refineMimeColumn(tx, c.table, c.col)
+		n, err := refineMimeColumn(t.Context(), tx, c.table, c.col)
 		if err == nil {
 			t.Errorf("%s: refineMimeColumn returned no error — a failed migration is invisible", c.why)
 		}

@@ -31,7 +31,7 @@ func TestSetupRequiresToken(t *testing.T) {
 			"password":         {"supersecret1"},
 			"confirm_password": {"supersecret1"},
 		}
-		req := httptest.NewRequest("POST", "/setup", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		aa.SetupHandler(rec, req)

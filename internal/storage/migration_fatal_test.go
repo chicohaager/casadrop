@@ -94,7 +94,7 @@ func TestJSONMigrationSucceeds(t *testing.T) {
 		t.Fatalf("valid shares.json: %v", err)
 	}
 	defer st.Close()
-	if _, ok := st.Get("ok0001"); !ok {
+	if _, ok := st.Get(t.Context(), "ok0001"); !ok {
 		t.Error("migrated share not found")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "shares.json.backup")); err != nil {

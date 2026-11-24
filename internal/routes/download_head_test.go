@@ -53,7 +53,7 @@ func TestSharePasswordHeadValidation(t *testing.T) {
 		CreatedAt:    time.Now(),
 		MaxDownloads: 1, // proves the HEAD probe must NOT consume a download
 	}
-	if err := store.Save(share); err != nil {
+	if err := store.Save(t.Context(), share); err != nil {
 		t.Fatalf("save share: %v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestSharePasswordHeadValidation(t *testing.T) {
 
 	// The HEAD probes above must not have spent the single allowed download;
 	// the real GET download is what counts against MaxDownloads.
-	got, ok := store.Get(share.ID)
+	got, ok := store.Get(t.Context(), share.ID)
 	if !ok {
 		t.Fatalf("share vanished")
 	}
@@ -119,7 +119,7 @@ func newDownloadTestServer(t *testing.T) (*httptest.Server, *storage.Storage, fu
 	oidcProvider, _ := auth.NewProvider(tmpDir)
 	oidcHandlers := auth.NewHandlers(oidcProvider, adminAuth)
 	oidcHandlers.SetUserService(auth.NewUserService(store))
-	emailHandler := handlers.NewEmailHandler(store)
+	emailHandler := handlers.NewEmailHandler(t.Context(), store)
 	h.SetEmailHandler(emailHandler)
 	downloadLimiter := middleware.NewRateLimiter(1000, time.Minute)
 

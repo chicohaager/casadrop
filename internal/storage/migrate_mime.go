@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -25,8 +26,8 @@ import (
 // today — no need to re-read the uploaded files. Rows whose type was recognised
 // (text/html, image/png, …) are non-committal-free and left untouched, which is
 // what keeps this from becoming a content-type-confusion vector.
-func (s *SQLiteStorage) migrateMimeTypes() error {
-	tx, err := s.db.Begin()
+func (s *SQLiteStorage) migrateMimeTypes(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -38,7 +39,7 @@ func (s *SQLiteStorage) migrateMimeTypes() error {
 		{"received_files", "original_name"},
 		{"folder_contents", "file_name"},
 	} {
-		n, err := refineMimeColumn(tx, t.table, t.nameCol)
+		n, err := refineMimeColumn(ctx, tx, t.table, t.nameCol)
 		if err != nil {
 			return err
 		}
@@ -56,7 +57,7 @@ func (s *SQLiteStorage) migrateMimeTypes() error {
 
 // refineMimeColumn rewrites the mime_type of every row whose stored value the
 // sniffer could not commit to, using the file name to disambiguate.
-func refineMimeColumn(tx *sql.Tx, table, nameCol string) (int, error) {
+func refineMimeColumn(ctx context.Context, tx *sql.Tx, table, nameCol string) (int, error) {
 	// Only the non-committal/ambiguous values are candidates — the set is fixed
 	// and small, so the table name and column are the only interpolated parts
 	// and both come from a hard-coded list above, never from input.
@@ -66,8 +67,8 @@ func refineMimeColumn(tx *sql.Tx, table, nameCol string) (int, error) {
 	// provably cannot tell apart from something else (video/webm ↔ Matroska/WebM
 	// audio, video/mp4 ↔ M4A/M4B). Everything else is left alone, which is what
 	// keeps the migration from becoming a content-type-confusion vector.
-	rows, err := tx.Query(
-		`SELECT rowid, ` + nameCol + `, mime_type FROM ` + table + `
+	rows, err := tx.QueryContext(ctx,
+		`SELECT rowid, `+nameCol+`, mime_type FROM `+table+`
 		 WHERE mime_type IN ('application/octet-stream', 'application/ogg',
 		                     'video/webm', 'video/mp4')`,
 	)
@@ -109,7 +110,7 @@ func refineMimeColumn(tx *sql.Tx, table, nameCol string) (int, error) {
 	rows.Close()
 
 	for _, f := range fixes {
-		if _, err := tx.Exec(
+		if _, err := tx.ExecContext(ctx,
 			`UPDATE `+table+` SET mime_type = ? WHERE rowid = ?`, f.mime, f.rowid,
 		); err != nil {
 			return 0, err

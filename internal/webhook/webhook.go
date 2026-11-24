@@ -227,7 +227,7 @@ func (s *Service) sendWebhook(payload models.WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequest("POST", config.URL, bytes.NewBuffer(data))
+	req, err := http.NewRequest(http.MethodPost, config.URL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Webhook: failed to create request: %v", err)
 		return

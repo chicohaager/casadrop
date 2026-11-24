@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -177,7 +178,7 @@ func (h *Handler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save share
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err != nil {
 		http.Error(w, "Failed to save share", http.StatusInternalServerError)
 		return
 	}
@@ -187,8 +188,8 @@ func (h *Handler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range folderContents {
 		entry.ShareID = id
 	}
-	if err := h.storage.SaveFolderContents(id, folderContents); err != nil {
-		h.storage.Delete(id)
+	if err := h.storage.SaveFolderContents(context.WithoutCancel(r.Context()), id, folderContents); err != nil {
+		h.storage.Delete(context.WithoutCancel(r.Context()), id)
 		http.Error(w, "Failed to save folder contents", http.StatusInternalServerError)
 		return
 	}
@@ -205,7 +206,7 @@ func (h *Handler) GetFolderContents(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -249,7 +250,7 @@ func (h *Handler) GetFolderContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get folder contents
-	contents, err := h.storage.GetFolderContents(id, path)
+	contents, err := h.storage.GetFolderContents(r.Context(), id, path)
 	if err != nil {
 		http.Error(w, "Failed to get folder contents", http.StatusInternalServerError)
 		return
@@ -283,7 +284,7 @@ func (h *Handler) DownloadFolderFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -399,7 +400,7 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	share, ok := h.storage.Get(id)
+	share, ok := h.storage.Get(r.Context(), id)
 	if !ok {
 		http.Error(w, "Share not found or expired", http.StatusNotFound)
 		return
@@ -449,7 +450,7 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Atomically increment download counter and check limit
-	allowed, incErr := h.storage.IncrementDownloads(id)
+	allowed, incErr := h.storage.IncrementDownloads(context.WithoutCancel(r.Context()), id)
 	if incErr != nil {
 		log.Printf("Error incrementing downloads for folder %s: %v", id, incErr)
 	}
@@ -573,7 +574,7 @@ func (h *Handler) DownloadFolderZip(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		if err == errZipBudgetExceeded {
+		if errors.Is(err, errZipBudgetExceeded) {
 			log.Printf("ZIP budget exceeded for share %s (%d bytes)", id, maxZipBytes)
 		} else {
 			log.Printf("Error creating ZIP for share %s: %v", id, err)

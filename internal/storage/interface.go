@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"time"
 
 	"casadrop/internal/models"
@@ -9,68 +10,68 @@ import (
 // StorageBackend defines the interface for storage backends
 type StorageBackend interface {
 	// Share operations
-	Save(share *models.Share) error
-	Get(id string) (*models.Share, bool)
-	GetAll() []*models.Share
-	Delete(id string) error
-	IncrementDownloads(id string) (bool, error)
+	Save(ctx context.Context, share *models.Share) error
+	Get(ctx context.Context, id string) (*models.Share, bool)
+	GetAll(ctx context.Context) []*models.Share
+	Delete(ctx context.Context, id string) error
+	IncrementDownloads(ctx context.Context, id string) (bool, error)
 
 	// Query operations
-	GetExpiringSoon(within time.Duration) ([]*models.Share, error)
-	GetByDateRange(from, to time.Time) ([]*models.Share, error)
-	Search(query string) ([]*models.Share, error)
-	GetStats() (*StorageStats, error)
+	GetExpiringSoon(ctx context.Context, within time.Duration) ([]*models.Share, error)
+	GetByDateRange(ctx context.Context, from, to time.Time) ([]*models.Share, error)
+	Search(ctx context.Context, query string) ([]*models.Share, error)
+	GetStats(ctx context.Context) (*StorageStats, error)
 
 	// Folder operations (for v1.9)
-	SaveFolderContents(shareID string, contents []*models.FolderEntry) error
-	GetFolderContents(shareID string, path string) ([]*models.FolderEntry, error)
-	DeleteFolderContents(shareID string) error
+	SaveFolderContents(ctx context.Context, shareID string, contents []*models.FolderEntry) error
+	GetFolderContents(ctx context.Context, shareID string, path string) ([]*models.FolderEntry, error)
+	DeleteFolderContents(ctx context.Context, shareID string) error
 
 	// Receive link operations (for v2.0)
-	SaveReceiveLink(link *models.ReceiveLink) error
-	GetReceiveLink(id string) (*models.ReceiveLink, bool)
-	GetAllReceiveLinks() ([]*models.ReceiveLink, error)
-	DeleteReceiveLink(id string) error
-	IncrementReceiveLinkUploads(id string) (bool, error)
+	SaveReceiveLink(ctx context.Context, link *models.ReceiveLink) error
+	GetReceiveLink(ctx context.Context, id string) (*models.ReceiveLink, bool)
+	GetAllReceiveLinks(ctx context.Context) ([]*models.ReceiveLink, error)
+	DeleteReceiveLink(ctx context.Context, id string) error
+	IncrementReceiveLinkUploads(ctx context.Context, id string) (bool, error)
 
 	// Received files operations (for v2.0)
-	SaveReceivedFile(file *models.ReceivedFile) error
-	GetReceivedFiles(linkID string) ([]*models.ReceivedFile, error)
-	DeleteReceivedFile(linkID, fileID string) error
+	SaveReceivedFile(ctx context.Context, file *models.ReceivedFile) error
+	GetReceivedFiles(ctx context.Context, linkID string) ([]*models.ReceivedFile, error)
+	DeleteReceivedFile(ctx context.Context, linkID, fileID string) error
 
 	// User operations (for v2.1 multi-user)
-	CreateUser(user *models.User) error
-	GetUser(id string) (*models.User, error)
-	GetUserByEmail(email string) (*models.User, error)
-	GetUserByOIDC(subject, issuer string) (*models.User, error)
-	GetAllUsers() ([]*models.User, error)
-	UpdateUser(user *models.User) error
-	DeleteUser(id string) error
-	GetSharesByUser(userID string) []*models.Share
-	GetReceiveLinksByUser(userID string) ([]*models.ReceiveLink, error)
-	GetUserUsage(userID string) (int64, error)
+	CreateUser(ctx context.Context, user *models.User) error
+	GetUser(ctx context.Context, id string) (*models.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByOIDC(ctx context.Context, subject, issuer string) (*models.User, error)
+	GetAllUsers(ctx context.Context) ([]*models.User, error)
+	UpdateUser(ctx context.Context, user *models.User) error
+	DeleteUser(ctx context.Context, id string) error
+	GetSharesByUser(ctx context.Context, userID string) []*models.Share
+	GetReceiveLinksByUser(ctx context.Context, userID string) ([]*models.ReceiveLink, error)
+	GetUserUsage(ctx context.Context, userID string) (int64, error)
 
 	// SMTP/Email operations
-	GetSMTPConfig() (*models.SMTPConfig, error)
-	SaveSMTPConfig(config *models.SMTPConfig) error
-	SaveEmailTransfer(transfer *models.EmailTransferRecord) error
-	DeleteEmailTransfer(id string) error
-	GetEmailTransfersByShare(shareID string) ([]*models.EmailTransferRecord, error)
-	MarkEmailTransferDownloaded(shareID string) error
-	MarkEmailTransferNotified(shareID string) error
-	GetPendingDownloadNotifications(shareID string) ([]*models.EmailTransferRecord, error)
+	GetSMTPConfig(ctx context.Context) (*models.SMTPConfig, error)
+	SaveSMTPConfig(ctx context.Context, config *models.SMTPConfig) error
+	SaveEmailTransfer(ctx context.Context, transfer *models.EmailTransferRecord) error
+	DeleteEmailTransfer(ctx context.Context, id string) error
+	GetEmailTransfersByShare(ctx context.Context, shareID string) ([]*models.EmailTransferRecord, error)
+	MarkEmailTransferDownloaded(ctx context.Context, shareID string) error
+	MarkEmailTransferNotified(ctx context.Context, shareID string) error
+	GetPendingDownloadNotifications(ctx context.Context, shareID string) ([]*models.EmailTransferRecord, error)
 
 	// API Key operations
-	CreateAPIKey(id, name, keyHash, prefix, userID, role string) error
-	GetAPIKeyByHash(keyHash string) (id, name, userID, role string, isActive bool, err error)
-	ListAPIKeys() ([]map[string]interface{}, error)
-	DeleteAPIKey(id string) error
-	UpdateAPIKeyLastUsed(id string)
+	CreateAPIKey(ctx context.Context, id, name, keyHash, prefix, userID, role string) error
+	GetAPIKeyByHash(ctx context.Context, keyHash string) (id, name, userID, role string, isActive bool, err error)
+	ListAPIKeys(ctx context.Context) ([]map[string]interface{}, error)
+	DeleteAPIKey(ctx context.Context, id string) error
+	UpdateAPIKeyLastUsed(ctx context.Context, id string)
 
 	// Activity log operations (v2.5)
-	RecordEvent(event *models.Event) error
-	ListEvents(filter models.EventFilter) ([]*models.Event, int, error)
-	PurgeEventsBefore(cutoff time.Time) (int64, error)
+	RecordEvent(ctx context.Context, event *models.Event) error
+	ListEvents(ctx context.Context, filter models.EventFilter) ([]*models.Event, int, error)
+	PurgeEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 
 	// Utility
 	UploadsDir() string
@@ -79,10 +80,10 @@ type StorageBackend interface {
 
 	// DropSharesTableForTest exists solely so a test can prove Ping() reads
 	// application data rather than answering a constant. No production caller.
-	DropSharesTableForTest() error
+	DropSharesTableForTest(ctx context.Context) error
 	// DropEmailTransfersTableForTest lets a test make SaveEmailTransfer fail
 	// and prove that no e-mail goes out without its record. No production caller.
-	DropEmailTransfersTableForTest() error
+	DropEmailTransfersTableForTest(ctx context.Context) error
 }
 
 // StorageStats contains storage statistics

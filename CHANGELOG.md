@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`context.Context` is passed through storage, handlers and auth.** Every
+  storage call now takes the request context; writes use
+  `context.WithoutCancel`, so a client that disconnects mid-request still
+  leaves the handler to finish as before. Adds `.golangci.yml`
+  (`golangci-lint run` reports 131 remaining findings, mostly `errcheck`).
+
 ## [2.5.5] - 2026-11-24
 
 ### Fixed

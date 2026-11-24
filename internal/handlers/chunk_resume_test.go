@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ func resetChunkRegistry(t *testing.T) {
 func initChunkUpload(t *testing.T, h *Handler, user *middleware.SessionUser, fileName string, totalSize int64, totalChunks int) string {
 	t.Helper()
 	body, _ := json.Marshal(map[string]interface{}{"fileName": fileName, "totalSize": totalSize, "totalChunks": totalChunks})
-	req := httptest.NewRequest("POST", "/api/upload/chunk/init", strings.NewReader(string(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/chunk/init", strings.NewReader(string(body)))
 	if user != nil {
 		req = req.WithContext(middleware.ContextWithUser(req.Context(), user))
 	}
@@ -46,7 +47,7 @@ func initChunkUpload(t *testing.T, h *Handler, user *middleware.SessionUser, fil
 
 func postChunk(t *testing.T, h *Handler, user *middleware.SessionUser, uploadID string, index int, data string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest("POST", "/api/upload/chunk/"+uploadID+"?index="+strconv.Itoa(index), strings.NewReader(data))
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/chunk/"+uploadID+"?index="+strconv.Itoa(index), strings.NewReader(data))
 	if user != nil {
 		req = req.WithContext(middleware.ContextWithUser(req.Context(), user))
 	}
@@ -83,7 +84,7 @@ func TestStatusReportsReceivedChunks(t *testing.T) {
 		t.Fatalf("chunk 2: %d %s", rr.Code, rr.Body.String())
 	}
 
-	req := httptest.NewRequest("GET", "/api/upload/chunk/"+id, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upload/chunk/"+id, nil)
 	req = req.WithContext(middleware.ContextWithUser(req.Context(), user))
 	rr := httptest.NewRecorder()
 	router := mux.NewRouter()
@@ -117,7 +118,7 @@ func TestChunkUploadIsOwnerBound(t *testing.T) {
 	// they cannot even tell the upload exists.
 	statusRouter := mux.NewRouter()
 	statusRouter.HandleFunc("/api/upload/chunk/{uploadId}", h.ChunkUploadStatus).Methods("GET")
-	req := httptest.NewRequest("GET", "/api/upload/chunk/"+id, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upload/chunk/"+id, nil)
 	req = req.WithContext(middleware.ContextWithUser(req.Context(), intruder))
 	rr := httptest.NewRecorder()
 	statusRouter.ServeHTTP(rr, req)

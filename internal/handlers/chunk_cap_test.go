@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -45,7 +46,7 @@ func TestUploadChunkEnforcesCumulativeSize(t *testing.T) {
 
 	// A 500-byte chunk against a declared 100-byte total must be rejected 413.
 	body := strings.NewReader(strings.Repeat("A", 500))
-	req := httptest.NewRequest("POST", "/api/upload/chunk/cap-test?index=0", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/chunk/cap-test?index=0", body)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

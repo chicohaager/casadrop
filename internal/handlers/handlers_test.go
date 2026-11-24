@@ -177,10 +177,10 @@ func TestListShares(t *testing.T) {
 		},
 	}
 	for _, s := range shares {
-		handler.storage.Save(s)
+		handler.storage.Save(t.Context(), s)
 	}
 
-	req := httptest.NewRequest("GET", "/api/shares", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/shares", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ListShares(rec, req)
@@ -223,10 +223,10 @@ func TestGetStats(t *testing.T) {
 		{ID: "s2", FileName: "f2.txt", FileSize: 2000, Downloads: 10, ExpiresAt: time.Now().Add(24 * time.Hour), CreatedAt: time.Now()},
 	}
 	for _, s := range shares {
-		handler.storage.Save(s)
+		handler.storage.Save(t.Context(), s)
 	}
 
-	req := httptest.NewRequest("GET", "/api/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	rec := httptest.NewRecorder()
 
 	handler.GetStats(rec, req)
@@ -260,13 +260,13 @@ func TestDeleteShare(t *testing.T) {
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		CreatedAt: time.Now(),
 	}
-	handler.storage.Save(share)
+	handler.storage.Save(t.Context(), share)
 
 	// Create router for path variables
 	router := mux.NewRouter()
 	router.HandleFunc("/api/shares/{id}", handler.DeleteShare).Methods("DELETE")
 
-	req := httptest.NewRequest("DELETE", "/api/shares/delete-me", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/shares/delete-me", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -277,7 +277,7 @@ func TestDeleteShare(t *testing.T) {
 	}
 
 	// Verify deleted
-	_, found := handler.storage.Get("delete-me")
+	_, found := handler.storage.Get(t.Context(), "delete-me")
 	if found {
 		t.Error("Share should be deleted")
 	}
@@ -295,12 +295,12 @@ func TestGetShareInfo(t *testing.T) {
 		ExpiresAt:    time.Now().Add(24 * time.Hour),
 		CreatedAt:    time.Now(),
 	}
-	handler.storage.Save(share)
+	handler.storage.Save(t.Context(), share)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/api/shares/{id}", handler.GetShareInfo).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/api/shares/info-share", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/shares/info-share", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -323,7 +323,7 @@ func TestGetShareInfo_NotFound(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/shares/{id}", handler.GetShareInfo).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/api/shares/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/shares/nonexistent", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -337,7 +337,7 @@ func TestIndexPage(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
 	handler.IndexPage(rec, req)
@@ -358,12 +358,12 @@ func TestQRCode(t *testing.T) {
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		CreatedAt: time.Now(),
 	}
-	handler.storage.Save(share)
+	handler.storage.Save(t.Context(), share)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/api/qr/{id}", handler.QRCode).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/api/qr/qr-share", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/qr/qr-share", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -385,7 +385,7 @@ func TestQRCode_NotFound(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/qr/{id}", handler.QRCode).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/api/qr/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/qr/nonexistent", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -407,7 +407,7 @@ func TestUploadFile_BlockedExtension(t *testing.T) {
 	writer.WriteField("expiration", "24h")
 	writer.Close()
 
-	req := httptest.NewRequest("POST", "/api/upload", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
@@ -431,7 +431,7 @@ func TestUploadFile_Success(t *testing.T) {
 	writer.WriteField("expiration", "24h")
 	writer.Close()
 
-	req := httptest.NewRequest("POST", "/api/upload", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
@@ -457,7 +457,7 @@ func TestUploadFile_NoFile(t *testing.T) {
 	writer.WriteField("expiration", "24h")
 	writer.Close()
 
-	req := httptest.NewRequest("POST", "/api/upload", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
@@ -475,7 +475,7 @@ func TestDownloadFile_NotFound(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/download/{id}", handler.DownloadFile).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/download/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/download/nonexistent", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -495,12 +495,12 @@ func TestDownloadFile_Expired(t *testing.T) {
 		ExpiresAt: time.Now().Add(-1 * time.Hour), // Expired
 		CreatedAt: time.Now(),
 	}
-	handler.storage.Save(share)
+	handler.storage.Save(t.Context(), share)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/download/{id}", handler.DownloadFile).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/download/expired-share", nil)
+	req := httptest.NewRequest(http.MethodGet, "/download/expired-share", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -523,12 +523,12 @@ func TestDownloadFile_MaxDownloadsReached(t *testing.T) {
 		MaxDownloads: 5,
 		Downloads:    5, // Already at max
 	}
-	handler.storage.Save(share)
+	handler.storage.Save(t.Context(), share)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/download/{id}", handler.DownloadFile).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/download/max-downloads", nil)
+	req := httptest.NewRequest(http.MethodGet, "/download/max-downloads", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -551,12 +551,12 @@ func TestSharePage_RequiresPassword(t *testing.T) {
 		ExpiresAt:   time.Now().Add(24 * time.Hour),
 		CreatedAt:   time.Now(),
 	}
-	handler.storage.Save(share)
+	handler.storage.Save(t.Context(), share)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/share/{id}", handler.SharePage).Methods("GET", "POST")
 
-	req := httptest.NewRequest("GET", "/share/password-share", nil)
+	req := httptest.NewRequest(http.MethodGet, "/share/password-share", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -571,7 +571,7 @@ func TestGetNetworkInfo(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/api/network", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/network", nil)
 	rec := httptest.NewRecorder()
 
 	handler.GetNetworkInfo(rec, req)
@@ -591,7 +591,7 @@ func TestTunnelURL_GET(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/api/tunnel", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tunnel", nil)
 	rec := httptest.NewRecorder()
 
 	handler.TunnelURL(rec, req)
@@ -606,7 +606,7 @@ func TestTunnelURL_POST(t *testing.T) {
 	defer cleanup()
 
 	body := strings.NewReader(`{"cloudflareTunnelURL":"https://share.example.com"}`)
-	req := httptest.NewRequest("POST", "/api/tunnel", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/tunnel", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -621,7 +621,7 @@ func TestWebhookConfig_GET(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/api/webhook", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/webhook", nil)
 	rec := httptest.NewRecorder()
 
 	handler.WebhookConfig(rec, req)
@@ -636,7 +636,7 @@ func TestWebhookConfig_POST(t *testing.T) {
 	defer cleanup()
 
 	body := strings.NewReader(`{"url":"https://webhook.example.com","enabled":true}`)
-	req := httptest.NewRequest("POST", "/api/webhook", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/webhook", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -654,7 +654,7 @@ func TestCreateReceiveLink(t *testing.T) {
 	defer cleanup()
 
 	body := strings.NewReader(`{"name":"Test Upload Link","maxUploads":10,"maxFileSize":104857600}`)
-	req := httptest.NewRequest("POST", "/api/receive-links", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/receive-links", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -681,9 +681,9 @@ func TestListReceiveLinks(t *testing.T) {
 		Name:      "Test Link",
 		CreatedAt: time.Now(),
 	}
-	handler.storage.SaveReceiveLink(link)
+	handler.storage.SaveReceiveLink(t.Context(), link)
 
-	req := httptest.NewRequest("GET", "/api/receive-links", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/receive-links", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ListReceiveLinks(rec, req)
@@ -708,12 +708,12 @@ func TestDeleteReceiveLink(t *testing.T) {
 		Name:      "Delete Me",
 		CreatedAt: time.Now(),
 	}
-	handler.storage.SaveReceiveLink(link)
+	handler.storage.SaveReceiveLink(t.Context(), link)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/api/receive-links/{id}", handler.DeleteReceiveLink).Methods("DELETE")
 
-	req := httptest.NewRequest("DELETE", "/api/receive-links/delete-recv", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/receive-links/delete-recv", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -724,7 +724,7 @@ func TestDeleteReceiveLink(t *testing.T) {
 	}
 
 	// Verify deleted
-	_, found := handler.storage.GetReceiveLink("delete-recv")
+	_, found := handler.storage.GetReceiveLink(t.Context(), "delete-recv")
 	if found {
 		t.Error("Receive link should be deleted")
 	}
@@ -739,12 +739,12 @@ func TestReceivePage(t *testing.T) {
 		Name:      "Upload Here",
 		CreatedAt: time.Now(),
 	}
-	handler.storage.SaveReceiveLink(link)
+	handler.storage.SaveReceiveLink(t.Context(), link)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/receive/{id}", handler.ReceivePage).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/receive/recv-page", nil)
+	req := httptest.NewRequest(http.MethodGet, "/receive/recv-page", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -765,12 +765,12 @@ func TestReceivePage_Expired(t *testing.T) {
 		ExpiresAt: &expiredTime,
 		CreatedAt: time.Now(),
 	}
-	handler.storage.SaveReceiveLink(link)
+	handler.storage.SaveReceiveLink(t.Context(), link)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/receive/{id}", handler.ReceivePage).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/receive/expired-recv", nil)
+	req := httptest.NewRequest(http.MethodGet, "/receive/expired-recv", nil)
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -793,7 +793,7 @@ func TestReceiveUpload_MaxUploadsReached(t *testing.T) {
 		CurrentUploads: 1, // Already at max
 		CreatedAt:      time.Now(),
 	}
-	handler.storage.SaveReceiveLink(link)
+	handler.storage.SaveReceiveLink(t.Context(), link)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/receive/{id}/upload", handler.ReceiveUpload).Methods("POST")
@@ -804,7 +804,7 @@ func TestReceiveUpload_MaxUploadsReached(t *testing.T) {
 	part.Write([]byte("content"))
 	writer.Close()
 
-	req := httptest.NewRequest("POST", "/receive/max-recv/upload", body)
+	req := httptest.NewRequest(http.MethodPost, "/receive/max-recv/upload", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 
@@ -822,7 +822,7 @@ func TestBrowseFiles(t *testing.T) {
 	handler, cleanup := setupTestHandler(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/api/browse", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/browse", nil)
 	rec := httptest.NewRecorder()
 
 	handler.BrowseFiles(rec, req)
@@ -911,7 +911,7 @@ func TestGetClientIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/", nil)
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = tt.remoteAddr
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)

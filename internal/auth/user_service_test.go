@@ -36,7 +36,7 @@ func TestFindOrCreateOIDCUser_UnverifiedEmailDoesNotLink(t *testing.T) {
 		Role:     models.RoleAdmin,
 		IsActive: true,
 	}
-	if err := svc.storage.CreateUser(existing); err != nil {
+	if err := svc.storage.CreateUser(t.Context(), existing); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestFindOrCreateOIDCUser_UnverifiedEmailDoesNotLink(t *testing.T) {
 		Name:          "Mallory",
 	}
 
-	user, err := svc.FindOrCreateOIDCUser(attacker)
+	user, err := svc.FindOrCreateOIDCUser(t.Context(), attacker)
 	if err != nil {
 		t.Fatalf("FindOrCreateOIDCUser: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestFindOrCreateOIDCUser_UnverifiedEmailDoesNotLink(t *testing.T) {
 	}
 
 	// The existing admin account must be untouched (no OIDC subject grafted on).
-	reloaded, err := svc.storage.GetUserByEmail("admin@example.com")
+	reloaded, err := svc.storage.GetUserByEmail(t.Context(), "admin@example.com")
 	if err != nil {
 		t.Fatalf("reload admin: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestFindOrCreateOIDCUser_VerifiedEmailLinks(t *testing.T) {
 		Role:     models.RoleUser,
 		IsActive: true,
 	}
-	if err := svc.storage.CreateUser(existing); err != nil {
+	if err := svc.storage.CreateUser(t.Context(), existing); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 
@@ -90,7 +90,7 @@ func TestFindOrCreateOIDCUser_VerifiedEmailLinks(t *testing.T) {
 		EmailVerified: true,
 	}
 
-	user, err := svc.FindOrCreateOIDCUser(info)
+	user, err := svc.FindOrCreateOIDCUser(t.Context(), info)
 	if err != nil {
 		t.Fatalf("FindOrCreateOIDCUser: %v", err)
 	}

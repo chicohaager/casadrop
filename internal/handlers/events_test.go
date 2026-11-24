@@ -44,7 +44,7 @@ func saveShareWithFile(t *testing.T, h *Handler, id, name, content string) *mode
 		CreatedAt:    time.Now(),
 		UserID:       "owner",
 	}
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(t.Context(), share); err != nil {
 		t.Fatalf("save share: %v", err)
 	}
 	return share
@@ -52,7 +52,7 @@ func saveShareWithFile(t *testing.T, h *Handler, id, name, content string) *mode
 
 func eventsFor(t *testing.T, h *Handler, filter models.EventFilter) []*models.Event {
 	t.Helper()
-	events, _, err := h.storage.ListEvents(filter)
+	events, _, err := h.storage.ListEvents(t.Context(), filter)
 	if err != nil {
 		t.Fatalf("ListEvents: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestDownloadRecordsWhoAndWhere(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/d/{id}", h.DownloadFile)
 
-	req := httptest.NewRequest("GET", "/d/dl-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/d/dl-1", nil)
 	req.RemoteAddr = "192.0.2.77:40000"
 	req.Header.Set("User-Agent", "curl/8.0")
 	rr := httptest.NewRecorder()
@@ -100,14 +100,14 @@ func TestDownloadRefusedAtLimitRecordsNothing(t *testing.T) {
 	share := saveShareWithFile(t, h, "dl-2", "capped.txt", "x")
 	share.MaxDownloads = 1
 	share.Downloads = 1
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(t.Context(), share); err != nil {
 		t.Fatal(err)
 	}
 
 	router := mux.NewRouter()
 	router.HandleFunc("/d/{id}", h.DownloadFile)
 	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, httptest.NewRequest("GET", "/d/dl-2", nil))
+	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/d/dl-2", nil))
 	if rr.Code == http.StatusOK {
 		t.Fatalf("download over the limit answered 200")
 	}
@@ -124,7 +124,7 @@ func TestDeleteRecordsActor(t *testing.T) {
 
 	router := mux.NewRouter()
 	router.HandleFunc("/api/shares/{id}", h.DeleteShare).Methods("DELETE")
-	req := httptest.NewRequest("DELETE", "/api/shares/del-1", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/shares/del-1", nil)
 	req = req.WithContext(middleware.ContextWithUser(req.Context(), &middleware.SessionUser{
 		ID: "admin-1", Email: "admin@example.com", Role: models.RoleAdmin,
 	}))
@@ -146,11 +146,11 @@ func TestExpiryRecordsSystemEvent(t *testing.T) {
 	withActivityLog(t, h)
 	share := saveShareWithFile(t, h, "exp-1", "old.txt", "x")
 	share.ExpiresAt = time.Now().Add(-time.Hour)
-	if err := h.storage.Save(share); err != nil {
+	if err := h.storage.Save(t.Context(), share); err != nil {
 		t.Fatal(err)
 	}
 
-	if !h.storage.RunExpiryCleanup() {
+	if !h.storage.RunExpiryCleanup(t.Context()) {
 		t.Fatal("backend has no expiry sweep")
 	}
 
@@ -165,13 +165,13 @@ func TestShareEventsOwnership(t *testing.T) {
 	defer cleanup()
 	rec := withActivityLog(t, h)
 	saveShareWithFile(t, h, "own-1", "mine.txt", "x")
-	rec.RecordSystem(models.EventShareDownloaded, models.Event{ShareID: "own-1"})
+	rec.RecordSystem(t.Context(), models.EventShareDownloaded, models.Event{ShareID: "own-1"})
 
 	router := mux.NewRouter()
 	router.HandleFunc("/api/shares/{id}/events", h.ShareEvents).Methods("GET")
 
 	get := func(user *middleware.SessionUser, id string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest("GET", "/api/shares/"+id+"/events", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/shares/"+id+"/events", nil)
 		if user != nil {
 			req = req.WithContext(middleware.ContextWithUser(req.Context(), user))
 		}
@@ -209,14 +209,14 @@ func TestListEventsRejectsMalformedFilter(t *testing.T) {
 
 	for _, q := range []string{"since=yesterday", "limit=lots", "limit=0", "offset=-1"} {
 		rr := httptest.NewRecorder()
-		h.ListEvents(rr, httptest.NewRequest("GET", "/api/events?"+q, nil))
+		h.ListEvents(rr, httptest.NewRequest(http.MethodGet, "/api/events?"+q, nil))
 		if rr.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d, want 400", q, rr.Code)
 		}
 	}
 	// Positive control: a well-formed filter is accepted.
 	rr := httptest.NewRecorder()
-	h.ListEvents(rr, httptest.NewRequest("GET", "/api/events?since=2026-01-01T00:00:00Z&limit=10", nil))
+	h.ListEvents(rr, httptest.NewRequest(http.MethodGet, "/api/events?since=2026-01-01T00:00:00Z&limit=10", nil))
 	if rr.Code != http.StatusOK {
 		t.Errorf("valid filter: %d %s", rr.Code, rr.Body.String())
 	}
@@ -226,11 +226,11 @@ func TestExportEventsIsCSV(t *testing.T) {
 	h, cleanup := setupTestHandler(t)
 	defer cleanup()
 	rec := withActivityLog(t, h)
-	rec.RecordSystem(models.EventShareDownloaded, models.Event{ShareID: "csv-1", IP: "192.0.2.9", Detail: `a "quoted" name`})
-	rec.RecordSystem(models.EventLoginFailed, models.Event{IP: "192.0.2.9"})
+	rec.RecordSystem(t.Context(), models.EventShareDownloaded, models.Event{ShareID: "csv-1", IP: "192.0.2.9", Detail: `a "quoted" name`})
+	rec.RecordSystem(t.Context(), models.EventLoginFailed, models.Event{IP: "192.0.2.9"})
 
 	rr := httptest.NewRecorder()
-	h.ExportEvents(rr, httptest.NewRequest("GET", "/api/events/export", nil))
+	h.ExportEvents(rr, httptest.NewRequest(http.MethodGet, "/api/events/export", nil))
 	if rr.Code != http.StatusOK || !strings.HasPrefix(rr.Header().Get("Content-Type"), "text/csv") {
 		t.Fatalf("export: %d %s", rr.Code, rr.Header().Get("Content-Type"))
 	}

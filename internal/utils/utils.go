@@ -326,7 +326,7 @@ func StrictSSRFTransport() *http.Transport {
 					return nil, fmt.Errorf("ssrf: refusing to connect to blocked address %s", ipa.IP)
 				}
 			}
-			var lastErr error = fmt.Errorf("ssrf: no dialable address for %s", host)
+			var lastErr = fmt.Errorf("ssrf: no dialable address for %s", host)
 			for _, ipa := range ips {
 				conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
 				if derr == nil {

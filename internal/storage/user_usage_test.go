@@ -20,7 +20,7 @@ func TestGetUserUsage(t *testing.T) {
 	future := time.Now().Add(24 * time.Hour)
 
 	save := func(s *models.Share) {
-		if err := store.Save(s); err != nil {
+		if err := store.Save(t.Context(), s); err != nil {
 			t.Fatalf("save share %s: %v", s.ID, err)
 		}
 	}
@@ -43,13 +43,13 @@ func TestGetUserUsage(t *testing.T) {
 		FileSize: 7_000_000, UserID: other, ExpiresAt: future, CreatedAt: time.Now()})
 
 	// Counts: received-link bytes owned by me (2500).
-	if err := store.SaveReceiveLink(&models.ReceiveLink{
+	if err := store.SaveReceiveLink(t.Context(), &models.ReceiveLink{
 		ID: "rl1", Name: "inbox", UserID: me, TotalSize: 2500, CreatedAt: time.Now(),
 	}); err != nil {
 		t.Fatalf("save receive link: %v", err)
 	}
 
-	got, err := store.GetUserUsage(me)
+	got, err := store.GetUserUsage(t.Context(), me)
 	if err != nil {
 		t.Fatalf("GetUserUsage: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestGetUserUsage(t *testing.T) {
 	}
 
 	// A user with nothing has zero usage.
-	if got, err := store.GetUserUsage("nobody"); err != nil || got != 0 {
+	if got, err := store.GetUserUsage(t.Context(), "nobody"); err != nil || got != 0 {
 		t.Fatalf("GetUserUsage(nobody) = %d, %v; want 0, nil", got, err)
 	}
 }

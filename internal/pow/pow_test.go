@@ -2,6 +2,7 @@ package pow
 
 import (
 	"crypto/sha256"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ func TestIssueSolveVerify(t *testing.T) {
 func TestVerifyRejectsWrongSolution(t *testing.T) {
 	m := newTestManager(t, 12)
 	ch, _ := m.Issue()
-	if err := m.Verify(ch, "0"); err != ErrUnsolved {
+	if err := m.Verify(ch, "0"); !errors.Is(err, ErrUnsolved) {
 		t.Fatalf("expected ErrUnsolved, got %v", err)
 	}
 }
@@ -55,7 +56,7 @@ func TestVerifyRejectsTamperedChallenge(t *testing.T) {
 	// Flip the difficulty to try to make it trivially solvable — the HMAC
 	// covers the bits field, so the signature must no longer match.
 	tampered := ch[:len(ch)-40] // corrupt the signature tail
-	if err := m.Verify(tampered, "0"); err != ErrInvalid {
+	if err := m.Verify(tampered, "0"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("expected ErrInvalid, got %v", err)
 	}
 }
@@ -67,7 +68,7 @@ func TestVerifyRejectsReplay(t *testing.T) {
 	if err := m.Verify(ch, sol); err != nil {
 		t.Fatalf("first verify: %v", err)
 	}
-	if err := m.Verify(ch, sol); err != ErrReplay {
+	if err := m.Verify(ch, sol); !errors.Is(err, ErrReplay) {
 		t.Fatalf("expected ErrReplay on reuse, got %v", err)
 	}
 }
@@ -80,7 +81,7 @@ func TestVerifyRejectsExpired(t *testing.T) {
 	ch, _ := m.Issue()
 	nowUnix = orig
 	sol := solve(ch, m.Bits())
-	if err := m.Verify(ch, sol); err != ErrExpired {
+	if err := m.Verify(ch, sol); !errors.Is(err, ErrExpired) {
 		t.Fatalf("expected ErrExpired, got %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"casadrop/internal/i18n"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -109,7 +110,7 @@ func (h *Handler) CreateReceiveLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save to database
-	if err := h.storage.SaveReceiveLink(link); err != nil {
+	if err := h.storage.SaveReceiveLink(context.WithoutCancel(r.Context()), link); err != nil {
 		os.RemoveAll(uploadsDir)
 		http.Error(w, "Failed to save receive link", http.StatusInternalServerError)
 		return
@@ -138,9 +139,9 @@ func (h *Handler) ListReceiveLinks(w http.ResponseWriter, r *http.Request) {
 	var links []*models.ReceiveLink
 	var err error
 	if user == nil || user.Role == models.RoleAdmin {
-		links, err = h.storage.GetAllReceiveLinks()
+		links, err = h.storage.GetAllReceiveLinks(r.Context())
 	} else {
-		links, err = h.storage.GetReceiveLinksByUser(user.ID)
+		links, err = h.storage.GetReceiveLinksByUser(r.Context(), user.ID)
 	}
 	if err != nil {
 		http.Error(w, "Failed to get receive links", http.StatusInternalServerError)
@@ -151,7 +152,7 @@ func (h *Handler) ListReceiveLinks(w http.ResponseWriter, r *http.Request) {
 
 	var responses []map[string]interface{}
 	for _, link := range links {
-		files, err := h.storage.GetReceivedFiles(link.ID)
+		files, err := h.storage.GetReceivedFiles(r.Context(), link.ID)
 		if err != nil {
 			// Don't fail the whole list over one link's count, but don't hide it
 			// as a genuine "0 files" either — make the error visible in the log.
@@ -181,7 +182,7 @@ func (h *Handler) GetReceiveLink(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	link, ok := h.storage.GetReceiveLink(id)
+	link, ok := h.storage.GetReceiveLink(r.Context(), id)
 	if !ok {
 		http.Error(w, "Receive link not found or expired", http.StatusNotFound)
 		return
@@ -201,7 +202,7 @@ func (h *Handler) GetReceiveLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	files, err := h.storage.GetReceivedFiles(id)
+	files, err := h.storage.GetReceivedFiles(r.Context(), id)
 	if err != nil {
 		log.Printf("GetReceivedFiles(%s) failed: %v", id, err)
 		http.Error(w, "Failed to load received files", http.StatusInternalServerError)
@@ -233,7 +234,7 @@ func (h *Handler) DeleteReceiveLink(w http.ResponseWriter, r *http.Request) {
 
 	// Check ownership
 	user := middleware.GetUserFromContext(r.Context())
-	link, ok := h.storage.GetReceiveLink(id)
+	link, ok := h.storage.GetReceiveLink(r.Context(), id)
 	if !ok {
 		// Not visible (missing or expired). Don't fall through to an
 		// unconditional delete — that skipped the ownership check and let any
@@ -250,7 +251,7 @@ func (h *Handler) DeleteReceiveLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.storage.DeleteReceiveLink(id); err != nil {
+	if err := h.storage.DeleteReceiveLink(context.WithoutCancel(r.Context()), id); err != nil {
 		http.Error(w, "Failed to delete receive link", http.StatusInternalServerError)
 		return
 	}
@@ -265,7 +266,7 @@ func (h *Handler) GetReceivedFiles(w http.ResponseWriter, r *http.Request) {
 
 	// Check ownership
 	user := middleware.GetUserFromContext(r.Context())
-	link, ok := h.storage.GetReceiveLink(id)
+	link, ok := h.storage.GetReceiveLink(r.Context(), id)
 	if !ok {
 		http.Error(w, "Receive link not found", http.StatusNotFound)
 		return
@@ -282,7 +283,7 @@ func (h *Handler) GetReceivedFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	files, err := h.storage.GetReceivedFiles(id)
+	files, err := h.storage.GetReceivedFiles(r.Context(), id)
 	if err != nil {
 		http.Error(w, "Failed to get files", http.StatusInternalServerError)
 		return
@@ -297,7 +298,7 @@ func (h *Handler) ReceivePage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	link, ok := h.storage.GetReceiveLink(id)
+	link, ok := h.storage.GetReceiveLink(r.Context(), id)
 	if !ok {
 		h.renderPublic(w, r, "not_found.html", nil)
 		return
@@ -357,7 +358,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	link, ok := h.storage.GetReceiveLink(id)
+	link, ok := h.storage.GetReceiveLink(r.Context(), id)
 	if !ok {
 		receiveError(w, r, http.StatusNotFound, "receive.err.notFound", nil)
 		return
@@ -477,7 +478,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	// Per-user storage quota: received files count against the LINK OWNER's
 	// quota, so an anonymous uploader can't be used to bypass a user's limit.
 	if link.UserID != "" {
-		if over, err := h.quotaExceededBy(link.UserID, header.Size); err != nil {
+		if over, err := h.quotaExceededBy(r.Context(), link.UserID, header.Size); err != nil {
 			receiveError(w, r, http.StatusInternalServerError, "receive.err.quotaCheck", nil)
 			return
 		} else if over {
@@ -577,7 +578,7 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 				UserID: link.UserID,
 			}
 
-			if err := h.storage.Save(share); err == nil {
+			if err := h.storage.Save(context.WithoutCancel(r.Context()), share); err == nil {
 				receivedFile.ShareID = shareID
 			} else {
 				os.Remove(sharePath)
@@ -589,21 +590,21 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 	// Save received file record. If this fails we must not proceed to bump the
 	// upload counter / send webhooks — otherwise the file (and any auto-share)
 	// is left on disk with no tracking record. Roll back and fail.
-	if err := h.storage.SaveReceivedFile(receivedFile); err != nil {
+	if err := h.storage.SaveReceivedFile(context.WithoutCancel(r.Context()), receivedFile); err != nil {
 		log.Printf("Failed to save received file record: %v", err)
 		_ = os.Remove(destPath)
 		if receivedFile.ShareID != "" {
-			if s, ok := h.storage.Get(receivedFile.ShareID); ok {
+			if s, ok := h.storage.Get(r.Context(), receivedFile.ShareID); ok {
 				_ = os.Remove(filepath.Join(h.storage.UploadsDir(), s.FileName))
 			}
-			_ = h.storage.Delete(receivedFile.ShareID)
+			_ = h.storage.Delete(context.WithoutCancel(r.Context()), receivedFile.ShareID)
 		}
 		receiveError(w, r, http.StatusInternalServerError, "receive.err.save", nil)
 		return
 	}
 
 	// Atomically increment upload counter (with limit check for race safety)
-	allowed, incErr := h.storage.IncrementReceiveLinkUploads(id)
+	allowed, incErr := h.storage.IncrementReceiveLinkUploads(context.WithoutCancel(r.Context()), id)
 	if incErr != nil {
 		log.Printf("Error incrementing uploads for receive link %s: %v", id, incErr)
 	}
@@ -613,12 +614,12 @@ func (h *Handler) ReceiveUpload(w http.ResponseWriter, r *http.Request) {
 		// don't leak orphaned data when returning an error.
 		_ = os.Remove(destPath)
 		if receivedFile.ShareID != "" {
-			if s, ok := h.storage.Get(receivedFile.ShareID); ok {
+			if s, ok := h.storage.Get(r.Context(), receivedFile.ShareID); ok {
 				_ = os.Remove(filepath.Join(h.storage.UploadsDir(), s.FileName))
 			}
-			_ = h.storage.Delete(receivedFile.ShareID)
+			_ = h.storage.Delete(context.WithoutCancel(r.Context()), receivedFile.ShareID)
 		}
-		_ = h.storage.DeleteReceivedFile(id, receivedFile.ID)
+		_ = h.storage.DeleteReceivedFile(context.WithoutCancel(r.Context()), id, receivedFile.ID)
 		receiveError(w, r, http.StatusForbidden, "receive.err.limit", nil)
 		return
 	}
@@ -674,7 +675,7 @@ func (h *Handler) sendReceiveWebhook(link *models.ReceiveLink, file *models.Rece
 		return
 	}
 
-	req, err := http.NewRequest("POST", link.WebhookURL, strings.NewReader(string(data)))
+	req, err := http.NewRequest(http.MethodPost, link.WebhookURL, strings.NewReader(string(data)))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
@@ -718,7 +719,7 @@ func (h *Handler) DownloadReceivedFile(w http.ResponseWriter, r *http.Request) {
 
 	// Check ownership
 	user := middleware.GetUserFromContext(r.Context())
-	link, ok := h.storage.GetReceiveLink(linkID)
+	link, ok := h.storage.GetReceiveLink(r.Context(), linkID)
 	if !ok {
 		http.Error(w, "Receive link not found", http.StatusNotFound)
 		return
@@ -735,7 +736,7 @@ func (h *Handler) DownloadReceivedFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	files, err := h.storage.GetReceivedFiles(linkID)
+	files, err := h.storage.GetReceivedFiles(r.Context(), linkID)
 	if err != nil {
 		http.Error(w, "Receive link not found", http.StatusNotFound)
 		return

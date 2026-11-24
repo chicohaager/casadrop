@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -84,27 +85,27 @@ func (f *fakeSMTP) serve(c net.Conn, reject bool) {
 func emailHandlerWithSMTP(t *testing.T, smtp *fakeSMTP) (*EmailHandler, *storage.Storage) {
 	t.Helper()
 	store := newEmailTestStore(t)
-	if err := store.SaveSMTPConfig(&models.SMTPConfig{Enabled: true, Host: "127.0.0.1", Port: smtp.addr.Port,
+	if err := store.SaveSMTPConfig(t.Context(), &models.SMTPConfig{Enabled: true, Host: "127.0.0.1", Port: smtp.addr.Port,
 		FromEmail: "drop@example.org", FromName: "CasaDrop"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Save(&models.Share{ID: "share-1", FileName: "doc.pdf", OriginalName: "doc.pdf",
+	if err := store.Save(t.Context(), &models.Share{ID: "share-1", FileName: "doc.pdf", OriginalName: "doc.pdf",
 		ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	return NewEmailHandler(store), store
+	return NewEmailHandler(t.Context(), store), store
 }
 
 func sendTransfer(h *EmailHandler) *httptest.ResponseRecorder {
 	body := `{"share_id":"share-1","recipient_email":"someone@example.org","lang":"fr"}`
 	rr := httptest.NewRecorder()
-	h.SendEmailTransfer(rr, httptest.NewRequest("POST", "/api/email/send", strings.NewReader(body)))
+	h.SendEmailTransfer(rr, httptest.NewRequest(http.MethodPost, "/api/email/send", strings.NewReader(body)))
 	return rr
 }
 
 func transferRecords(t *testing.T, store *storage.Storage) []*models.EmailTransferRecord {
 	t.Helper()
-	recs, err := store.GetEmailTransfersByShare("share-1")
+	recs, err := store.GetEmailTransfersByShare(t.Context(), "share-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestSentTransferIsRecorded(t *testing.T) {
 func TestNoMailWithoutRecord(t *testing.T) {
 	smtp := startFakeSMTP(t, false)
 	h, store := emailHandlerWithSMTP(t, smtp)
-	if err := store.DropEmailTransfersTableForTest(); err != nil {
+	if err := store.DropEmailTransfersTableForTest(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	rr := sendTransfer(h)

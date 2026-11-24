@@ -1,7 +1,9 @@
 package audit
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -17,7 +19,7 @@ type fakeStore struct {
 	failWrites bool
 }
 
-func (f *fakeStore) RecordEvent(e *models.Event) error {
+func (f *fakeStore) RecordEvent(_ context.Context, e *models.Event) error {
 	if f.failWrites {
 		return errors.New("disk full")
 	}
@@ -25,7 +27,7 @@ func (f *fakeStore) RecordEvent(e *models.Event) error {
 	return nil
 }
 
-func (f *fakeStore) PurgeEventsBefore(cutoff time.Time) (int64, error) {
+func (f *fakeStore) PurgeEventsBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	f.purgeCalls = append(f.purgeCalls, cutoff)
 	return 3, nil
 }
@@ -34,7 +36,7 @@ func TestRecordTakesActorAndAddressFromRequest(t *testing.T) {
 	store := &fakeStore{}
 	rec := New(store, 0)
 
-	req := httptest.NewRequest("GET", "/d/abc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/d/abc", nil)
 	req.RemoteAddr = "192.0.2.44:5555"
 	req.Header.Set("User-Agent", "Mozilla/5.0 test")
 	req = req.WithContext(middleware.ContextWithUser(req.Context(), &middleware.SessionUser{
@@ -65,7 +67,7 @@ func TestSingleAdminSessionIsNamedByRole(t *testing.T) {
 	store := &fakeStore{}
 	rec := New(store, 0)
 
-	req := httptest.NewRequest("POST", "/api/upload", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
 	req = req.WithContext(middleware.ContextWithUser(req.Context(), &middleware.SessionUser{Role: models.RoleAdmin}))
 	rec.Record(req, models.EventShareCreated, models.Event{ShareID: "s"})
 
@@ -78,7 +80,7 @@ func TestRecordAnonymousRequestHasNoActor(t *testing.T) {
 	store := &fakeStore{}
 	rec := New(store, 0)
 
-	req := httptest.NewRequest("GET", "/d/abc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/d/abc", nil)
 	rec.Record(req, models.EventShareDownloaded, models.Event{ShareID: "abc"})
 
 	if e := store.events[0]; e.ActorID != "" || e.ActorEmail != "" {
@@ -90,7 +92,7 @@ func TestUserAgentIsBounded(t *testing.T) {
 	store := &fakeStore{}
 	rec := New(store, 0)
 
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("User-Agent", strings.Repeat("x", 4096))
 	rec.Record(req, models.EventShareDownloaded, models.Event{})
 
@@ -103,7 +105,7 @@ func TestWriteFailureIsLoggedNotFatal(t *testing.T) {
 	rec := New(&fakeStore{failWrites: true}, 0)
 	// Must not panic and must not return anything to the caller: the download
 	// already happened.
-	rec.RecordSystem(models.EventShareExpired, models.Event{ShareID: "gone"})
+	rec.RecordSystem(t.Context(), models.EventShareExpired, models.Event{ShareID: "gone"})
 }
 
 func TestAuthSinkMapsKnownAndUnknownTypes(t *testing.T) {
@@ -144,7 +146,7 @@ func TestPurgeHonoursRetention(t *testing.T) {
 	rec := New(store, 90*24*time.Hour)
 
 	before := time.Now()
-	n, err := rec.Purge()
+	n, err := rec.Purge(t.Context())
 	if err != nil || n != 3 {
 		t.Fatalf("Purge returned n=%d err=%v", n, err)
 	}
@@ -160,9 +162,9 @@ func TestPurgeHonoursRetention(t *testing.T) {
 func TestZeroRetentionNeverPurges(t *testing.T) {
 	store := &fakeStore{}
 	rec := New(store, 0)
-	rec.Start() // returns without a goroutine
+	rec.Start(t.Context()) // returns without a goroutine
 	rec.Stop()
-	if n, _ := rec.Purge(); n != 0 || len(store.purgeCalls) != 0 {
+	if n, _ := rec.Purge(t.Context()); n != 0 || len(store.purgeCalls) != 0 {
 		t.Errorf("retention 0 must never purge, got n=%d calls=%d", n, len(store.purgeCalls))
 	}
 }

@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ func TestLangFromAcceptLanguage(t *testing.T) {
 		{"garbage;;;,,", "en"},            // malformed
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest("GET", "/s/x", nil)
+		r := httptest.NewRequest(http.MethodGet, "/s/x", nil)
 		if c.header != "" {
 			r.Header.Set("Accept-Language", c.header)
 		}
@@ -41,13 +42,13 @@ func TestLangFromAcceptLanguage(t *testing.T) {
 }
 
 func TestLangQueryOverride(t *testing.T) {
-	r := httptest.NewRequest("GET", "/s/x?lang=de", nil)
+	r := httptest.NewRequest(http.MethodGet, "/s/x?lang=de", nil)
 	r.Header.Set("Accept-Language", "en-US")
 	if got := Lang(r); got != "de" {
 		t.Fatalf("?lang=de: got %q", got)
 	}
 	// unsupported query value must not win over the header
-	r = httptest.NewRequest("GET", "/s/x?lang=xx", nil)
+	r = httptest.NewRequest(http.MethodGet, "/s/x?lang=xx", nil)
 	r.Header.Set("Accept-Language", "de-DE")
 	if got := Lang(r); got != "de" {
 		t.Fatalf("?lang=xx with de header: got %q", got)
@@ -151,7 +152,7 @@ func TestDateLayoutPerLanguage(t *testing.T) {
 	when := time.Date(2026, 10, 5, 14, 15, 0, 0, time.UTC)
 	for lang := range public {
 		got := FormatTime(lang, when)
-		if !strings.Contains(got, "2026") || !(strings.Contains(got, "14:15") || strings.Contains(got, "2:15")) {
+		if !strings.Contains(got, "2026") || (!strings.Contains(got, "14:15") && !strings.Contains(got, "2:15")) {
 			t.Errorf("%s: format.dateTime gives %q — not a Go layout?", lang, got)
 		}
 	}
