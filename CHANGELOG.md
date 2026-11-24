@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.5] - 2026-11-24
+
 ### Fixed
 - **Large chunked uploads no longer need twice their size on disk.**
   `FinalizeChunkUpload` copied all chunks into the share file and deleted them
@@ -54,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   itself, so a link with a password accepted files of any size (limit and the
   8 MB memory budget never applied). Parsing now happens after the size limit
   and before the password check (`TestReceiveSizeLimitHoldsForPasswordLinks`).
+
+### Changed
+- **Dependencies updated:** go-oidc v3.9.0 → v3.21.0, prometheus/client_golang
+  v1.17.0 → v1.25.0, x/crypto v0.57.0 → v0.59.0, x/image v0.46.0 → v0.48.0,
+  x/oauth2 v0.37.0 → v0.38.0, modernc.org/sqlite v1.48.2 → v1.63.0.
+  `govulncheck`: no reachable vulnerability. Checked against a copy of a
+  production database (shares, receive links and logins load unchanged).
 
 ## [2.5.4] - 2026-11-12
 
